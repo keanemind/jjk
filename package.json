@@ -9,13 +9,153 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
-  "main": "./dist/extension.js",
+  "activationEvents": [
+    "*",
+    "onEditSession:file"
+  ],
+  "main": "./dist/main.js",
   "contributes": {
     "commands": [
       {
         "command": "jjk.helloWorld",
         "title": "Hello World"
+      },
+      {
+        "command": "jj.refresh",
+        "title": "Refresh",
+        "category": "Jujutsu",
+        "icon": "$(refresh)",
+        "enablement": "!operationInProgress"
+      }
+    ],
+    "menus": {
+      "scm/title": [
+        {
+          "command": "jjk.helloWorld",
+          "when": "scmProvider == jj",
+          "group": "navigation"
+        },
+        {
+          "command": "jj.refresh",
+          "when": "scmProvider == jj",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Jujutsu Kaizen",
+      "properties": {}
+    },
+    "colors": [
+      {
+        "id": "jjDecoration.addedResourceForeground",
+        "description": "%colors.added%",
+        "defaults": {
+          "light": "#587c0c",
+          "dark": "#81b88b",
+          "highContrast": "#a1e3ad",
+          "highContrastLight": "#374e06"
+        }
+      },
+      {
+        "id": "jjDecoration.modifiedResourceForeground",
+        "description": "%colors.modified%",
+        "defaults": {
+          "light": "#895503",
+          "dark": "#E2C08D",
+          "highContrast": "#E2C08D",
+          "highContrastLight": "#895503"
+        }
+      },
+      {
+        "id": "jjDecoration.deletedResourceForeground",
+        "description": "%colors.deleted%",
+        "defaults": {
+          "light": "#ad0707",
+          "dark": "#c74e39",
+          "highContrast": "#c74e39",
+          "highContrastLight": "#ad0707"
+        }
+      },
+      {
+        "id": "jjDecoration.renamedResourceForeground",
+        "description": "%colors.renamed%",
+        "defaults": {
+          "light": "#007100",
+          "dark": "#73C991",
+          "highContrast": "#73C991",
+          "highContrastLight": "#007100"
+        }
+      },
+      {
+        "id": "jjDecoration.untrackedResourceForeground",
+        "description": "%colors.untracked%",
+        "defaults": {
+          "light": "#007100",
+          "dark": "#73C991",
+          "highContrast": "#73C991",
+          "highContrastLight": "#007100"
+        }
+      },
+      {
+        "id": "jjDecoration.ignoredResourceForeground",
+        "description": "%colors.ignored%",
+        "defaults": {
+          "light": "#8E8E90",
+          "dark": "#8C8C8C",
+          "highContrast": "#A7A8A9",
+          "highContrastLight": "#8e8e90"
+        }
+      },
+      {
+        "id": "jjDecoration.stageModifiedResourceForeground",
+        "description": "%colors.stageModified%",
+        "defaults": {
+          "light": "#895503",
+          "dark": "#E2C08D",
+          "highContrast": "#E2C08D",
+          "highContrastLight": "#895503"
+        }
+      },
+      {
+        "id": "jjDecoration.stageDeletedResourceForeground",
+        "description": "%colors.stageDeleted%",
+        "defaults": {
+          "light": "#ad0707",
+          "dark": "#c74e39",
+          "highContrast": "#c74e39",
+          "highContrastLight": "#ad0707"
+        }
+      },
+      {
+        "id": "jjDecoration.conflictingResourceForeground",
+        "description": "%colors.conflict%",
+        "defaults": {
+          "light": "#ad0707",
+          "dark": "#e4676b",
+          "highContrast": "#c74e39",
+          "highContrastLight": "#ad0707"
+        }
+      },
+      {
+        "id": "jjDecoration.submoduleResourceForeground",
+        "description": "%colors.submodule%",
+        "defaults": {
+          "light": "#1258a7",
+          "dark": "#8db9e2",
+          "highContrast": "#8db9e2",
+          "highContrastLight": "#1258a7"
+        }
+      },
+      {
+        "id": "jj.blame.editorDecorationForeground",
+        "description": "%colors.blameEditorDecoration%",
+        "defaults": {
+          "dark": "editorCodeLens.foreground",
+          "light": "editorCodeLens.foreground",
+          "highContrast": "editorCodeLens.foreground",
+          "highContrastLight": "editorCodeLens.foreground"
+        }
       }
     ]
   },
@@ -34,16 +174,21 @@
     "test": "vscode-test"
   },
   "devDependencies": {
-    "@types/vscode": "^1.96.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "20.x",
+    "@types/vscode": "^1.96.0",
+    "@types/which": "^3.0.4",
     "@typescript-eslint/eslint-plugin": "^8.17.0",
     "@typescript-eslint/parser": "^8.17.0",
-    "eslint": "^9.16.0",
-    "esbuild": "^0.24.0",
-    "npm-run-all": "^4.1.5",
-    "typescript": "^5.7.2",
     "@vscode/test-cli": "^0.0.10",
-    "@vscode/test-electron": "^2.4.1"
+    "@vscode/test-electron": "^2.4.1",
+    "esbuild": "^0.24.0",
+    "eslint": "^9.16.0",
+    "npm-run-all": "^4.1.5",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "cross-spawn": "^7.0.6",
+    "which": "^5.0.0"
   }
 }
