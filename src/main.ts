@@ -19,17 +19,20 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(logger);
 
   const decorationProvider = new JJDecorationProvider();
-  vscode.window.registerFileDecorationProvider(decorationProvider);
+  context.subscriptions.push(
+    vscode.window.registerFileDecorationProvider(decorationProvider)
+  );
 
   // The command has been defined in the package.json file
   // Now provide the implementation of the command with registerCommand
   // The commandId parameter must match the command field in package.json
-  const disposable = vscode.commands.registerCommand("jjk.helloWorld", () => {
-    // The code you place here will be executed every time your command is executed
-    // Display a message box to the user
-    vscode.window.showInformationMessage("Hello World from Jujutsu Kaizen!");
-  });
-  context.subscriptions.push(disposable);
+  context.subscriptions.push(
+    vscode.commands.registerCommand("jjk.helloWorld", () => {
+      // The code you place here will be executed every time your command is executed
+      // Display a message box to the user
+      vscode.window.showInformationMessage("Hello World from Jujutsu Kaizen!");
+    })
+  );
 
   // Check if the jj CLI is installed
   const jjPath = await which("jj", { nothrow: true });
@@ -50,7 +53,12 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   const fileSystemProvider = new JJFileSystemProvider(repositories);
-  vscode.workspace.registerFileSystemProvider("jj", fileSystemProvider);
+  context.subscriptions.push(
+    vscode.workspace.registerFileSystemProvider("jj", fileSystemProvider, {
+      isReadonly: true,
+      isCaseSensitive: true,
+    })
+  );
 
   // Determine if the workspace contains a jj repository
   if (repositories.repos.length > 0) {
