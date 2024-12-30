@@ -3,8 +3,10 @@ import which from "which";
 import path from "node:path";
 
 import "./repository";
-import { findReposInWorkspace } from "./repository";
+import { Repositories } from "./repository";
 import { JJDecorationProvider } from "./decorationProvider";
+import { JJFileSystemProvider } from "./fileSystemProvider";
+import { toJJUri } from "./uri";
 
 export async function activate(context: vscode.ExtensionContext) {
   // Use the console to output diagnostic information (console.log) and errors (console.error)
@@ -35,23 +37,23 @@ export async function activate(context: vscode.ExtensionContext) {
     throw new Error("jj CLI not found");
   }
 
-  // Determine if the workspace contains a jj repository
-  const repos = await findReposInWorkspace();
-  for (const repo of repos) {
-    const status = await repo.status();
-    console.log(status);
-  }
+  const repositories = new Repositories();
+  await repositories.init();
+
   vscode.workspace.onDidChangeWorkspaceFolders(
-    (e) => {
+    async (e) => {
       console.log("Workspace folders changed");
-      const repos = findReposInWorkspace();
-      console.log(repos);
+      await repositories.init();
     },
     undefined,
     context.subscriptions
   );
 
-  if (repos.length > 0) {
+  const fileSystemProvider = new JJFileSystemProvider(repositories);
+  vscode.workspace.registerFileSystemProvider("jj", fileSystemProvider);
+
+  // Determine if the workspace contains a jj repository
+  if (repositories.repos.length > 0) {
     const fsWatcher = vscode.workspace.createFileSystemWatcher("**");
     context.subscriptions.push(fsWatcher);
 
@@ -61,7 +63,7 @@ export async function activate(context: vscode.ExtensionContext) {
       "Working Copy"
     );
 
-    const status = await repos[0].status();
+    const status = await repositories.repos[0].status();
     decorationProvider.onDidRunStatus(status);
     workingCopy.resourceStates = status.fileStatuses.map((fileStatus) => {
       return {
@@ -69,6 +71,21 @@ export async function activate(context: vscode.ExtensionContext) {
         decorations: {
           strikeThrough: fileStatus.type === "D",
           tooltip: path.basename(fileStatus.file),
+        },
+        command: {
+          title: "Open",
+          command: "vscode.diff",
+          arguments: [
+            toJJUri(
+              vscode.Uri.file(fileStatus.path),
+              status.parentCommit.changeId
+            ),
+            toJJUri(
+              vscode.Uri.file(fileStatus.path),
+              status.workingCopy.changeId
+            ),
+            fileStatus.file + " (Working Copy)",
+          ],
         },
       };
     });

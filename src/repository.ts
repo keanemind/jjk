@@ -2,7 +2,7 @@ import path from "path";
 import * as vscode from "vscode";
 import spawn from "cross-spawn";
 
-export async function findReposInWorkspace() {
+async function findReposInWorkspace() {
   const repos: Repository[] = [];
   for (const workspaceFolder of vscode.workspace.workspaceFolders || []) {
     const repoRoot = await new Promise<string | undefined>(
@@ -31,6 +31,20 @@ export async function findReposInWorkspace() {
   return repos;
 }
 
+export class Repositories {
+  repos: Repository[] = [];
+
+  async init() {
+    this.repos = await findReposInWorkspace();
+  }
+
+  getRepository(uri: vscode.Uri) {
+    return this.repos.find((repo) => {
+      return uri.fsPath.startsWith(vscode.Uri.file(repo.repositoryRoot).fsPath);
+    });
+  }
+}
+
 class Repository {
   constructor(public repositoryRoot: string) {}
 
@@ -46,6 +60,26 @@ class Repository {
       });
       childProcess.stdout!.on("data", (data: string) => {
         output += data;
+      });
+    });
+  }
+
+  readFile(rev: string, path: string) {
+    return new Promise<Buffer>((resolve, reject) => {
+      const childProcess = spawn(
+        "jj",
+        ["file", "show", "--no-pager", "--revision", rev, path],
+        {
+          timeout: 5000,
+          cwd: this.repositoryRoot,
+        }
+      );
+      const buffers: Buffer[] = [];
+      childProcess.on("close", (code) => {
+        resolve(Buffer.concat(buffers));
+      });
+      childProcess.stdout!.on("data", (data: Buffer) => {
+        buffers.push(data);
       });
     });
   }

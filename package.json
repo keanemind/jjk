@@ -26,6 +26,18 @@
         "category": "Jujutsu",
         "icon": "$(refresh)",
         "enablement": "!operationInProgress"
+      },
+      {
+        "command": "jj.openChange",
+        "title": "%command.openChange%",
+        "category": "Jujutsu",
+        "icon": "$(compare-changes)"
+      },
+      {
+        "command": "jj.openFile",
+        "title": "%command.openFile%",
+        "category": "Jujutsu",
+        "icon": "$(go-to-file)"
       }
     ],
     "menus": {
@@ -174,6 +186,7 @@
     "test": "vscode-test"
   },
   "devDependencies": {
+    "@types/cross-spawn": "^6.0.6",
     "@types/mocha": "^10.0.10",
     "@types/node": "20.x",
     "@types/vscode": "^1.96.0",
