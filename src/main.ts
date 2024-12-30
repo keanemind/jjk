@@ -9,7 +9,6 @@ import { JJFileSystemProvider } from "./fileSystemProvider";
 import { toJJUri } from "./uri";
 import { describeCommit } from "./describe";
 
-
 export async function activate(context: vscode.ExtensionContext) {
   // Use the console to output diagnostic information (console.log) and errors (console.error)
   // This line of code will only be executed once when your extension is activated
@@ -79,10 +78,7 @@ export async function activate(context: vscode.ExtensionContext) {
               vscode.Uri.file(fileStatus.path),
               status.parentCommit.changeId
             ),
-            toJJUri(
-              vscode.Uri.file(fileStatus.path),
-              status.workingCopy.changeId
-            ),
+            vscode.Uri.file(fileStatus.path),
             fileStatus.file + " (Working Copy)",
           ],
         },
@@ -91,23 +87,35 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // Set up the SourceControlInputBox
     jjSCM.inputBox.placeholder = "Change commit message (Ctrl+Enter)";
-    
-    const acceptInputCommand = vscode.commands.registerCommand("jj.describe", async () => {
-      const newCommitMessage = jjSCM.inputBox.value.trim();
-      if (!newCommitMessage) {
-        vscode.window.showErrorMessage("Commit message cannot be empty.");
-        return;
-      }
 
-      try {
-        logger.appendLine(`Running jj describe with message: "${newCommitMessage}"`);
-        await describeCommit(repositories.repos[0].repositoryRoot, newCommitMessage);
-        jjSCM.inputBox.value = "";
-        vscode.window.showInformationMessage("Commit message updated successfully.");
-      } catch (error: any) {
-        vscode.window.showErrorMessage(`Failed to update commit message: ${error.message}`);
+    const acceptInputCommand = vscode.commands.registerCommand(
+      "jj.describe",
+      async () => {
+        const newCommitMessage = jjSCM.inputBox.value.trim();
+        if (!newCommitMessage) {
+          vscode.window.showErrorMessage("Commit message cannot be empty.");
+          return;
+        }
+
+        try {
+          logger.appendLine(
+            `Running jj describe with message: "${newCommitMessage}"`
+          );
+          await describeCommit(
+            repositories.repos[0].repositoryRoot,
+            newCommitMessage
+          );
+          jjSCM.inputBox.value = "";
+          vscode.window.showInformationMessage(
+            "Commit message updated successfully."
+          );
+        } catch (error: any) {
+          vscode.window.showErrorMessage(
+            `Failed to update commit message: ${error.message}`
+          );
+        }
       }
-    });
+    );
 
     // Link the acceptInputCommand to the SourceControl instance
     jjSCM.acceptInputCommand = {
@@ -115,13 +123,9 @@ export async function activate(context: vscode.ExtensionContext) {
       title: "Change Commit Message",
     };
 
-    context.subscriptions.push(
-      acceptInputCommand,
-      jjSCM
-    );
+    context.subscriptions.push(acceptInputCommand, jjSCM);
   }
 }
-
 
 // This method is called when your extension is deactivated
 export function deactivate() {}
