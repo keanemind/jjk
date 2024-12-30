@@ -7,6 +7,8 @@ import { Repositories } from "./repository";
 import { JJDecorationProvider } from "./decorationProvider";
 import { JJFileSystemProvider } from "./fileSystemProvider";
 import { toJJUri } from "./uri";
+import { describeCommit } from "./describe";
+
 
 export async function activate(context: vscode.ExtensionContext) {
   // Use the console to output diagnostic information (console.log) and errors (console.error)
@@ -97,8 +99,49 @@ export async function activate(context: vscode.ExtensionContext) {
         },
       };
     });
+
+    // Set up the SourceControlInputBox
+    jjSCM.inputBox.placeholder = "Change commit message (Ctrl+Enter)";
+    
+    const acceptInputCommand = vscode.commands.registerCommand("jjk.describe", async () => {
+      const newCommitMessage = jjSCM.inputBox.value.trim();
+      if (!newCommitMessage) {
+        vscode.window.showErrorMessage("Commit message cannot be empty.");
+        return;
+      }
+
+      try {
+        logger.appendLine(`Running jj describe with message: "${newCommitMessage}"`);
+        await describeCommit(repositories.repos[0].repositoryRoot, newCommitMessage);
+        jjSCM.inputBox.value = "";
+        vscode.window.showInformationMessage("Commit message updated successfully.");
+      } catch (error: any) {
+        vscode.window.showErrorMessage(`Failed to update commit message: ${error.message}`);
+      }
+    });
+
+    // Link the acceptInputCommand to the SourceControl instance
+    jjSCM.acceptInputCommand = {
+      command: "jjk.describe",
+      title: "Change Commit Message",
+    };
+
+    // Add a button to the Source Control view
+    const describeButton = vscode.commands.registerCommand(
+      "jjk.describeButton",
+      async () => {
+        vscode.commands.executeCommand("jjk.describe");
+      }
+    );
+
+    context.subscriptions.push(
+      acceptInputCommand,
+      describeButton,
+      jjSCM
+    );
   }
 }
+
 
 // This method is called when your extension is deactivated
 export function deactivate() {}

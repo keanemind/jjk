@@ -38,6 +38,10 @@
         "title": "%command.openFile%",
         "category": "Jujutsu",
         "icon": "$(go-to-file)"
+      },
+      {
+        "command": "jjk.describeButton",
+        "title": "Change commit message"
       }
     ],
     "menus": {
@@ -51,6 +55,11 @@
           "command": "jj.refresh",
           "when": "scmProvider == jj",
           "group": "navigation"
+        },
+        {
+          "command": "jjk.describeButton",
+          "group": "navigation",
+          "when": "scmProvider == jj"
         }
       ]
     },
