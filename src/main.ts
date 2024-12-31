@@ -25,17 +25,6 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.window.registerFileDecorationProvider(decorationProvider)
   );
 
-  // The command has been defined in the package.json file
-  // Now provide the implementation of the command with registerCommand
-  // The commandId parameter must match the command field in package.json
-  context.subscriptions.push(
-    vscode.commands.registerCommand("jjk.helloWorld", () => {
-      // The code you place here will be executed every time your command is executed
-      // Display a message box to the user
-      vscode.window.showInformationMessage("Hello World from Jujutsu Kaizen!");
-    })
-  );
-
   // Check if the jj CLI is installed
   const jjPath = await which("jj", { nothrow: true });
   if (!jjPath) {
@@ -103,7 +92,7 @@ export async function activate(context: vscode.ExtensionContext) {
     // Set up the SourceControlInputBox
     jjSCM.inputBox.placeholder = "Change commit message (Ctrl+Enter)";
     
-    const acceptInputCommand = vscode.commands.registerCommand("jjk.describe", async () => {
+    const acceptInputCommand = vscode.commands.registerCommand("jj.describe", async () => {
       const newCommitMessage = jjSCM.inputBox.value.trim();
       if (!newCommitMessage) {
         vscode.window.showErrorMessage("Commit message cannot be empty.");
@@ -122,21 +111,12 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // Link the acceptInputCommand to the SourceControl instance
     jjSCM.acceptInputCommand = {
-      command: "jjk.describe",
+      command: "jj.describe",
       title: "Change Commit Message",
     };
 
-    // Add a button to the Source Control view
-    const describeButton = vscode.commands.registerCommand(
-      "jjk.describeButton",
-      async () => {
-        vscode.commands.executeCommand("jjk.describe");
-      }
-    );
-
     context.subscriptions.push(
       acceptInputCommand,
-      describeButton,
       jjSCM
     );
   }

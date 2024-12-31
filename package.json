@@ -40,24 +40,19 @@
         "icon": "$(go-to-file)"
       },
       {
-        "command": "jjk.describeButton",
+        "command": "jj.describe",
         "title": "Change commit message"
       }
     ],
     "menus": {
       "scm/title": [
         {
-          "command": "jjk.helloWorld",
-          "when": "scmProvider == jj",
-          "group": "navigation"
-        },
-        {
           "command": "jj.refresh",
           "when": "scmProvider == jj",
           "group": "navigation"
         },
         {
-          "command": "jjk.describeButton",
+          "command": "jj.describe",
           "group": "navigation",
           "when": "scmProvider == jj"
         }
