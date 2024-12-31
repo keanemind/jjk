@@ -17,10 +17,6 @@
   "contributes": {
     "commands": [
       {
-        "command": "jjk.helloWorld",
-        "title": "Hello World"
-      },
-      {
         "command": "jj.refresh",
         "title": "Refresh",
         "category": "Jujutsu",
@@ -42,6 +38,11 @@
       {
         "command": "jj.describe",
         "title": "Change commit message"
+      },
+      {
+        "command": "jj.new",
+        "title": "Create new commit",
+        "icon": "$(plus)"
       }
     ],
     "menus": {
@@ -53,8 +54,13 @@
         },
         {
           "command": "jj.describe",
-          "group": "navigation",
-          "when": "scmProvider == jj"
+          "when": "scmProvider == jj",
+          "group": "navigation"
+        },
+        {
+          "command": "jj.new",
+          "when": "scmProvider == jj",
+          "group": "navigation"
         }
       ]
     },

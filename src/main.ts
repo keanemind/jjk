@@ -8,6 +8,7 @@ import { JJDecorationProvider } from "./decorationProvider";
 import { JJFileSystemProvider } from "./fileSystemProvider";
 import { toJJUri } from "./uri";
 import { describeCommit } from "./describe";
+import { createCommit } from "./new";
 
 export async function activate(context: vscode.ExtensionContext) {
   // Use the console to output diagnostic information (console.log) and errors (console.error)
@@ -22,7 +23,7 @@ export async function activate(context: vscode.ExtensionContext) {
   const decorationProvider = new JJDecorationProvider();
   context.subscriptions.push(
     vscode.window.registerFileDecorationProvider(decorationProvider)
-  );
+  )
 
   // Check if the jj CLI is installed
   const jjPath = await which("jj", { nothrow: true });
@@ -123,7 +124,15 @@ export async function activate(context: vscode.ExtensionContext) {
       title: "Change Commit Message",
     };
 
-    context.subscriptions.push(acceptInputCommand, jjSCM);
+    const createCommitCommand = vscode.commands.registerCommand("jj.new", async () => {
+      await createCommit(repositories.repos[0].repositoryRoot);
+    });
+
+    context.subscriptions.push(
+      acceptInputCommand,
+      createCommitCommand,
+      jjSCM
+    );
   }
 }
 
