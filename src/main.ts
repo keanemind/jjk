@@ -23,7 +23,7 @@ export async function activate(context: vscode.ExtensionContext) {
   const decorationProvider = new JJDecorationProvider();
   context.subscriptions.push(
     vscode.window.registerFileDecorationProvider(decorationProvider)
-  )
+  );
 
   // Check if the jj CLI is installed
   const jjPath = await which("jj", { nothrow: true });
@@ -43,56 +43,32 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions
   );
 
-  const fileSystemProvider = new JJFileSystemProvider(repositories);
-  context.subscriptions.push(
-    vscode.workspace.registerFileSystemProvider("jj", fileSystemProvider, {
-      isReadonly: true,
-      isCaseSensitive: true,
-    })
-  );
+  let jjSCM: vscode.SourceControl | undefined;
+  let workingCopyResourceGroup: vscode.SourceControlResourceGroup | undefined;
+  function init() {
+    const fileSystemProvider = new JJFileSystemProvider(repositories);
+    context.subscriptions.push(
+      vscode.workspace.registerFileSystemProvider("jj", fileSystemProvider, {
+        isReadonly: true,
+        isCaseSensitive: true,
+      })
+    );
 
-  // Determine if the workspace contains a jj repository
-  if (repositories.repos.length > 0) {
-    const fsWatcher = vscode.workspace.createFileSystemWatcher("**");
-    context.subscriptions.push(fsWatcher);
+    jjSCM = vscode.scm.createSourceControl("jj", "Jujutsu");
+    context.subscriptions.push(jjSCM);
 
-    const jjSCM = vscode.scm.createSourceControl("jj", "Jujutsu");
-    const workingCopy = jjSCM.createResourceGroup(
+    workingCopyResourceGroup = jjSCM.createResourceGroup(
       "workingCopy",
       "Working Copy"
     );
-
-    const status = await repositories.repos[0].status();
-    decorationProvider.onDidRunStatus(status);
-    workingCopy.resourceStates = status.fileStatuses.map((fileStatus) => {
-      return {
-        resourceUri: vscode.Uri.file(fileStatus.path),
-        decorations: {
-          strikeThrough: fileStatus.type === "D",
-          tooltip: path.basename(fileStatus.file),
-        },
-        command: {
-          title: "Open",
-          command: "vscode.diff",
-          arguments: [
-            toJJUri(
-              vscode.Uri.file(fileStatus.path),
-              status.parentCommit.changeId
-            ),
-            vscode.Uri.file(fileStatus.path),
-            fileStatus.file + " (Working Copy)",
-          ],
-        },
-      };
-    });
+    context.subscriptions.push(workingCopyResourceGroup);
 
     // Set up the SourceControlInputBox
     jjSCM.inputBox.placeholder = "Change commit message (Ctrl+Enter)";
 
-    const acceptInputCommand = vscode.commands.registerCommand(
-      "jj.describe",
-      async () => {
-        const newCommitMessage = jjSCM.inputBox.value.trim();
+    context.subscriptions.push(
+      vscode.commands.registerCommand("jj.describe", async () => {
+        const newCommitMessage = jjSCM!.inputBox.value.trim();
         if (!newCommitMessage) {
           vscode.window.showErrorMessage("Commit message cannot be empty.");
           return;
@@ -106,7 +82,7 @@ export async function activate(context: vscode.ExtensionContext) {
             repositories.repos[0].repositoryRoot,
             newCommitMessage
           );
-          jjSCM.inputBox.value = "";
+          jjSCM!.inputBox.value = "";
           vscode.window.showInformationMessage(
             "Commit message updated successfully."
           );
@@ -115,7 +91,7 @@ export async function activate(context: vscode.ExtensionContext) {
             `Failed to update commit message: ${error.message}`
           );
         }
-      }
+      })
     );
 
     // Link the acceptInputCommand to the SourceControl instance
@@ -124,16 +100,58 @@ export async function activate(context: vscode.ExtensionContext) {
       title: "Change Commit Message",
     };
 
-    const createCommitCommand = vscode.commands.registerCommand("jj.new", async () => {
-      await createCommit(repositories.repos[0].repositoryRoot);
-    });
-
     context.subscriptions.push(
-      acceptInputCommand,
-      createCommitCommand,
-      jjSCM
+      vscode.commands.registerCommand("jj.new", async () => {
+        await createCommit(repositories.repos[0].repositoryRoot);
+      })
     );
   }
+
+  async function updateResources() {
+    if (repositories.repos.length > 0) {
+      if (!jjSCM) {
+        init();
+      }
+
+      const status = await repositories.repos[0].status();
+      decorationProvider.onDidRunStatus(status);
+      workingCopyResourceGroup!.resourceStates = status.fileStatuses.map(
+        (fileStatus) => {
+          return {
+            resourceUri: vscode.Uri.file(fileStatus.path),
+            decorations: {
+              strikeThrough: fileStatus.type === "D",
+              tooltip: path.basename(fileStatus.file),
+            },
+            command: {
+              title: "Open",
+              command: "vscode.diff",
+              arguments: [
+                toJJUri(
+                  vscode.Uri.file(fileStatus.path),
+                  status.parentCommit.changeId
+                ),
+                vscode.Uri.file(fileStatus.path),
+                fileStatus.file + " (Working Copy)",
+              ],
+            },
+          };
+        }
+      );
+    }
+  }
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("jj.refresh", updateResources)
+  );
+
+  await updateResources();
+  const intervalId = setInterval(updateResources, 5_000);
+  context.subscriptions.push({
+    dispose() {
+      clearInterval(intervalId);
+    },
+  });
 }
 
 // This method is called when your extension is deactivated
