@@ -41,8 +41,9 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions
   );
 
-  let jjSCM: vscode.SourceControl | undefined;
+  let jjSCM: vscode.SourceControl;
   let workingCopyResourceGroup: vscode.SourceControlResourceGroup | undefined;
+
   function init() {
     const fileSystemProvider = new JJFileSystemProvider(repositories);
     context.subscriptions.push(
@@ -59,6 +60,7 @@ export async function activate(context: vscode.ExtensionContext) {
       "workingCopy",
       "Working Copy"
     );
+
     context.subscriptions.push(workingCopyResourceGroup);
 
     // Set up the SourceControlInputBox
@@ -102,6 +104,8 @@ export async function activate(context: vscode.ExtensionContext) {
     );
   }
 
+  let parentResourceGroups: vscode.SourceControlResourceGroup[] = [];
+
   async function updateResources() {
     if (repositories.repos.length > 0) {
       if (!jjSCM) {
@@ -124,7 +128,7 @@ export async function activate(context: vscode.ExtensionContext) {
               arguments: [
                 toJJUri(
                   vscode.Uri.file(fileStatus.path),
-                  status.parentCommit.changeId
+                  status.parentChanges[0].changeId
                 ),
                 vscode.Uri.file(fileStatus.path),
                 fileStatus.file + " (Working Copy)",
@@ -133,6 +137,58 @@ export async function activate(context: vscode.ExtensionContext) {
           };
         }
       );
+
+      for (const group of parentResourceGroups){
+        group.dispose();
+      }
+      parentResourceGroups = [];
+
+      for (const parentCommit of status.parentChanges) {
+        let parentCommitResourceGroup: vscode.SourceControlResourceGroup | undefined;
+        parentCommitResourceGroup = jjSCM.createResourceGroup(
+          parentCommit.changeId,
+          parentCommit.description ? `Parent Commit | ${parentCommit.changeId}: ${parentCommit.description}`
+          : `Parent Commit | ${parentCommit.changeId} (no description set)`
+        );
+        parentResourceGroups.push(parentCommitResourceGroup);
+        
+        context.subscriptions.push(parentCommitResourceGroup);
+
+
+        const parentStatuses = await repositories.repos[0].show(parentCommit.changeId);
+
+        parentCommitResourceGroup!.resourceStates = parentStatuses.map(
+          (parentStatus) => {
+            return {
+              resourceUri: toJJUri(
+                vscode.Uri.file(parentStatus.path),
+                parentCommit.changeId
+              ),
+              decorations: {
+                strikeThrough: parentStatus.type === "D",
+                tooltip: path.basename(parentStatus.file),
+              },
+              command: {
+                title: "Open",
+                command: "vscode.diff",
+                arguments: [
+                  toJJUri(
+                    vscode.Uri.file(parentStatus.path),
+                    parentCommit.changeId
+                  ),
+                  vscode.Uri.file(parentStatus.path),
+                  parentStatus.file + " (Parent Commit)",
+                ],
+              },
+            };
+          }
+        );
+
+        decorationProvider.addDecorators(
+          parentStatuses.map((status) => toJJUri(vscode.Uri.file(status.path), parentCommit.changeId)),
+          parentStatuses
+        );
+      }
     }
   }
 

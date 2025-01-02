@@ -64,6 +64,26 @@ class Repository {
     });
   }
 
+  show(rev: string) {
+    return new Promise<FileStatus[]>((resolve, reject) => {
+      const childProcess = spawn(
+        "jj",
+        ["show", "-s", "-r", rev],
+        {
+          timeout: 5000,
+          cwd: this.repositoryRoot,
+        }
+      );
+      let output = "";
+      childProcess.on("close", (code) => {
+        resolve(parseJJShow(this.repositoryRoot, output));
+      });
+      childProcess.stdout!.on("data", (data: string) => {
+        output += data;
+      });
+    });
+  }
+
   readFile(rev: string, path: string) {
     return new Promise<Buffer>((resolve, reject) => {
       const childProcess = spawn(
@@ -98,7 +118,7 @@ class Repository {
 
   createCommit(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      const childProcess = spawn("jj", ["new"], {
+      const childProcess = spawn("jj",["new"], {
         cwd: this.repositoryRoot,
       });
   
@@ -129,7 +149,7 @@ export type Change = {
 export type RepositoryStatus = {
   fileStatuses: FileStatus[];
   workingCopy: Change;
-  parentCommit: Change;
+  parentChanges: Change[];
 };
 
 function parseJJStatus(
@@ -139,11 +159,7 @@ function parseJJStatus(
   const lines = output.split("\n");
   const changes: FileStatus[] = [];
   let workingCopy: Change = { changeId: "", commitId: "", description: "" };
-  let parentCommit: Change = {
-    changeId: "",
-    commitId: "",
-    description: "",
-  };
+  let parentCommits: Change[] = [];
 
   const changeRegex = /^(A|M|D|R) (.+)$/;
   const commitRegex =
@@ -202,10 +218,56 @@ function parseJJStatus(
       if (type === "Working copy ") {
         workingCopy = commitDetails;
       } else if (type === "Parent commit") {
-        parentCommit = commitDetails;
+        parentCommits.push(commitDetails);
       }
     }
   }
 
-  return { fileStatuses: changes, workingCopy, parentCommit };
+  return { fileStatuses: changes, workingCopy, parentChanges: parentCommits };
 }
+
+function parseJJShow(
+  repositoryRoot: string,
+  output: string
+): FileStatus[] {
+  const changeRegex = /^(A|M|D|R) (.+)$/;
+  const renameRegex = /^(.+) \{(.+) => (.+)\}$/;
+
+  const lines = output.split("\n").slice(4);
+  const changes: FileStatus[] = [];
+
+  for (const line of lines) {
+    if (line.trim() === "" || line[0] === " ") {
+      continue;
+    }
+
+    const changeMatch = changeRegex.exec(line);
+    if (changeMatch) {
+      const [_, type, file] = changeMatch;
+
+      if (type === "R" && renameRegex.test(file)) {
+        const renameMatch = renameRegex.exec(file);
+        if (renameMatch) {
+          const [_, name, from, to] = renameMatch;
+          changes.push({
+            type: "R",
+            file: name,
+            path: path.join(repositoryRoot, name),
+            renameDetails: {
+              from,
+              to,
+            },
+          });
+        }
+      } else {
+        changes.push({
+          type: type as "A" | "M" | "D" | "R",
+          file,
+          path: path.join(repositoryRoot, file),
+        });
+      }
+    }
+  }
+
+  return changes;
+};

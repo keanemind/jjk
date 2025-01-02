@@ -6,7 +6,7 @@ import {
   Event,
   ThemeColor,
 } from "vscode";
-import { RepositoryStatus } from "./repository";
+import { FileStatus, RepositoryStatus } from "./repository";
 
 export class JJDecorationProvider implements FileDecorationProvider {
   private decorations = new Map<string, FileDecoration>();
@@ -27,6 +27,20 @@ export class JJDecorationProvider implements FileDecorationProvider {
     this._onDidChangeDecorations.fire(
       [...this.decorations.keys()].map((uri) => Uri.parse(uri))
     );
+  }
+
+  addDecorators(uris: Uri[], fileStatuses: FileStatus[]) {
+    uris.forEach((uri, index) => {
+      this.decorations.set(uri.toString(), {
+        badge: fileStatuses[index].type,
+        tooltip: fileStatuses[index].file,
+        color: new ThemeColor("jjDecoration.modifiedResourceForeground"),
+      });
+
+      this._onDidChangeDecorations.fire(
+        [...this.decorations.keys()].map((uri) => Uri.parse(uri))
+      );
+    });
   }
 
   provideFileDecoration(uri: Uri): FileDecoration | undefined {
