@@ -7,8 +7,6 @@ import { Repositories } from "./repository";
 import { JJDecorationProvider } from "./decorationProvider";
 import { JJFileSystemProvider } from "./fileSystemProvider";
 import { toJJUri } from "./uri";
-import { describeCommit } from "./describe";
-import { createCommit } from "./new";
 
 export async function activate(context: vscode.ExtensionContext) {
   // Use the console to output diagnostic information (console.log) and errors (console.error)
@@ -78,10 +76,7 @@ export async function activate(context: vscode.ExtensionContext) {
           logger.appendLine(
             `Running jj describe with message: "${newCommitMessage}"`
           );
-          await describeCommit(
-            repositories.repos[0].repositoryRoot,
-            newCommitMessage
-          );
+          await repositories.repos[0].describeCommit(newCommitMessage);
           jjSCM!.inputBox.value = "";
           vscode.window.showInformationMessage(
             "Commit message updated successfully."
@@ -102,7 +97,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     context.subscriptions.push(
       vscode.commands.registerCommand("jj.new", async () => {
-        await createCommit(repositories.repos[0].repositoryRoot);
+        await repositories.repos[0].createCommit();
       })
     );
   }

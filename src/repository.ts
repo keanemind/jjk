@@ -83,6 +83,30 @@ class Repository {
       });
     });
   }
+
+  describeCommit(message: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const childProcess = spawn("jj", ["describe", "-m", message], {
+        cwd: this.repositoryRoot,
+      });
+  
+      childProcess.on("close", () => {
+        resolve();
+      });
+    });
+  }
+
+  createCommit(): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const childProcess = spawn("jj", ["new"], {
+        cwd: this.repositoryRoot,
+      });
+  
+      childProcess.on("close", () => {
+        resolve();
+      });
+    });
+  }
 }
 
 export type FileStatus = {
