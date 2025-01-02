@@ -65,18 +65,18 @@ class Repository {
   }
 
   show(rev: string) {
-    return new Promise<FileStatus[]>((resolve, reject) => {
-      const childProcess = spawn(
-        "jj",
-        ["show", "-s", "-r", rev],
-        {
-          timeout: 5000,
-          cwd: this.repositoryRoot,
-        }
-      );
+    return new Promise<Show>((resolve, reject) => {
+      const childProcess = spawn("jj", ["show", "-s", "-r", rev], {
+        timeout: 5000,
+        cwd: this.repositoryRoot,
+      });
       let output = "";
       childProcess.on("close", (code) => {
-        resolve(parseJJShow(this.repositoryRoot, output));
+        try {
+          resolve(parseJJShow(this.repositoryRoot, output));
+        } catch (e) {
+          reject(e);
+        }
       });
       childProcess.stdout!.on("data", (data: string) => {
         output += data;
@@ -109,7 +109,7 @@ class Repository {
       const childProcess = spawn("jj", ["describe", "-m", message], {
         cwd: this.repositoryRoot,
       });
-  
+
       childProcess.on("close", () => {
         resolve();
       });
@@ -118,10 +118,10 @@ class Repository {
 
   createCommit(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      const childProcess = spawn("jj",["new"], {
+      const childProcess = spawn("jj", ["new"], {
         cwd: this.repositoryRoot,
       });
-  
+
       childProcess.on("close", () => {
         resolve();
       });
@@ -152,12 +152,17 @@ export type RepositoryStatus = {
   parentChanges: Change[];
 };
 
+export type Show = {
+  change: Change;
+  fileStatuses: FileStatus[];
+};
+
 function parseJJStatus(
   repositoryRoot: string,
   output: string
 ): RepositoryStatus {
   const lines = output.split("\n");
-  const changes: FileStatus[] = [];
+  const fileStatuses: FileStatus[] = [];
   let workingCopy: Change = { changeId: "", commitId: "", description: "" };
   let parentCommits: Change[] = [];
 
@@ -180,7 +185,7 @@ function parseJJStatus(
         const renameMatch = renameRegex.exec(file);
         if (renameMatch) {
           const [_, name, from, to] = renameMatch;
-          changes.push({
+          fileStatuses.push({
             type: "R",
             file: name,
             path: path.join(repositoryRoot, name),
@@ -191,7 +196,7 @@ function parseJJStatus(
           });
         }
       } else {
-        changes.push({
+        fileStatuses.push({
           type: type as "A" | "M" | "D" | "R",
           file,
           path: path.join(repositoryRoot, file),
@@ -223,18 +228,27 @@ function parseJJStatus(
     }
   }
 
-  return { fileStatuses: changes, workingCopy, parentChanges: parentCommits };
+  return {
+    fileStatuses: fileStatuses,
+    workingCopy,
+    parentChanges: parentCommits,
+  };
 }
 
-function parseJJShow(
-  repositoryRoot: string,
-  output: string
-): FileStatus[] {
+function parseJJShow(repositoryRoot: string, output: string): Show {
   const changeRegex = /^(A|M|D|R) (.+)$/;
   const renameRegex = /^(.+) \{(.+) => (.+)\}$/;
 
-  const lines = output.split("\n").slice(4);
-  const changes: FileStatus[] = [];
+  const lines = output.split("\n");
+
+  if (lines[0]?.includes("resolved to more than one revision")) {
+    throw new Error(lines[0]);
+  }
+
+  const ret: Show = {
+    change: { changeId: "", commitId: "", description: "" },
+    fileStatuses: [],
+  };
 
   for (const line of lines) {
     if (line.trim() === "" || line[0] === " ") {
@@ -249,7 +263,7 @@ function parseJJShow(
         const renameMatch = renameRegex.exec(file);
         if (renameMatch) {
           const [_, name, from, to] = renameMatch;
-          changes.push({
+          ret.fileStatuses.push({
             type: "R",
             file: name,
             path: path.join(repositoryRoot, name),
@@ -260,14 +274,18 @@ function parseJJShow(
           });
         }
       } else {
-        changes.push({
+        ret.fileStatuses.push({
           type: type as "A" | "M" | "D" | "R",
           file,
           path: path.join(repositoryRoot, file),
         });
       }
+    } else if (line.startsWith("Commit ID: ")) {
+      ret.change.commitId = line.split(" ")[2];
+    } else if (line.startsWith("Change ID: ")) {
+      ret.change.changeId = line.split(" ")[2];
     }
   }
 
-  return changes;
-};
+  return ret;
+}

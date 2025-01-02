@@ -3,7 +3,7 @@ import which from "which";
 import path from "node:path";
 
 import "./repository";
-import { Repositories } from "./repository";
+import { Repositories, Show } from "./repository";
 import { JJDecorationProvider } from "./decorationProvider";
 import { JJFileSystemProvider } from "./fileSystemProvider";
 import { toJJUri } from "./uri";
@@ -105,7 +105,6 @@ export async function activate(context: vscode.ExtensionContext) {
   }
 
   let parentResourceGroups: vscode.SourceControlResourceGroup[] = [];
-
   async function updateResources() {
     if (repositories.repos.length > 0) {
       if (!jjSCM) {
@@ -122,42 +121,65 @@ export async function activate(context: vscode.ExtensionContext) {
               strikeThrough: fileStatus.type === "D",
               tooltip: path.basename(fileStatus.file),
             },
-            command: {
-              title: "Open",
-              command: "vscode.diff",
-              arguments: [
-                toJJUri(
-                  vscode.Uri.file(fileStatus.path),
-                  status.parentChanges[0].changeId
-                ),
-                vscode.Uri.file(fileStatus.path),
-                fileStatus.file + " (Working Copy)",
-              ],
-            },
+            command:
+              status.parentChanges.length === 1
+                ? {
+                    title: "Open",
+                    command: "vscode.diff",
+                    arguments: [
+                      toJJUri(
+                        vscode.Uri.file(fileStatus.path),
+                        status.parentChanges[0].changeId
+                      ),
+                      vscode.Uri.file(fileStatus.path),
+                      fileStatus.file + " (Working Copy)",
+                    ],
+                  }
+                : undefined,
           };
         }
       );
 
-      for (const group of parentResourceGroups){
+      for (const group of parentResourceGroups) {
         group.dispose();
       }
       parentResourceGroups = [];
 
       for (const parentCommit of status.parentChanges) {
-        let parentCommitResourceGroup: vscode.SourceControlResourceGroup | undefined;
+        let parentCommitResourceGroup:
+          | vscode.SourceControlResourceGroup
+          | undefined;
         parentCommitResourceGroup = jjSCM.createResourceGroup(
           parentCommit.changeId,
-          parentCommit.description ? `Parent Commit | ${parentCommit.changeId}: ${parentCommit.description}`
-          : `Parent Commit | ${parentCommit.changeId} (no description set)`
+          parentCommit.description
+            ? `Parent Commit | ${parentCommit.changeId}: ${parentCommit.description}`
+            : `Parent Commit | ${parentCommit.changeId} (no description set)`
         );
         parentResourceGroups.push(parentCommitResourceGroup);
-        
+
         context.subscriptions.push(parentCommitResourceGroup);
 
+        const showResult = await repositories.repos[0].show(
+          parentCommit.changeId
+        );
 
-        const parentStatuses = await repositories.repos[0].show(parentCommit.changeId);
+        let grandparentShowResult: Show | undefined;
+        try {
+          grandparentShowResult = await repositories.repos[0].show(
+            `${parentCommit.changeId}-`
+          );
+        } catch (e) {
+          if (
+            e instanceof Error &&
+            e.message.includes("resolved to more than one revision")
+          ) {
+            // Leave grandparentShowResult as undefined
+          } else {
+            throw e;
+          }
+        }
 
-        parentCommitResourceGroup!.resourceStates = parentStatuses.map(
+        parentCommitResourceGroup!.resourceStates = showResult.fileStatuses.map(
           (parentStatus) => {
             return {
               resourceUri: toJJUri(
@@ -168,25 +190,32 @@ export async function activate(context: vscode.ExtensionContext) {
                 strikeThrough: parentStatus.type === "D",
                 tooltip: path.basename(parentStatus.file),
               },
-              command: {
-                title: "Open",
-                command: "vscode.diff",
-                arguments: [
-                  toJJUri(
-                    vscode.Uri.file(parentStatus.path),
-                    parentCommit.changeId
-                  ),
-                  vscode.Uri.file(parentStatus.path),
-                  parentStatus.file + " (Parent Commit)",
-                ],
-              },
+              command: grandparentShowResult
+                ? {
+                    title: "Open",
+                    command: "vscode.diff",
+                    arguments: [
+                      toJJUri(
+                        vscode.Uri.file(parentStatus.path),
+                        grandparentShowResult.change.changeId
+                      ),
+                      toJJUri(
+                        vscode.Uri.file(parentStatus.path),
+                        parentCommit.changeId
+                      ),
+                      parentStatus.file + " (Parent Commit)",
+                    ],
+                  }
+                : undefined,
             };
           }
         );
 
         decorationProvider.addDecorators(
-          parentStatuses.map((status) => toJJUri(vscode.Uri.file(status.path), parentCommit.changeId)),
-          parentStatuses
+          showResult.fileStatuses.map((status) =>
+            toJJUri(vscode.Uri.file(status.path), parentCommit.changeId)
+          ),
+          showResult.fileStatuses
         );
       }
     }
