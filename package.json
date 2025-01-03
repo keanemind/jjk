@@ -37,7 +37,8 @@
       },
       {
         "command": "jj.describe",
-        "title": "Update change description"
+        "title": "Update change description",
+        "icon": "$(edit)"
       },
       {
         "command": "jj.new",
@@ -56,6 +57,13 @@
           "command": "jj.new",
           "when": "scmProvider == jj",
           "group": "navigation"
+        }
+      ],
+      "scm/resourceGroup/context": [
+        {
+          "command": "jj.describe",
+          "when": "scmProvider == jj",
+          "group": "inline"
         }
       ]
     },

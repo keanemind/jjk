@@ -104,9 +104,9 @@ class Repository {
     });
   }
 
-  describe(message: string): Promise<void> {
+  describe(rev: string, message: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      const childProcess = spawn("jj", ["describe", "-m", message], {
+      const childProcess = spawn("jj", ["describe", "-m", message, rev], {
         cwd: this.repositoryRoot,
       });
 

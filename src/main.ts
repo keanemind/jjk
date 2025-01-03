@@ -56,10 +56,7 @@ export async function activate(context: vscode.ExtensionContext) {
     jjSCM = vscode.scm.createSourceControl("jj", "Jujutsu");
     context.subscriptions.push(jjSCM);
 
-    workingCopyResourceGroup = jjSCM.createResourceGroup(
-      "workingCopy",
-      "Working Copy"
-    );
+    workingCopyResourceGroup = jjSCM.createResourceGroup("@", "Working Copy");
     context.subscriptions.push(workingCopyResourceGroup);
 
     // Set up the SourceControlInputBox
@@ -80,28 +77,30 @@ export async function activate(context: vscode.ExtensionContext) {
     );
 
     context.subscriptions.push(
-      vscode.commands.registerCommand("jj.describe", async () => {
-        const newCommitMessage = jjSCM!.inputBox.value.trim();
-        if (!newCommitMessage) {
-          vscode.window.showErrorMessage("Commit message cannot be empty.");
-          return;
-        }
+      vscode.commands.registerCommand(
+        "jj.describe",
+        async (resourceGroup: vscode.SourceControlResourceGroup) => {
+          const message = await vscode.window.showInputBox({
+            prompt: "Provide a description",
+            placeHolder: "Change description here...",
+          });
 
-        try {
-          logger.appendLine(
-            `Running jj describe with message: "${newCommitMessage}"`
-          );
-          await repositories.repos[0].describe(newCommitMessage);
-          jjSCM!.inputBox.value = "";
-          vscode.window.showInformationMessage(
-            "Commit message updated successfully."
-          );
-        } catch (error: any) {
-          vscode.window.showErrorMessage(
-            `Failed to update commit message: ${error.message}`
-          );
+          if (message === undefined) {
+            return;
+          }
+
+          try {
+            await repositories.repos[0].describe(resourceGroup.id, message);
+            vscode.window.showInformationMessage(
+              "Description updated successfully."
+            );
+          } catch (error: any) {
+            vscode.window.showErrorMessage(
+              `Failed to update description: ${error.message}`
+            );
+          }
         }
-      })
+      )
     );
   }
 
@@ -159,7 +158,6 @@ export async function activate(context: vscode.ExtensionContext) {
             : `Parent Commit | ${parentCommit.changeId} (no description set)`
         );
         parentResourceGroups.push(parentCommitResourceGroup);
-
         context.subscriptions.push(parentCommitResourceGroup);
 
         const showResult = await repositories.repos[0].show(
