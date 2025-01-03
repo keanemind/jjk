@@ -113,6 +113,13 @@ export async function activate(context: vscode.ExtensionContext) {
 
       const status = await repositories.repos[0].status();
       decorationProvider.onDidRunStatus(status);
+      workingCopyResourceGroup!.label = `Working Copy | ${
+        status.workingCopy.changeId
+      }${
+        status.workingCopy.description
+          ? `: ${status.workingCopy.description}`
+          : " (no description set)"
+      }`;
       workingCopyResourceGroup!.resourceStates = status.fileStatuses.map(
         (fileStatus) => {
           return {
