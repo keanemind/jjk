@@ -37,11 +37,11 @@
       },
       {
         "command": "jj.describe",
-        "title": "Change commit message"
+        "title": "Update change description"
       },
       {
         "command": "jj.new",
-        "title": "Create new commit",
+        "title": "Create new change",
         "icon": "$(plus)"
       }
     ],
@@ -49,11 +49,6 @@
       "scm/title": [
         {
           "command": "jj.refresh",
-          "when": "scmProvider == jj",
-          "group": "navigation"
-        },
-        {
-          "command": "jj.describe",
           "when": "scmProvider == jj",
           "group": "navigation"
         },

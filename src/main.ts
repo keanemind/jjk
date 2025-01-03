@@ -91,12 +91,6 @@ export async function activate(context: vscode.ExtensionContext) {
       })
     );
 
-    // Link the acceptInputCommand to the SourceControl instance
-    jjSCM.acceptInputCommand = {
-      command: "jj.describe",
-      title: "Change Commit Message",
-    };
-
     context.subscriptions.push(
       vscode.commands.registerCommand("jj.new", async () => {
         await repositories.repos[0].createCommit();
@@ -132,7 +126,9 @@ export async function activate(context: vscode.ExtensionContext) {
                         status.parentChanges[0].changeId
                       ),
                       vscode.Uri.file(fileStatus.path),
-                      (fileStatus.renamedFrom ? `${fileStatus.renamedFrom} => ` : "") + `${fileStatus.file} (Working Copy)`
+                      (fileStatus.renamedFrom
+                        ? `${fileStatus.renamedFrom} => `
+                        : "") + `${fileStatus.file} (Working Copy)`,
                     ],
                   }
                 : undefined,
@@ -203,7 +199,9 @@ export async function activate(context: vscode.ExtensionContext) {
                         vscode.Uri.file(parentStatus.path),
                         parentCommit.changeId
                       ),
-                      (parentStatus.renamedFrom ? `${parentStatus.renamedFrom} => ` : "") + `${parentStatus.file} (Parent Commit)`
+                      (parentStatus.renamedFrom
+                        ? `${parentStatus.renamedFrom} => `
+                        : "") + `${parentStatus.file} (Parent Commit)`,
                     ],
                   }
                 : undefined,
