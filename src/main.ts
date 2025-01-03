@@ -105,6 +105,7 @@ export async function activate(context: vscode.ExtensionContext) {
   }
 
   let parentResourceGroups: vscode.SourceControlResourceGroup[] = [];
+
   async function updateResources() {
     if (repositories.repos.length > 0) {
       if (!jjSCM) {
@@ -149,23 +150,44 @@ export async function activate(context: vscode.ExtensionContext) {
         }
       );
 
+      const updatedGroups: vscode.SourceControlResourceGroup[] = [];
       for (const group of parentResourceGroups) {
-        group.dispose();
+        const parentChange = status.parentChanges.find(change => change.changeId === group.id);
+        if (!parentChange) {
+          group.dispose();
+        } else {
+          group.label = `Parent Commit | ${
+            parentChange.changeId
+          }${
+            parentChange.description
+              ? `: ${parentChange.description}`
+              : " (no description set)"
+          }`;
+          updatedGroups.push(group);
+        }
       }
-      parentResourceGroups = [];
+
+      parentResourceGroups = updatedGroups;
 
       for (const parentChange of status.parentChanges) {
         let parentChangeResourceGroup:
           | vscode.SourceControlResourceGroup
           | undefined;
-        parentChangeResourceGroup = jjSCM.createResourceGroup(
-          parentChange.changeId,
-          parentChange.description
-            ? `Parent Change | ${parentChange.changeId}: ${parentChange.description}`
-            : `Parent Change | ${parentChange.changeId} (no description set)`
-        );
-        parentResourceGroups.push(parentChangeResourceGroup);
-        context.subscriptions.push(parentChangeResourceGroup);
+
+        const parentGroup = parentResourceGroups.find(group => group.id === parentChange.changeId);
+        if (!parentGroup) {
+          parentChangeResourceGroup = jjSCM.createResourceGroup(
+            parentChange.changeId,
+            parentChange.description
+              ? `Parent Commit | ${parentChange.changeId}: ${parentChange.description}`
+              : `Parent Commit | ${parentChange.changeId} (no description set)`
+          );
+          
+          parentResourceGroups.push(parentChangeResourceGroup);
+          context.subscriptions.push(parentChangeResourceGroup);
+        } else {
+          parentChangeResourceGroup = parentGroup;
+        }
 
         const showResult = await repositories.repos[0].show(
           parentChange.changeId
