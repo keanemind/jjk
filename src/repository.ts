@@ -133,10 +133,7 @@ export type FileStatus = {
   type: "A" | "M" | "D" | "R";
   file: string;
   path: string;
-  renameDetails?: {
-    from: string;
-    to: string;
-  };
+  renamedFrom?: string;
 };
 
 export type Change = {
@@ -169,8 +166,7 @@ function parseJJStatus(
   const changeRegex = /^(A|M|D|R) (.+)$/;
   const commitRegex =
     /^(Working copy |Parent commit): (\S+) (\S+)(?: (\S+) \|)?(?: (.*))?$/;
-
-  const renameRegex = /^(.+) \{(.+) => (.+)\}$/;
+  const renameRegex = /^\{(.+) => (.+)\}$/;
 
   for (const line of lines) {
     if (line.startsWith("Working copy changes:") || line.trim() === "") {
@@ -184,15 +180,12 @@ function parseJJStatus(
       if (type === "R" && renameRegex.test(file)) {
         const renameMatch = renameRegex.exec(file);
         if (renameMatch) {
-          const [_, name, from, to] = renameMatch;
+          const [_, from, to] = renameMatch;
           fileStatuses.push({
             type: "R",
-            file: name,
-            path: path.join(repositoryRoot, name),
-            renameDetails: {
-              from,
-              to,
-            },
+            file: to,
+            path: path.join(repositoryRoot, to),
+            renamedFrom: from
           });
         }
       } else {
@@ -237,7 +230,7 @@ function parseJJStatus(
 
 function parseJJShow(repositoryRoot: string, output: string): Show {
   const changeRegex = /^(A|M|D|R) (.+)$/;
-  const renameRegex = /^(.+) \{(.+) => (.+)\}$/;
+  const renameRegex = /^\{(.+) => (.+)\}$/;
 
   const lines = output.split("\n");
 
@@ -262,15 +255,12 @@ function parseJJShow(repositoryRoot: string, output: string): Show {
       if (type === "R" && renameRegex.test(file)) {
         const renameMatch = renameRegex.exec(file);
         if (renameMatch) {
-          const [_, name, from, to] = renameMatch;
+          const [_, from, to] = renameMatch;
           ret.fileStatuses.push({
             type: "R",
-            file: name,
-            path: path.join(repositoryRoot, name),
-            renameDetails: {
-              from,
-              to,
-            },
+            file: to,
+            path: path.join(repositoryRoot, to),
+            renamedFrom: from,
           });
         }
       } else {

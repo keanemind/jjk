@@ -132,7 +132,7 @@ export async function activate(context: vscode.ExtensionContext) {
                         status.parentChanges[0].changeId
                       ),
                       vscode.Uri.file(fileStatus.path),
-                      fileStatus.file + " (Working Copy)",
+                      (fileStatus.renamedFrom ? `${fileStatus.renamedFrom} => ` : "") + `${fileStatus.file} (Working Copy)`
                     ],
                   }
                 : undefined,
@@ -203,7 +203,7 @@ export async function activate(context: vscode.ExtensionContext) {
                         vscode.Uri.file(parentStatus.path),
                         parentCommit.changeId
                       ),
-                      parentStatus.file + " (Parent Commit)",
+                      (parentStatus.renamedFrom ? `${parentStatus.renamedFrom} => ` : "") + `${parentStatus.file} (Parent Commit)`
                     ],
                   }
                 : undefined,
