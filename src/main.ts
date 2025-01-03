@@ -60,11 +60,24 @@ export async function activate(context: vscode.ExtensionContext) {
       "workingCopy",
       "Working Copy"
     );
-
     context.subscriptions.push(workingCopyResourceGroup);
 
     // Set up the SourceControlInputBox
-    jjSCM.inputBox.placeholder = "Change commit message (Ctrl+Enter)";
+    jjSCM.inputBox.placeholder = "Describe new change (Ctrl+Enter)";
+
+    // Link the acceptInputCommand to the SourceControl instance
+    jjSCM.acceptInputCommand = {
+      command: "jj.new",
+      title: "Create new change",
+    };
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand("jj.new", async () => {
+        const message = jjSCM!.inputBox.value.trim() || undefined;
+        await repositories.repos[0].new(message);
+        jjSCM!.inputBox.value = "";
+      })
+    );
 
     context.subscriptions.push(
       vscode.commands.registerCommand("jj.describe", async () => {
@@ -78,7 +91,7 @@ export async function activate(context: vscode.ExtensionContext) {
           logger.appendLine(
             `Running jj describe with message: "${newCommitMessage}"`
           );
-          await repositories.repos[0].describeCommit(newCommitMessage);
+          await repositories.repos[0].describe(newCommitMessage);
           jjSCM!.inputBox.value = "";
           vscode.window.showInformationMessage(
             "Commit message updated successfully."
@@ -88,12 +101,6 @@ export async function activate(context: vscode.ExtensionContext) {
             `Failed to update commit message: ${error.message}`
           );
         }
-      })
-    );
-
-    context.subscriptions.push(
-      vscode.commands.registerCommand("jj.new", async () => {
-        await repositories.repos[0].createCommit();
       })
     );
   }

@@ -104,7 +104,7 @@ class Repository {
     });
   }
 
-  describeCommit(message: string): Promise<void> {
+  describe(message: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const childProcess = spawn("jj", ["describe", "-m", message], {
         cwd: this.repositoryRoot,
@@ -116,11 +116,15 @@ class Repository {
     });
   }
 
-  createCommit(): Promise<void> {
+  new(message?: string): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      const childProcess = spawn("jj", ["new"], {
-        cwd: this.repositoryRoot,
-      });
+      const childProcess = spawn(
+        "jj",
+        ["new", ...(message ? ["-m", message] : [])],
+        {
+          cwd: this.repositoryRoot,
+        }
+      );
 
       childProcess.on("close", () => {
         resolve();
@@ -185,7 +189,7 @@ function parseJJStatus(
             type: "R",
             file: to,
             path: path.join(repositoryRoot, to),
-            renamedFrom: from
+            renamedFrom: from,
           });
         }
       } else {
