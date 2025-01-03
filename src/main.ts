@@ -154,27 +154,27 @@ export async function activate(context: vscode.ExtensionContext) {
       }
       parentResourceGroups = [];
 
-      for (const parentCommit of status.parentChanges) {
-        let parentCommitResourceGroup:
+      for (const parentChange of status.parentChanges) {
+        let parentChangeResourceGroup:
           | vscode.SourceControlResourceGroup
           | undefined;
-        parentCommitResourceGroup = jjSCM.createResourceGroup(
-          parentCommit.changeId,
-          parentCommit.description
-            ? `Parent Commit | ${parentCommit.changeId}: ${parentCommit.description}`
-            : `Parent Commit | ${parentCommit.changeId} (no description set)`
+        parentChangeResourceGroup = jjSCM.createResourceGroup(
+          parentChange.changeId,
+          parentChange.description
+            ? `Parent Change | ${parentChange.changeId}: ${parentChange.description}`
+            : `Parent Change | ${parentChange.changeId} (no description set)`
         );
-        parentResourceGroups.push(parentCommitResourceGroup);
-        context.subscriptions.push(parentCommitResourceGroup);
+        parentResourceGroups.push(parentChangeResourceGroup);
+        context.subscriptions.push(parentChangeResourceGroup);
 
         const showResult = await repositories.repos[0].show(
-          parentCommit.changeId
+          parentChange.changeId
         );
 
         let grandparentShowResult: Show | undefined;
         try {
           grandparentShowResult = await repositories.repos[0].show(
-            `${parentCommit.changeId}-`
+            `${parentChange.changeId}-`
           );
         } catch (e) {
           if (
@@ -187,12 +187,12 @@ export async function activate(context: vscode.ExtensionContext) {
           }
         }
 
-        parentCommitResourceGroup!.resourceStates = showResult.fileStatuses.map(
+        parentChangeResourceGroup!.resourceStates = showResult.fileStatuses.map(
           (parentStatus) => {
             return {
               resourceUri: toJJUri(
                 vscode.Uri.file(parentStatus.path),
-                parentCommit.changeId
+                parentChange.changeId
               ),
               decorations: {
                 strikeThrough: parentStatus.type === "D",
@@ -209,11 +209,11 @@ export async function activate(context: vscode.ExtensionContext) {
                       ),
                       toJJUri(
                         vscode.Uri.file(parentStatus.path),
-                        parentCommit.changeId
+                        parentChange.changeId
                       ),
                       (parentStatus.renamedFrom
                         ? `${parentStatus.renamedFrom} => `
-                        : "") + `${parentStatus.file} (Parent Commit)`,
+                        : "") + `${parentStatus.file} (Parent Change)`,
                     ],
                   }
                 : undefined,
@@ -223,7 +223,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
         decorationProvider.addDecorators(
           showResult.fileStatuses.map((status) =>
-            toJJUri(vscode.Uri.file(status.path), parentCommit.changeId)
+            toJJUri(vscode.Uri.file(status.path), parentChange.changeId)
           ),
           showResult.fileStatuses
         );
