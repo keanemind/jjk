@@ -1,13 +1,14 @@
 {
   "name": "jjk",
   "displayName": "Jujutsu Kaizen",
+  "publisher": "jjk",
   "description": "",
   "version": "0.0.1",
   "engines": {
     "vscode": "^1.96.0"
   },
   "categories": [
-    "Other"
+    "SCM Providers"
   ],
   "repository": {
     "type": "git",
