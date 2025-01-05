@@ -9,6 +9,10 @@
   "categories": [
     "Other"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/keanemind/jjk.git"
+  },
   "activationEvents": [
     "*",
     "onEditSession:file"
