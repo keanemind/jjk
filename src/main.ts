@@ -78,6 +78,26 @@ export async function activate(context: vscode.ExtensionContext) {
 
     context.subscriptions.push(
       vscode.commands.registerCommand(
+        "jj.openFile",
+        async (resourceState: vscode.SourceControlResourceState) => {
+          const opts: vscode.TextDocumentShowOptions = {
+            preserveFocus: false,
+            preview: false,
+            viewColumn: vscode.ViewColumn.Active,
+          };
+          await vscode.commands.executeCommand(
+            "vscode.open",
+            vscode.Uri.file(resourceState.resourceUri.fsPath),
+            {
+              ...opts,
+            }
+          );
+        }
+      )
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand(
         "jj.describe",
         async (resourceGroup: vscode.SourceControlResourceGroup) => {
           const message = await vscode.window.showInputBox({
@@ -152,13 +172,13 @@ export async function activate(context: vscode.ExtensionContext) {
 
       const updatedGroups: vscode.SourceControlResourceGroup[] = [];
       for (const group of parentResourceGroups) {
-        const parentChange = status.parentChanges.find(change => change.changeId === group.id);
+        const parentChange = status.parentChanges.find(
+          (change) => change.changeId === group.id
+        );
         if (!parentChange) {
           group.dispose();
         } else {
-          group.label = `Parent Commit | ${
-            parentChange.changeId
-          }${
+          group.label = `Parent Commit | ${parentChange.changeId}${
             parentChange.description
               ? `: ${parentChange.description}`
               : " (no description set)"
@@ -174,7 +194,9 @@ export async function activate(context: vscode.ExtensionContext) {
           | vscode.SourceControlResourceGroup
           | undefined;
 
-        const parentGroup = parentResourceGroups.find(group => group.id === parentChange.changeId);
+        const parentGroup = parentResourceGroups.find(
+          (group) => group.id === parentChange.changeId
+        );
         if (!parentGroup) {
           parentChangeResourceGroup = jjSCM.createResourceGroup(
             parentChange.changeId,
@@ -182,7 +204,7 @@ export async function activate(context: vscode.ExtensionContext) {
               ? `Parent Commit | ${parentChange.changeId}: ${parentChange.description}`
               : `Parent Commit | ${parentChange.changeId} (no description set)`
           );
-          
+
           parentResourceGroups.push(parentChangeResourceGroup);
           context.subscriptions.push(parentChangeResourceGroup);
         } else {

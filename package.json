@@ -24,14 +24,8 @@
         "enablement": "!operationInProgress"
       },
       {
-        "command": "jj.openChange",
-        "title": "%command.openChange%",
-        "category": "Jujutsu",
-        "icon": "$(compare-changes)"
-      },
-      {
         "command": "jj.openFile",
-        "title": "%command.openFile%",
+        "title": "Open file",
         "category": "Jujutsu",
         "icon": "$(go-to-file)"
       },
@@ -63,6 +57,13 @@
         {
           "command": "jj.describe",
           "when": "scmProvider == jj",
+          "group": "inline"
+        }
+      ],
+      "scm/resourceState/context": [
+        {
+          "command": "jj.openFile",
+          "when": "scmProvider == jj && scmResourceGroup == @",
           "group": "inline"
         }
       ]
