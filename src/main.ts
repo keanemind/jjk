@@ -46,6 +46,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   function init() {
     const fileSystemProvider = new JJFileSystemProvider(repositories);
+    context.subscriptions.push(fileSystemProvider);
     context.subscriptions.push(
       vscode.workspace.registerFileSystemProvider("jj", fileSystemProvider, {
         isReadonly: true,

@@ -12,6 +12,8 @@ import {
 import { getJJUriParams } from "./uri";
 import { Repositories } from "./repository";
 
+const THREE_MINUTES = 1000 * 60 * 3;
+
 export class JJFileSystemProvider implements FileSystemProvider {
   private _onDidChangeFile = new EventEmitter<FileChangeEvent[]>();
   readonly onDidChangeFile: Event<FileChangeEvent[]> =
@@ -21,7 +23,22 @@ export class JJFileSystemProvider implements FileSystemProvider {
 
   private fileCache = new Map<string, { timestamp: number; content: Buffer }>();
 
-  constructor(private repositories: Repositories) {}
+  private cleanupInterval: NodeJS.Timeout;
+
+  constructor(private repositories: Repositories) {
+    this.cleanupInterval = setInterval(() => {
+      const now = Date.now();
+      for (const [uri, value] of this.fileCache) {
+        if (now - value.timestamp > THREE_MINUTES) {
+          this.fileCache.delete(uri);
+        }
+      }
+    }, 1000 * 30);
+  }
+
+  dispose() {
+    clearInterval(this.cleanupInterval);
+  }
 
   watch(): Disposable {
     return new Disposable(() => {});
