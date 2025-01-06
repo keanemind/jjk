@@ -277,7 +277,15 @@ export async function activate(context: vscode.ExtensionContext) {
   }
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("jj.refresh", updateResources)
+    vscode.commands.registerCommand("jj.refresh", () => {
+      vscode.window.withProgress({ 
+        location: vscode.ProgressLocation.SourceControl 
+      },
+      async () => {
+        await updateResources();
+      }
+    );
+    })
   );
 
   await updateResources();
