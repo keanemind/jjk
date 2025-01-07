@@ -1,6 +1,6 @@
 # Jujutsu Kaizen
 
-[Jujutsu version control system](https://github.com/jj-vcs/jj) extension for VS Code.
+[Jujutsu (jj) version control system](https://github.com/jj-vcs/jj) extension for VS Code.
 
 ## Features
 
