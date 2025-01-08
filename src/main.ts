@@ -277,15 +277,7 @@ export async function activate(context: vscode.ExtensionContext) {
   }
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("jj.refresh", () => {
-      vscode.window.withProgress({ 
-        location: vscode.ProgressLocation.SourceControl 
-      },
-      async () => {
-        await updateResources();
-      }
-    );
-    })
+    vscode.commands.registerCommand("jj.refresh", showLoading(updateResources))
   );
 
   await updateResources();
@@ -295,6 +287,16 @@ export async function activate(context: vscode.ExtensionContext) {
       clearInterval(intervalId);
     },
   });
+}
+
+function showLoading(callback: () => Promise<void>) {
+  return () =>
+    vscode.window.withProgress(
+      { location: vscode.ProgressLocation.SourceControl },
+      async () => {
+        await callback();
+      }
+    );
 }
 
 // This method is called when your extension is deactivated
