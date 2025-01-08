@@ -16,16 +16,19 @@ export class JJDecorationProvider implements FileDecorationProvider {
     this._onDidChangeDecorations.event;
 
   onDidRunStatus(status: RepositoryStatus) {
+    const changedDecorationKeys = new Set<string>(this.decorations.keys());
     this.decorations.clear();
     for (const fileStatus of status.fileStatuses) {
-      this.decorations.set(Uri.file(fileStatus.path).toString(), {
+      const key = Uri.file(fileStatus.path).toString();
+      changedDecorationKeys.add(key);
+      this.decorations.set(key, {
         badge: fileStatus.type,
         tooltip: fileStatus.file,
         color: new ThemeColor("jjDecoration.modifiedResourceForeground"),
       });
     }
     this._onDidChangeDecorations.fire(
-      [...this.decorations.keys()].map((uri) => Uri.parse(uri))
+      [...changedDecorationKeys.keys()].map((uri) => Uri.parse(uri))
     );
   }
 
