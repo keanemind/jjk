@@ -7,6 +7,7 @@ import { Repositories, Show } from "./repository";
 import { JJDecorationProvider } from "./decorationProvider";
 import { JJFileSystemProvider } from "./fileSystemProvider";
 import { toJJUri } from "./uri";
+import { JJGraphProvider } from "./graphProvider";
 
 export async function activate(context: vscode.ExtensionContext) {
   // Use the console to output diagnostic information (console.log) and errors (console.error)
@@ -31,6 +32,8 @@ export async function activate(context: vscode.ExtensionContext) {
 
   const repositories = new Repositories();
   await repositories.init();
+
+  const logProvider = new JJGraphProvider(repositories);
 
   vscode.workspace.onDidChangeWorkspaceFolders(
     async (e) => {
@@ -330,6 +333,12 @@ export async function activate(context: vscode.ExtensionContext) {
       clearInterval(intervalId);
     },
   });
+
+  vscode.window.registerTreeDataProvider('jjGraphView', logProvider);
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('jj.refreshLog', () => logProvider.refresh())
+  );
 }
 
 function showLoading(callback: () => Promise<void>) {

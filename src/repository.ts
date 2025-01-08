@@ -1,6 +1,7 @@
 import path from "path";
 import * as vscode from "vscode";
 import spawn from "cross-spawn";
+import { CommitNode } from "./graphProvider";
 
 async function findReposInWorkspace() {
   const repos: Repository[] = [];
@@ -147,6 +148,54 @@ class Repository {
       });
     });
   }
+
+  log(): Promise<CommitNode[]> {
+    return new Promise((resolve, reject) => {
+      const childProcess = spawn(
+        "jj",
+        ["log", "-r", "::", "--limit", "50"],
+        {
+          cwd: this.repositoryRoot,
+        }
+      );
+
+      let output = "";
+      childProcess.on("close", () => {
+        try {
+          resolve(parseLog(output));
+        } catch (e) {
+          reject(e);
+        }
+      });
+      childProcess.stdout!.on("data", (data: string) => {
+        output += data;
+      });
+    });
+  }
+}
+
+function parseLog(output: string): CommitNode[] {
+  return output
+    .split('\n')
+    .filter(line => line.trim())
+    .map((line, index) => {
+      let changeId = '';
+      if (index % 2 === 0) { // Check if the line is odd-numbered (0-based index, so 0, 2, 4... are odd lines)
+        const match = line.match(/\b([a-zA-Z0-9]+)\b/); // Match the first group of alphanumeric characters
+        if (match) {
+          changeId = match[1];
+        }
+      }
+
+      const formattedLine = line.replace(/(?<![a-zA-Z0-9\)])\s/g, '   '); // Replace all whitespace with 3 spaces
+
+      return new CommitNode(
+        formattedLine,
+        '',
+        changeId,
+        changeId
+      );
+    });
 }
 
 export type FileStatus = {

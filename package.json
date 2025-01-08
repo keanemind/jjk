@@ -21,6 +21,14 @@
   ],
   "main": "./dist/main.js",
   "contributes": {
+    "views": {
+      "scm": [
+        {
+          "id": "jjGraphView",
+          "name": "Source Control Graph (JJ)"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "jj.refresh",
@@ -49,9 +57,33 @@
         "command": "jj.squash",
         "title": "Move changes to parent",
         "icon": "$(arrow-down)"
+      },
+      {
+        "command": "jj.refreshLog",
+        "title": "Refresh Commit Graph",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "jj.edit",
+        "title": "Edit this change",
+        "icon": "$(debug-step-into)"
       }
     ],
     "menus": {
+      "view/title": [
+        {
+          "command": "jj.refreshLog",
+          "when": "view == jjGraphView",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "jj.edit",
+          "when": "view == jjGraphView",
+          "group": "inline"
+        }
+      ],
       "scm/title": [
         {
           "command": "jj.refresh",
