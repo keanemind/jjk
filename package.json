@@ -44,6 +44,11 @@
         "command": "jj.new",
         "title": "Create new change",
         "icon": "$(plus)"
+      },
+      {
+        "command": "jj.squash",
+        "title": "Move changes to parent",
+        "icon": "$(arrow-down)"
       }
     ],
     "menus": {
@@ -63,6 +68,11 @@
         {
           "command": "jj.describe",
           "when": "scmProvider == jj",
+          "group": "inline"
+        },
+        {
+          "command": "jj.squash",
+          "when": "scmProvider == jj && scmResourceGroup == @",
           "group": "inline"
         }
       ],

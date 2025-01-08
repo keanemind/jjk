@@ -131,6 +131,22 @@ class Repository {
       });
     });
   }
+
+  squash(message?: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const childProcess = spawn(
+        "jj",
+        ["squash", ...(message ? ["-m", message] : [])],
+        {
+          cwd: this.repositoryRoot,
+        }
+      );
+
+      childProcess.on("close", () => {
+        resolve();
+      });
+    });
+  }
 }
 
 export type FileStatus = {
@@ -208,7 +224,8 @@ function parseJJStatus(
 
       const trimmedDescription = description.trim();
       const finalDescription =
-        trimmedDescription === "(no description set)" ? "" : trimmedDescription;
+        trimmedDescription === "(no description set)" ||  
+        trimmedDescription === "(empty) (no description set)" ? "" : trimmedDescription;
 
       const commitDetails: Change = {
         changeId: id,

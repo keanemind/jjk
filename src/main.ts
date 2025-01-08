@@ -125,6 +125,47 @@ export async function activate(context: vscode.ExtensionContext) {
         }
       )
     );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand(
+        "jj.squash",
+        showLoading(async () => {
+          const status = await repositories.repos[0].status();
+          if (status.parentChanges.length > 1){
+            vscode.window.showErrorMessage(
+              `Squash failed. Revision has multiple parents.`
+            );
+            return;
+          }
+
+          let message: string | undefined;
+          if (status.workingCopy.description !== '' && status.parentChanges[0].description !== '') {
+            message = await vscode.window.showInputBox({
+              prompt: "Provide a description",
+              placeHolder: "Set description here...",
+            });
+
+            if (message === undefined)  {
+              return;
+            } else if (message === ''){
+              message = status.parentChanges[0].description;
+            }
+          }
+
+          try {
+            await repositories.repos[0].squash(message);
+            vscode.window.showInformationMessage(
+              "Changes successfully squashed."
+            );
+            updateResources();
+          } catch (error: any) {
+            vscode.window.showErrorMessage(
+              `Failed to squash: ${error.message}`
+            );
+          }
+        })
+      )
+    );
   }
 
   let parentResourceGroups: vscode.SourceControlResourceGroup[] = [];
