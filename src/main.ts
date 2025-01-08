@@ -74,6 +74,7 @@ export async function activate(context: vscode.ExtensionContext) {
         const message = jjSCM!.inputBox.value.trim() || undefined;
         await repositories.repos[0].new(message);
         jjSCM!.inputBox.value = "";
+        updateResources();
       })
     );
 
@@ -115,6 +116,7 @@ export async function activate(context: vscode.ExtensionContext) {
             vscode.window.showInformationMessage(
               "Description updated successfully."
             );
+            updateResources();
           } catch (error: any) {
             vscode.window.showErrorMessage(
               `Failed to update description: ${error.message}`
