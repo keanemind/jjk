@@ -172,6 +172,22 @@ class Repository {
       });
     });
   }
+
+  edit(rev: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const childProcess = spawn(
+        "jj",
+        ["edit", "-r", rev, "--ignore-immutable"],
+        {
+          cwd: this.repositoryRoot,
+        }
+      );
+
+      childProcess.on("close", () => {
+        resolve();
+      });
+    });
+  }
 }
 
 function parseLog(output: string): CommitNode[] {

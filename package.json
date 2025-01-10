@@ -80,7 +80,7 @@
       "view/item/context": [
         {
           "command": "jj.edit",
-          "when": "view == jjGraphView",
+          "when": "view == jjGraphView && viewItem != ''",
           "group": "inline"
         }
       ],

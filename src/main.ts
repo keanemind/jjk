@@ -7,7 +7,7 @@ import { Repositories, Show } from "./repository";
 import { JJDecorationProvider } from "./decorationProvider";
 import { JJFileSystemProvider } from "./fileSystemProvider";
 import { toJJUri } from "./uri";
-import { JJGraphProvider } from "./graphProvider";
+import { CommitNode, JJGraphProvider } from "./graphProvider";
 
 export async function activate(context: vscode.ExtensionContext) {
   // Use the console to output diagnostic information (console.log) and errors (console.error)
@@ -77,7 +77,7 @@ export async function activate(context: vscode.ExtensionContext) {
         const message = jjSCM!.inputBox.value.trim() || undefined;
         await repositories.repos[0].new(message);
         jjSCM!.inputBox.value = "";
-        updateResources();
+        await updateResources();
       })
     );
 
@@ -119,7 +119,7 @@ export async function activate(context: vscode.ExtensionContext) {
             vscode.window.showInformationMessage(
               "Description updated successfully."
             );
-            updateResources();
+            await updateResources();
           } catch (error: any) {
             vscode.window.showErrorMessage(
               `Failed to update description: ${error.message}`
@@ -160,13 +160,32 @@ export async function activate(context: vscode.ExtensionContext) {
             vscode.window.showInformationMessage(
               "Changes successfully squashed."
             );
-            updateResources();
+            await updateResources();
           } catch (error: any) {
             vscode.window.showErrorMessage(
               `Failed to squash: ${error.message}`
             );
           }
         })
+      )
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand(
+        "jj.edit", async (commitNode: CommitNode) => {
+            try {
+              await repositories.repos[0].edit(commitNode.contextValue as string);
+              vscode.window.showInformationMessage(
+                "Description updated successfully."
+              );  
+              await logProvider.refresh();
+              await updateResources();
+            } catch (error: any) {
+              vscode.window.showErrorMessage(
+                `Failed to update description: ${error.message}`
+              );
+            }
+        }
       )
     );
   }
