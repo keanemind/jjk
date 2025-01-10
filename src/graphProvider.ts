@@ -13,10 +13,6 @@ export class CommitNode extends vscode.TreeItem {
     this.description = description;
     this.tooltip = tooltip;
     this.contextValue = contextValue;
-    this.command = {
-      command: "jj.edit",
-      title: "Edit this change"
-    };
   }
 }
 

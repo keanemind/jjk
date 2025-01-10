@@ -182,9 +182,19 @@ class Repository {
           cwd: this.repositoryRoot,
         }
       );
+      let output = '';
+      childProcess.stderr!.on("data", (data: string) => {
+        output += data;
+      });
 
       childProcess.on("close", () => {
-        resolve();
+        const match = output.trim().match(/^Error:\s*(.+)$/);
+        if (match) {
+          const errorMessage = match[1];
+          reject(errorMessage);
+        } else {
+          resolve();
+        }
       });
     });
   }

@@ -175,14 +175,10 @@ export async function activate(context: vscode.ExtensionContext) {
         "jj.edit", async (commitNode: CommitNode) => {
             try {
               await repositories.repos[0].edit(commitNode.contextValue as string);
-              vscode.window.showInformationMessage(
-                "Description updated successfully."
-              );  
-              await logProvider.refresh();
               await updateResources();
             } catch (error: any) {
               vscode.window.showErrorMessage(
-                `Failed to update description: ${error.message}`
+                `Failed to switch to change: ${error}`
               );
             }
         }
@@ -193,6 +189,8 @@ export async function activate(context: vscode.ExtensionContext) {
   let parentResourceGroups: vscode.SourceControlResourceGroup[] = [];
 
   async function updateResources() {
+    await logProvider.refresh();
+
     if (repositories.repos.length > 0) {
       if (!jjSCM) {
         init();
