@@ -7,7 +7,7 @@ import { Repositories, Show } from "./repository";
 import { JJDecorationProvider } from "./decorationProvider";
 import { JJFileSystemProvider } from "./fileSystemProvider";
 import { toJJUri } from "./uri";
-import { CommitNode, JJGraphProvider } from "./graphProvider";
+import { ChangeNode, JJGraphProvider } from "./graphProvider";
 
 export async function activate(context: vscode.ExtensionContext) {
   // Use the console to output diagnostic information (console.log) and errors (console.error)
@@ -172,9 +172,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
     context.subscriptions.push(
       vscode.commands.registerCommand(
-        "jj.edit", async (commitNode: CommitNode) => {
+        "jj.edit", async (node: ChangeNode) => {
             try {
-              await repositories.repos[0].edit(commitNode.contextValue as string);
+              await repositories.repos[0].edit(node.contextValue as string);
               await updateResources();
             } catch (error: any) {
               vscode.window.showErrorMessage(

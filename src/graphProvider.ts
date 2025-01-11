@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { Repositories } from './repository';
 
-export class CommitNode extends vscode.TreeItem {
+export class ChangeNode extends vscode.TreeItem {
   constructor(
     label: string,
     description: string,
@@ -16,11 +16,11 @@ export class CommitNode extends vscode.TreeItem {
   }
 }
 
-export class JJGraphProvider implements vscode.TreeDataProvider<CommitNode> {
-  _onDidChangeTreeData: vscode.EventEmitter<CommitNode | undefined | null | void> = new vscode.EventEmitter();
-  onDidChangeTreeData: vscode.Event<CommitNode | undefined | null | void> = this._onDidChangeTreeData.event;
+export class JJGraphProvider implements vscode.TreeDataProvider<ChangeNode> {
+  _onDidChangeTreeData: vscode.EventEmitter<ChangeNode | undefined | null | void> = new vscode.EventEmitter();
+  onDidChangeTreeData: vscode.Event<ChangeNode | undefined | null | void> = this._onDidChangeTreeData.event;
 
-  logData: CommitNode[] = [];
+  logData: ChangeNode[] = [];
 
   repositories: Repositories;
 
@@ -29,11 +29,11 @@ export class JJGraphProvider implements vscode.TreeDataProvider<CommitNode> {
     this.refresh();
   }
 
-  getTreeItem(element: CommitNode): vscode.TreeItem {
+  getTreeItem(element: ChangeNode): vscode.TreeItem {
     return element;
   }
 
-  getChildren(): CommitNode[] {
+  getChildren(): ChangeNode[] {
     return this.logData;
   }
 

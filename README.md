@@ -13,6 +13,8 @@ The goal of this extension is to bring the great UX of Jujutsu into the VS Code 
 - Edit the description of the Working Copy or its parents.
   ![edit description](images/edit_description.png)
 - Create a new change, with or without a description.
+- Move work from the Working Copy to its parent.
+- View the revision history and switch between changes.
 
 ## Requirements
 

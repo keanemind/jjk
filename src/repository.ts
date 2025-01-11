@@ -1,7 +1,7 @@
 import path from "path";
 import * as vscode from "vscode";
 import spawn from "cross-spawn";
-import { CommitNode } from "./graphProvider";
+import { ChangeNode } from "./graphProvider";
 
 async function findReposInWorkspace() {
   const repos: Repository[] = [];
@@ -149,7 +149,7 @@ class Repository {
     });
   }
 
-  log(): Promise<CommitNode[]> {
+  log(): Promise<ChangeNode[]> {
     return new Promise((resolve, reject) => {
       const childProcess = spawn(
         "jj",
@@ -200,7 +200,7 @@ class Repository {
   }
 }
 
-function parseLog(output: string): CommitNode[] {
+function parseLog(output: string): ChangeNode[] {
   return output
     .split('\n')
     .filter(line => line.trim())
@@ -215,7 +215,7 @@ function parseLog(output: string): CommitNode[] {
 
       const formattedLine = line.replace(/(?<![a-zA-Z0-9\)])\s/g, '   '); // Replace all whitespace with 3 spaces
 
-      return new CommitNode(
+      return new ChangeNode(
         formattedLine,
         '',
         changeId,
