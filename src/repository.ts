@@ -117,18 +117,29 @@ class Repository {
     });
   }
 
-  new(message?: string): Promise<void> {
+  new(message?: string, revs?: string[]): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const childProcess = spawn(
         "jj",
-        ["new", ...(message ? ["-m", message] : [])],
+        ["new", ...(message ? ["-m", message] : []), ...(revs ? ["-r", ...revs] : [])],
         {
           cwd: this.repositoryRoot,
         }
       );
 
+      let output = '';
+      childProcess.stderr!.on("data", (data: string) => {
+        output += data;
+      });
+
       childProcess.on("close", () => {
-        resolve();
+        const match = output.match(/error:\s*([\s\S]+)$/i);
+        if (match) {
+          const errorMessage = match[1];
+          reject(errorMessage);
+        } else {
+          resolve();
+        }
       });
     });
   }
@@ -162,7 +173,7 @@ class Repository {
       let output = "";
       childProcess.on("close", () => {
         try {
-          resolve(parseLog(output));
+          resolve(parseJJLog(output));
         } catch (e) {
           reject(e);
         }
@@ -188,6 +199,32 @@ class Repository {
       });
 
       childProcess.on("close", () => {
+        const match = output.trim().match(/^Error:\s*(.+)$/i);
+        if (match) {
+          const errorMessage = match[1];
+          reject(errorMessage);
+        } else {
+          resolve();
+        }
+      });
+    });
+  }
+
+  newMulti(rev: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const childProcess = spawn(
+        "jj",
+        ["new", "-r", rev, "--ignore-immutable"],
+        {
+          cwd: this.repositoryRoot,
+        }
+      );
+      let output = '';
+      childProcess.stderr!.on("data", (data: string) => {
+        output += data;
+      });
+
+      childProcess.on("close", () => {
         const match = output.trim().match(/^Error:\s*(.+)$/);
         if (match) {
           const errorMessage = match[1];
@@ -200,7 +237,7 @@ class Repository {
   }
 }
 
-function parseLog(output: string): ChangeNode[] {
+function parseJJLog(output: string): ChangeNode[] {
   const lines = output.split('\n');
   const changeNodes: ChangeNode[] = [];
 
@@ -231,7 +268,7 @@ function parseLog(output: string): ChangeNode[] {
     const commitIdMatch = oddLine.match(/([a-zA-Z0-9]{8})$/);
 
     const symbolFormatted = symbolsMatch![0].replace(/\s/g, '   ').trimEnd();
-    const formattedLine = `${symbolFormatted}   ${changeId} | ${description ? description : 'root()'} | ${commitIdMatch ? commitIdMatch[0] : '' }`;
+    const formattedLine = `${symbolFormatted}   ${description ? description : 'root()'} • ${changeId} • ${commitIdMatch ? commitIdMatch[0] : '' }`;
 
     // Create a ChangeNode for the odd line with the appended description
     changeNodes.push(new ChangeNode(formattedLine, `${emailMatch ? emailMatch[0] : ''} ${timestampMatch ? timestampMatch[0] : ''}`, changeId, changeId));

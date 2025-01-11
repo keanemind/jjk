@@ -184,12 +184,29 @@ export async function activate(context: vscode.ExtensionContext) {
         }
       )
     );
+
+    vscode.commands.registerCommand('jj.merge', async () => {
+      const selectedNodes = logProvider.treeView.selection as ChangeNode[];
+      if (selectedNodes.length < 2) {
+        return;
+      }
+      const revs = selectedNodes.map(node => node.contextValue as string);
+      
+      try {
+        await repositories.repos[0].new(undefined, revs);
+        await updateResources();
+      } catch (error: any) {
+        vscode.window.showErrorMessage(
+          `Failed to create change: ${error}`
+        );
+      }
+    });
   }
 
   let parentResourceGroups: vscode.SourceControlResourceGroup[] = [];
 
   async function updateResources() {
-    await logProvider.refresh();
+    await logProvider.treeDataProvider.refresh();
 
     if (repositories.repos.length > 0) {
       if (!jjSCM) {
@@ -350,12 +367,6 @@ export async function activate(context: vscode.ExtensionContext) {
       clearInterval(intervalId);
     },
   });
-
-  vscode.window.registerTreeDataProvider('jjGraphView', logProvider);
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand('jj.refreshLog', () => logProvider.refresh())
-  );
 }
 
 function showLoading(callback: () => Promise<void>) {

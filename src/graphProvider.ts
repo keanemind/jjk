@@ -6,17 +6,79 @@ export class ChangeNode extends vscode.TreeItem {
     label: string,
     description: string,
     tooltip: string,
-    contextValue: string
+    contextValue: string,
   ) {
     super(description);
     this.label = label;
     this.description = description;
     this.tooltip = tooltip;
     this.contextValue = contextValue;
+    
+    /* TODO Checkbox selection for multi-select actions (abandon, merge?)
+    this.checkboxState = isSelected ? vscode.TreeItemCheckboxState.Checked : vscode.TreeItemCheckboxState.Unchecked;
+    */
   }
 }
 
-export class JJGraphProvider implements vscode.TreeDataProvider<ChangeNode> {
+export class JJGraphProvider {
+  treeDataProvider: JJGraphTreeDataProvider;
+  treeView: vscode.TreeView<ChangeNode>;
+
+  constructor(repositories: Repositories) {
+    this.treeDataProvider = new JJGraphTreeDataProvider(repositories);
+    
+    this.treeView = vscode.window.createTreeView('jjGraphView', {
+      treeDataProvider: this.treeDataProvider,
+      canSelectMany: true
+    });
+
+    const defaultTreeViewMessage = 'Hold Ctrl/Cmd ⌘ and click to select multiple nodes for additional actions.'
+    this.treeView.message = defaultTreeViewMessage;
+
+    this.treeView.onDidChangeSelection((event) => {
+      const selectedNodes = event.selection;
+  
+      if (selectedNodes.length > 1) {
+        const unselectableNode = selectedNodes.find(node => node.contextValue === '');
+        if (unselectableNode) {
+          vscode.commands.executeCommand(
+            'setContext',
+            'jjGraphView.multipleNodesSelected',
+            0
+          );
+          this.treeView.message = 'One or more invalid nodes are selected.';
+          return;
+        }
+      }
+      this.treeView.message = defaultTreeViewMessage;
+      
+      const multipleNodesSelected = event.selection.length > 1;
+      vscode.commands.executeCommand(
+        'setContext',
+        'jjGraphView.multipleNodesSelected',
+        multipleNodesSelected
+      );
+    });
+
+    /* TODO Checkbox selection for multi-select actions (abandon, merge?)
+    this.treeView.onDidChangeCheckboxState((event) => {
+      event.items.forEach(([node, checkboxState]) => {
+        node.checkboxState = checkboxState;
+      });
+    });
+    */
+
+    vscode.commands.registerCommand('jj.refreshLog', () => {
+      this.treeDataProvider.refresh();
+    });
+  }
+
+  get selectedItems(): readonly ChangeNode[] {
+    return this.treeView.selection;
+  }
+}
+
+class JJGraphTreeDataProvider implements vscode.TreeDataProvider<ChangeNode> {
   _onDidChangeTreeData: vscode.EventEmitter<ChangeNode | undefined | null | void> = new vscode.EventEmitter();
   onDidChangeTreeData: vscode.Event<ChangeNode | undefined | null | void> = this._onDidChangeTreeData.event;
 
