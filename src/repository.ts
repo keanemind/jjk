@@ -2,9 +2,11 @@ import path from "path";
 import * as vscode from "vscode";
 import spawn from "cross-spawn";
 import { ChangeNode } from "./graphProvider";
+import type { JJDecorationProvider } from "./decorationProvider";
+import { toJJUri } from "./uri";
 
-async function findReposInWorkspace() {
-  const repos: Repository[] = [];
+async function createSCMsInWorkspace(decorationProvider: JJDecorationProvider) {
+  const repos: RepositorySourceControlManager[] = [];
   for (const workspaceFolder of vscode.workspace.workspaceFolders || []) {
     const repoRoot = await new Promise<string | undefined>(
       (resolve, reject) => {
@@ -26,28 +28,246 @@ async function findReposInWorkspace() {
       },
     );
     if (repoRoot) {
-      repos.push(new Repository(repoRoot));
+      repos.push(
+        new RepositorySourceControlManager(repoRoot, decorationProvider),
+      );
     }
   }
   return repos;
 }
 
-export class Repositories {
-  repos: Repository[] = [];
+export class WorkspaceSourceControlManager {
+  repoSCMs: RepositorySourceControlManager[] = [];
 
-  async init() {
-    this.repos = await findReposInWorkspace();
+  constructor(private decorationProvider: JJDecorationProvider) {}
+
+  async refresh() {
+    console.log("Refreshing workspace SCMs");
+    for (const repo of this.repoSCMs) {
+      repo.dispose();
+    }
+    this.repoSCMs = await createSCMsInWorkspace(this.decorationProvider);
   }
 
-  getRepository(uri: vscode.Uri) {
-    return this.repos.find((repo) => {
+  getRepositoryFromUri(uri: vscode.Uri) {
+    return this.repoSCMs.find((repo) => {
       return uri.fsPath.startsWith(vscode.Uri.file(repo.repositoryRoot).fsPath);
-    });
+    })?.repository;
+  }
+
+  getRepositoryFromResourceGroup(
+    resourceGroup: vscode.SourceControlResourceGroup,
+  ) {
+    return this.repoSCMs.find((repo) => {
+      return (
+        resourceGroup === repo.workingCopyResourceGroup ||
+        repo.parentResourceGroups.includes(resourceGroup)
+      );
+    })?.repository;
+  }
+
+  getRepositoryFromSourceControl(sourceControl: vscode.SourceControl) {
+    return this.repoSCMs.find((repo) => repo.sourceControl === sourceControl)
+      ?.repository;
+  }
+
+  dispose() {
+    for (const subscription of this.repoSCMs) {
+      subscription.dispose();
+    }
   }
 }
 
-class Repository {
-  constructor(public repositoryRoot: string) {}
+class RepositorySourceControlManager {
+  subscriptions: {
+    dispose(): any;
+  }[] = [];
+  sourceControl: vscode.SourceControl;
+  workingCopyResourceGroup: vscode.SourceControlResourceGroup;
+  parentResourceGroups: vscode.SourceControlResourceGroup[] = [];
+  repository: JJRepository;
+
+  constructor(
+    public repositoryRoot: string,
+    private decorationProvider: JJDecorationProvider,
+  ) {
+    this.repository = new JJRepository(repositoryRoot);
+
+    this.sourceControl = vscode.scm.createSourceControl("jj", "Jujutsu");
+    this.subscriptions.push(this.sourceControl);
+
+    this.workingCopyResourceGroup = this.sourceControl.createResourceGroup(
+      "@",
+      "Working Copy",
+    );
+    this.subscriptions.push(this.workingCopyResourceGroup);
+
+    // Set up the SourceControlInputBox
+    this.sourceControl.inputBox.placeholder =
+      "Describe new change (Ctrl+Enter)";
+
+    // Link the acceptInputCommand to the SourceControl instance
+    this.sourceControl.acceptInputCommand = {
+      command: "jj.new",
+      title: "Create new change",
+      arguments: [this.sourceControl],
+    };
+  }
+
+  async refresh() {
+    const status = await this.repository.status();
+    console.log("Refreshing repository", this.repositoryRoot, status);
+    this.decorationProvider.onDidRunStatus(status);
+
+    this.workingCopyResourceGroup.label = `Working Copy | ${
+      status.workingCopy.changeId
+    }${
+      status.workingCopy.description
+        ? `: ${status.workingCopy.description}`
+        : " (no description set)"
+    }`;
+    this.workingCopyResourceGroup.resourceStates = status.fileStatuses.map(
+      (fileStatus) => {
+        return {
+          resourceUri: vscode.Uri.file(fileStatus.path),
+          decorations: {
+            strikeThrough: fileStatus.type === "D",
+            tooltip: path.basename(fileStatus.file),
+          },
+          command:
+            status.parentChanges.length === 1
+              ? {
+                  title: "Open",
+                  command: "vscode.diff",
+                  arguments: [
+                    toJJUri(
+                      vscode.Uri.file(fileStatus.path),
+                      status.parentChanges[0].changeId,
+                    ),
+                    vscode.Uri.file(fileStatus.path),
+                    (fileStatus.renamedFrom
+                      ? `${fileStatus.renamedFrom} => `
+                      : "") + `${fileStatus.file} (Working Copy)`,
+                  ],
+                }
+              : undefined,
+        };
+      },
+    );
+
+    const updatedGroups: vscode.SourceControlResourceGroup[] = [];
+    for (const group of this.parentResourceGroups) {
+      const parentChange = status.parentChanges.find(
+        (change) => change.changeId === group.id,
+      );
+      if (!parentChange) {
+        group.dispose();
+      } else {
+        group.label = `Parent Commit | ${parentChange.changeId}${
+          parentChange.description
+            ? `: ${parentChange.description}`
+            : " (no description set)"
+        }`;
+        updatedGroups.push(group);
+      }
+    }
+
+    this.parentResourceGroups = updatedGroups;
+
+    for (const parentChange of status.parentChanges) {
+      let parentChangeResourceGroup:
+        | vscode.SourceControlResourceGroup
+        | undefined;
+
+      const parentGroup = this.parentResourceGroups.find(
+        (group) => group.id === parentChange.changeId,
+      );
+      if (!parentGroup) {
+        parentChangeResourceGroup = this.sourceControl.createResourceGroup(
+          parentChange.changeId,
+          parentChange.description
+            ? `Parent Commit | ${parentChange.changeId}: ${parentChange.description}`
+            : `Parent Commit | ${parentChange.changeId} (no description set)`,
+        );
+
+        this.parentResourceGroups.push(parentChangeResourceGroup);
+        this.subscriptions.push(parentChangeResourceGroup);
+      } else {
+        parentChangeResourceGroup = parentGroup;
+      }
+
+      const showResult = await this.repository.show(parentChange.changeId);
+
+      let grandparentShowResult: Show | undefined;
+      try {
+        grandparentShowResult = await this.repository.show(
+          `${parentChange.changeId}-`,
+        );
+      } catch (e) {
+        if (
+          e instanceof Error &&
+          e.message.includes("resolved to more than one revision")
+        ) {
+          // Leave grandparentShowResult as undefined
+        } else {
+          throw e;
+        }
+      }
+
+      parentChangeResourceGroup!.resourceStates = showResult.fileStatuses.map(
+        (parentStatus) => {
+          return {
+            resourceUri: toJJUri(
+              vscode.Uri.file(parentStatus.path),
+              parentChange.changeId,
+            ),
+            decorations: {
+              strikeThrough: parentStatus.type === "D",
+              tooltip: path.basename(parentStatus.file),
+            },
+            command: grandparentShowResult
+              ? {
+                  title: "Open",
+                  command: "vscode.diff",
+                  arguments: [
+                    toJJUri(
+                      vscode.Uri.file(parentStatus.path),
+                      grandparentShowResult.change.changeId,
+                    ),
+                    toJJUri(
+                      vscode.Uri.file(parentStatus.path),
+                      parentChange.changeId,
+                    ),
+                    (parentStatus.renamedFrom
+                      ? `${parentStatus.renamedFrom} => `
+                      : "") + `${parentStatus.file} (Parent Change)`,
+                  ],
+                }
+              : undefined,
+          };
+        },
+      );
+
+      this.decorationProvider.addDecorators(
+        showResult.fileStatuses.map((status) =>
+          toJJUri(vscode.Uri.file(status.path), parentChange.changeId),
+        ),
+        showResult.fileStatuses,
+      );
+    }
+
+    return status;
+  }
+
+  dispose() {
+    for (const subscription of this.subscriptions) {
+      subscription.dispose();
+    }
+  }
+}
+
+class JJRepository {
+  constructor(private repositoryRoot: string) {}
 
   status() {
     return new Promise<RepositoryStatus>((resolve, reject) => {

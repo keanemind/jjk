@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import type { Repositories } from "./repository";
+import type { WorkspaceSourceControlManager } from "./repository";
 
 export class ChangeNode extends vscode.TreeItem {
   constructor(
@@ -24,7 +24,7 @@ export class JJGraphProvider {
   treeDataProvider: JJGraphTreeDataProvider;
   treeView: vscode.TreeView<ChangeNode>;
 
-  constructor(repositories: Repositories) {
+  constructor(repositories: WorkspaceSourceControlManager) {
     this.treeDataProvider = new JJGraphTreeDataProvider(repositories);
 
     this.treeView = vscode.window.createTreeView("jjGraphView", {
@@ -90,9 +90,9 @@ class JJGraphTreeDataProvider implements vscode.TreeDataProvider<ChangeNode> {
 
   logData: ChangeNode[] = [];
 
-  repositories: Repositories;
+  repositories: WorkspaceSourceControlManager;
 
-  constructor(repositories: Repositories) {
+  constructor(repositories: WorkspaceSourceControlManager) {
     this.repositories = repositories;
     this.refresh();
   }
@@ -106,7 +106,7 @@ class JJGraphTreeDataProvider implements vscode.TreeDataProvider<ChangeNode> {
   }
 
   async refresh(): Promise<void> {
-    const logOutput = await this.repositories.repos[0].log();
+    const logOutput = await this.repositories.repoSCMs[0].repository.log();
     this.logData = logOutput;
     this._onDidChangeTreeData.fire();
   }

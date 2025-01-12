@@ -10,7 +10,7 @@ import {
   FileType,
 } from "vscode";
 import { getJJUriParams } from "./uri";
-import { Repositories } from "./repository";
+import { WorkspaceSourceControlManager } from "./repository";
 
 const THREE_MINUTES = 1000 * 60 * 3;
 
@@ -25,7 +25,7 @@ export class JJFileSystemProvider implements FileSystemProvider {
 
   private cleanupInterval: NodeJS.Timeout;
 
-  constructor(private repositories: Repositories) {
+  constructor(private repositories: WorkspaceSourceControlManager) {
     this.cleanupInterval = setInterval(() => {
       const now = Date.now();
       for (const [uri, value] of this.fileCache) {
@@ -47,7 +47,7 @@ export class JJFileSystemProvider implements FileSystemProvider {
   async stat(uri: Uri): Promise<FileStat> {
     const { rev } = getJJUriParams(uri);
 
-    const repository = this.repositories.getRepository(uri);
+    const repository = this.repositories.getRepositoryFromUri(uri);
     if (!repository) {
       throw FileSystemError.FileNotFound();
     }
@@ -77,7 +77,7 @@ export class JJFileSystemProvider implements FileSystemProvider {
   async readFile(uri: Uri): Promise<Uint8Array> {
     const { rev } = getJJUriParams(uri);
 
-    const repository = this.repositories.getRepository(uri);
+    const repository = this.repositories.getRepositoryFromUri(uri);
     if (!repository) {
       throw FileSystemError.FileNotFound();
     }
