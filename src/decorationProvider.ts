@@ -28,7 +28,7 @@ export class JJDecorationProvider implements FileDecorationProvider {
       });
     }
     this._onDidChangeDecorations.fire(
-      [...changedDecorationKeys.keys()].map((uri) => Uri.parse(uri))
+      [...changedDecorationKeys.keys()].map((uri) => Uri.parse(uri)),
     );
   }
 
@@ -41,7 +41,7 @@ export class JJDecorationProvider implements FileDecorationProvider {
       });
 
       this._onDidChangeDecorations.fire(
-        [...this.decorations.keys()].map((uri) => Uri.parse(uri))
+        [...this.decorations.keys()].map((uri) => Uri.parse(uri)),
       );
     });
   }

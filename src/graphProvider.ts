@@ -1,5 +1,5 @@
-import * as vscode from 'vscode';
-import { Repositories } from './repository';
+import * as vscode from "vscode";
+import type { Repositories } from "./repository";
 
 export class ChangeNode extends vscode.TreeItem {
   constructor(
@@ -13,7 +13,7 @@ export class ChangeNode extends vscode.TreeItem {
     this.description = description;
     this.tooltip = tooltip;
     this.contextValue = contextValue;
-    
+
     /* TODO Checkbox selection for multi-select actions (abandon, merge?)
     this.checkboxState = isSelected ? vscode.TreeItemCheckboxState.Checked : vscode.TreeItemCheckboxState.Unchecked;
     */
@@ -26,37 +26,40 @@ export class JJGraphProvider {
 
   constructor(repositories: Repositories) {
     this.treeDataProvider = new JJGraphTreeDataProvider(repositories);
-    
-    this.treeView = vscode.window.createTreeView('jjGraphView', {
+
+    this.treeView = vscode.window.createTreeView("jjGraphView", {
       treeDataProvider: this.treeDataProvider,
-      canSelectMany: true
+      canSelectMany: true,
     });
 
-    const defaultTreeViewMessage = 'Hold Ctrl/Cmd ⌘ and click to select multiple nodes for additional actions.'
+    const defaultTreeViewMessage =
+      "Hold Ctrl/Cmd ⌘ and click to select multiple nodes for additional actions.";
     this.treeView.message = defaultTreeViewMessage;
 
     this.treeView.onDidChangeSelection((event) => {
       const selectedNodes = event.selection;
-  
+
       if (selectedNodes.length > 1) {
-        const unselectableNode = selectedNodes.find(node => node.contextValue === '');
+        const unselectableNode = selectedNodes.find(
+          (node) => node.contextValue === "",
+        );
         if (unselectableNode) {
           vscode.commands.executeCommand(
-            'setContext',
-            'jjGraphView.multipleNodesSelected',
-            0
+            "setContext",
+            "jjGraphView.multipleNodesSelected",
+            0,
           );
-          this.treeView.message = 'One or more invalid nodes are selected.';
+          this.treeView.message = "One or more invalid nodes are selected.";
           return;
         }
       }
       this.treeView.message = defaultTreeViewMessage;
-      
+
       const multipleNodesSelected = event.selection.length > 1;
       vscode.commands.executeCommand(
-        'setContext',
-        'jjGraphView.multipleNodesSelected',
-        multipleNodesSelected
+        "setContext",
+        "jjGraphView.multipleNodesSelected",
+        multipleNodesSelected,
       );
     });
 
@@ -68,7 +71,7 @@ export class JJGraphProvider {
     });
     */
 
-    vscode.commands.registerCommand('jj.refreshLog', () => {
+    vscode.commands.registerCommand("jj.refreshLog", () => {
       this.treeDataProvider.refresh();
     });
   }
@@ -79,8 +82,11 @@ export class JJGraphProvider {
 }
 
 class JJGraphTreeDataProvider implements vscode.TreeDataProvider<ChangeNode> {
-  _onDidChangeTreeData: vscode.EventEmitter<ChangeNode | undefined | null | void> = new vscode.EventEmitter();
-  onDidChangeTreeData: vscode.Event<ChangeNode | undefined | null | void> = this._onDidChangeTreeData.event;
+  _onDidChangeTreeData: vscode.EventEmitter<
+    ChangeNode | undefined | null | void
+  > = new vscode.EventEmitter();
+  onDidChangeTreeData: vscode.Event<ChangeNode | undefined | null | void> =
+    this._onDidChangeTreeData.event;
 
   logData: ChangeNode[] = [];
 

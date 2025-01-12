@@ -21,7 +21,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   const decorationProvider = new JJDecorationProvider();
   context.subscriptions.push(
-    vscode.window.registerFileDecorationProvider(decorationProvider)
+    vscode.window.registerFileDecorationProvider(decorationProvider),
   );
 
   // Check if the jj CLI is installed
@@ -41,7 +41,7 @@ export async function activate(context: vscode.ExtensionContext) {
       await repositories.init();
     },
     undefined,
-    context.subscriptions
+    context.subscriptions,
   );
 
   let jjSCM: vscode.SourceControl;
@@ -54,7 +54,7 @@ export async function activate(context: vscode.ExtensionContext) {
       vscode.workspace.registerFileSystemProvider("jj", fileSystemProvider, {
         isReadonly: true,
         isCaseSensitive: true,
-      })
+      }),
     );
 
     jjSCM = vscode.scm.createSourceControl("jj", "Jujutsu");
@@ -78,7 +78,7 @@ export async function activate(context: vscode.ExtensionContext) {
         await repositories.repos[0].new(message);
         jjSCM!.inputBox.value = "";
         await updateResources();
-      })
+      }),
     );
 
     context.subscriptions.push(
@@ -95,10 +95,10 @@ export async function activate(context: vscode.ExtensionContext) {
             vscode.Uri.file(resourceState.resourceUri.fsPath),
             {
               ...opts,
-            }
+            },
           );
-        }
-      )
+        },
+      ),
     );
 
     context.subscriptions.push(
@@ -117,16 +117,16 @@ export async function activate(context: vscode.ExtensionContext) {
           try {
             await repositories.repos[0].describe(resourceGroup.id, message);
             vscode.window.showInformationMessage(
-              "Description updated successfully."
+              "Description updated successfully.",
             );
             await updateResources();
           } catch (error: any) {
             vscode.window.showErrorMessage(
-              `Failed to update description: ${error.message}`
+              `Failed to update description: ${error.message}`,
             );
           }
-        }
-      )
+        },
+      ),
     );
 
     context.subscriptions.push(
@@ -134,23 +134,26 @@ export async function activate(context: vscode.ExtensionContext) {
         "jj.squash",
         showLoading(async () => {
           const status = await repositories.repos[0].status();
-          if (status.parentChanges.length > 1){
+          if (status.parentChanges.length > 1) {
             vscode.window.showErrorMessage(
-              `Squash failed. Revision has multiple parents.`
+              `Squash failed. Revision has multiple parents.`,
             );
             return;
           }
 
           let message: string | undefined;
-          if (status.workingCopy.description !== '' && status.parentChanges[0].description !== '') {
+          if (
+            status.workingCopy.description !== "" &&
+            status.parentChanges[0].description !== ""
+          ) {
             message = await vscode.window.showInputBox({
               prompt: "Provide a description",
               placeHolder: "Set description here...",
             });
 
-            if (message === undefined)  {
+            if (message === undefined) {
               return;
-            } else if (message === ''){
+            } else if (message === "") {
               message = status.parentChanges[0].description;
             }
           }
@@ -158,47 +161,43 @@ export async function activate(context: vscode.ExtensionContext) {
           try {
             await repositories.repos[0].squash(message);
             vscode.window.showInformationMessage(
-              "Changes successfully squashed."
+              "Changes successfully squashed.",
             );
             await updateResources();
           } catch (error: any) {
             vscode.window.showErrorMessage(
-              `Failed to squash: ${error.message}`
+              `Failed to squash: ${error.message}`,
             );
           }
-        })
-      )
+        }),
+      ),
     );
 
     context.subscriptions.push(
-      vscode.commands.registerCommand(
-        "jj.edit", async (node: ChangeNode) => {
-            try {
-              await repositories.repos[0].edit(node.contextValue as string);
-              await updateResources();
-            } catch (error: any) {
-              vscode.window.showErrorMessage(
-                `Failed to switch to change: ${error}`
-              );
-            }
+      vscode.commands.registerCommand("jj.edit", async (node: ChangeNode) => {
+        try {
+          await repositories.repos[0].edit(node.contextValue as string);
+          await updateResources();
+        } catch (error: any) {
+          vscode.window.showErrorMessage(
+            `Failed to switch to change: ${error}`,
+          );
         }
-      )
+      }),
     );
 
-    vscode.commands.registerCommand('jj.merge', async () => {
+    vscode.commands.registerCommand("jj.merge", async () => {
       const selectedNodes = logProvider.treeView.selection as ChangeNode[];
       if (selectedNodes.length < 2) {
         return;
       }
-      const revs = selectedNodes.map(node => node.contextValue as string);
-      
+      const revs = selectedNodes.map((node) => node.contextValue as string);
+
       try {
         await repositories.repos[0].new(undefined, revs);
         await updateResources();
       } catch (error: any) {
-        vscode.window.showErrorMessage(
-          `Failed to create change: ${error}`
-        );
+        vscode.window.showErrorMessage(`Failed to create change: ${error}`);
       }
     });
   }
@@ -238,7 +237,7 @@ export async function activate(context: vscode.ExtensionContext) {
                     arguments: [
                       toJJUri(
                         vscode.Uri.file(fileStatus.path),
-                        status.parentChanges[0].changeId
+                        status.parentChanges[0].changeId,
                       ),
                       vscode.Uri.file(fileStatus.path),
                       (fileStatus.renamedFrom
@@ -248,13 +247,13 @@ export async function activate(context: vscode.ExtensionContext) {
                   }
                 : undefined,
           };
-        }
+        },
       );
 
       const updatedGroups: vscode.SourceControlResourceGroup[] = [];
       for (const group of parentResourceGroups) {
         const parentChange = status.parentChanges.find(
-          (change) => change.changeId === group.id
+          (change) => change.changeId === group.id,
         );
         if (!parentChange) {
           group.dispose();
@@ -276,14 +275,14 @@ export async function activate(context: vscode.ExtensionContext) {
           | undefined;
 
         const parentGroup = parentResourceGroups.find(
-          (group) => group.id === parentChange.changeId
+          (group) => group.id === parentChange.changeId,
         );
         if (!parentGroup) {
           parentChangeResourceGroup = jjSCM.createResourceGroup(
             parentChange.changeId,
             parentChange.description
               ? `Parent Commit | ${parentChange.changeId}: ${parentChange.description}`
-              : `Parent Commit | ${parentChange.changeId} (no description set)`
+              : `Parent Commit | ${parentChange.changeId} (no description set)`,
           );
 
           parentResourceGroups.push(parentChangeResourceGroup);
@@ -293,13 +292,13 @@ export async function activate(context: vscode.ExtensionContext) {
         }
 
         const showResult = await repositories.repos[0].show(
-          parentChange.changeId
+          parentChange.changeId,
         );
 
         let grandparentShowResult: Show | undefined;
         try {
           grandparentShowResult = await repositories.repos[0].show(
-            `${parentChange.changeId}-`
+            `${parentChange.changeId}-`,
           );
         } catch (e) {
           if (
@@ -317,7 +316,7 @@ export async function activate(context: vscode.ExtensionContext) {
             return {
               resourceUri: toJJUri(
                 vscode.Uri.file(parentStatus.path),
-                parentChange.changeId
+                parentChange.changeId,
               ),
               decorations: {
                 strikeThrough: parentStatus.type === "D",
@@ -330,11 +329,11 @@ export async function activate(context: vscode.ExtensionContext) {
                     arguments: [
                       toJJUri(
                         vscode.Uri.file(parentStatus.path),
-                        grandparentShowResult.change.changeId
+                        grandparentShowResult.change.changeId,
                       ),
                       toJJUri(
                         vscode.Uri.file(parentStatus.path),
-                        parentChange.changeId
+                        parentChange.changeId,
                       ),
                       (parentStatus.renamedFrom
                         ? `${parentStatus.renamedFrom} => `
@@ -343,21 +342,21 @@ export async function activate(context: vscode.ExtensionContext) {
                   }
                 : undefined,
             };
-          }
+          },
         );
 
         decorationProvider.addDecorators(
           showResult.fileStatuses.map((status) =>
-            toJJUri(vscode.Uri.file(status.path), parentChange.changeId)
+            toJJUri(vscode.Uri.file(status.path), parentChange.changeId),
           ),
-          showResult.fileStatuses
+          showResult.fileStatuses,
         );
       }
     }
   }
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("jj.refresh", showLoading(updateResources))
+    vscode.commands.registerCommand("jj.refresh", showLoading(updateResources)),
   );
 
   await updateResources();
@@ -375,7 +374,7 @@ function showLoading(callback: () => Promise<void>) {
       { location: vscode.ProgressLocation.SourceControl },
       async () => {
         await callback();
-      }
+      },
     );
 }
 

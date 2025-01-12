@@ -23,7 +23,7 @@ async function findReposInWorkspace() {
         childProcess.stdout!.on("data", (data: string) => {
           output += data;
         });
-      }
+      },
     );
     if (repoRoot) {
       repos.push(new Repository(repoRoot));
@@ -93,7 +93,7 @@ class Repository {
         {
           timeout: 5000,
           cwd: this.repositoryRoot,
-        }
+        },
       );
       const buffers: Buffer[] = [];
       childProcess.on("close", (code) => {
@@ -121,13 +121,17 @@ class Repository {
     return new Promise<void>((resolve, reject) => {
       const childProcess = spawn(
         "jj",
-        ["new", ...(message ? ["-m", message] : []), ...(revs ? ["-r", ...revs] : [])],
+        [
+          "new",
+          ...(message ? ["-m", message] : []),
+          ...(revs ? ["-r", ...revs] : []),
+        ],
         {
           cwd: this.repositoryRoot,
-        }
+        },
       );
 
-      let output = '';
+      let output = "";
       childProcess.stderr!.on("data", (data: string) => {
         output += data;
       });
@@ -151,7 +155,7 @@ class Repository {
         ["squash", ...(message ? ["-m", message] : [])],
         {
           cwd: this.repositoryRoot,
-        }
+        },
       );
 
       childProcess.on("close", () => {
@@ -162,13 +166,9 @@ class Repository {
 
   log(): Promise<ChangeNode[]> {
     return new Promise((resolve, reject) => {
-      const childProcess = spawn(
-        "jj",
-        ["log", "-r", "::", "--limit", "50"],
-        {
-          cwd: this.repositoryRoot,
-        }
-      );
+      const childProcess = spawn("jj", ["log", "-r", "::", "--limit", "50"], {
+        cwd: this.repositoryRoot,
+      });
 
       let output = "";
       childProcess.on("close", () => {
@@ -191,9 +191,9 @@ class Repository {
         ["edit", "-r", rev, "--ignore-immutable"],
         {
           cwd: this.repositoryRoot,
-        }
+        },
       );
-      let output = '';
+      let output = "";
       childProcess.stderr!.on("data", (data: string) => {
         output += data;
       });
@@ -217,9 +217,9 @@ class Repository {
         ["new", "-r", rev, "--ignore-immutable"],
         {
           cwd: this.repositoryRoot,
-        }
+        },
       );
-      let output = '';
+      let output = "";
       childProcess.stderr!.on("data", (data: string) => {
         output += data;
       });
@@ -238,15 +238,16 @@ class Repository {
 }
 
 function parseJJLog(output: string): ChangeNode[] {
-  const lines = output.split('\n');
+  const lines = output.split("\n");
   const changeNodes: ChangeNode[] = [];
 
   for (let i = 0; i < lines.length; i += 2) {
     const oddLine = lines[i];
     let evenLine = lines[i + 1] || "";
 
-    let changeId = '';
-    if (i % 2 === 0) { // Check if the line is odd-numbered (0-based index, so 0, 2, 4... are odd lines)
+    let changeId = "";
+    if (i % 2 === 0) {
+      // Check if the line is odd-numbered (0-based index, so 0, 2, 4... are odd lines)
       const match = oddLine.match(/\b([a-zA-Z0-9]+)\b/); // Match the first group of alphanumeric characters
       if (match) {
         changeId = match[1];
@@ -259,24 +260,38 @@ function parseJJLog(output: string): ChangeNode[] {
 
     // Remove the description from the even line
     if (description) {
-      evenLine = evenLine.replace(description, '');
+      evenLine = evenLine.replace(description, "");
     }
 
-    const emailMatch = oddLine.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/);
-    const timestampMatch = oddLine.match(/\b\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\b/);
+    const emailMatch = oddLine.match(
+      /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/,
+    );
+    const timestampMatch = oddLine.match(
+      /\b\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\b/,
+    );
     const symbolsMatch = oddLine.match(/^[^a-zA-Z0-9(]+/);
     const commitIdMatch = oddLine.match(/([a-zA-Z0-9]{8})$/);
 
-    const symbolFormatted = symbolsMatch![0].replace(/\s/g, '   ').trimEnd();
-    const formattedLine = `${symbolFormatted}   ${description ? description : 'root()'} • ${changeId} • ${commitIdMatch ? commitIdMatch[0] : '' }`;
+    const symbolFormatted = symbolsMatch![0].replace(/\s/g, "   ").trimEnd();
+    const formattedLine = `${symbolFormatted}   ${description ? description : "root()"} • ${changeId} • ${commitIdMatch ? commitIdMatch[0] : ""}`;
 
     // Create a ChangeNode for the odd line with the appended description
-    changeNodes.push(new ChangeNode(formattedLine, `${emailMatch ? emailMatch[0] : ''} ${timestampMatch ? timestampMatch[0] : ''}`, changeId, changeId));
+    changeNodes.push(
+      new ChangeNode(
+        formattedLine,
+        `${emailMatch ? emailMatch[0] : ""} ${timestampMatch ? timestampMatch[0] : ""}`,
+        changeId,
+        changeId,
+      ),
+    );
 
     // Create a ChangeNode for the remaining even line
     if (evenLine) {
-      const formattedEvenLine = evenLine.replace(/(?<![a-zA-Z0-9\)])\s/g, '   ');
-      changeNodes.push(new ChangeNode(formattedEvenLine, '', '', ''));
+      const formattedEvenLine = evenLine.replace(
+        /(?<![a-zA-Z0-9\)])\s/g,
+        "   ",
+      );
+      changeNodes.push(new ChangeNode(formattedEvenLine, "", "", ""));
     }
   }
 
@@ -310,7 +325,7 @@ export type Show = {
 
 function parseJJStatus(
   repositoryRoot: string,
-  output: string
+  output: string,
 ): RepositoryStatus {
   const lines = output.split("\n");
   const fileStatuses: FileStatus[] = [];
@@ -358,8 +373,10 @@ function parseJJStatus(
 
       const trimmedDescription = description.trim();
       const finalDescription =
-        trimmedDescription === "(no description set)" ||  
-        trimmedDescription === "(empty) (no description set)" ? "" : trimmedDescription;
+        trimmedDescription === "(no description set)" ||
+        trimmedDescription === "(empty) (no description set)"
+          ? ""
+          : trimmedDescription;
 
       const commitDetails: Change = {
         changeId: id,
