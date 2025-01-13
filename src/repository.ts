@@ -42,7 +42,6 @@ export class WorkspaceSourceControlManager {
   constructor(private decorationProvider: JJDecorationProvider) {}
 
   async refresh() {
-    console.log("Refreshing workspace SCMs");
     for (const repo of this.repoSCMs) {
       repo.dispose();
     }
@@ -92,6 +91,9 @@ class RepositorySourceControlManager {
     private decorationProvider: JJDecorationProvider,
   ) {
     this.repository = new JJRepository(repositoryRoot);
+    this.subscriptions.push(
+      this.repository.onDidRunJJStatus((status) => this.refresh(status)),
+    );
 
     this.sourceControl = vscode.scm.createSourceControl("jj", "Jujutsu");
     this.subscriptions.push(this.sourceControl);
@@ -114,9 +116,7 @@ class RepositorySourceControlManager {
     };
   }
 
-  async refresh() {
-    const status = await this.repository.status();
-    console.log("Refreshing repository", this.repositoryRoot, status);
+  async refresh(status: RepositoryStatus) {
     this.decorationProvider.onDidRunStatus(status);
 
     this.workingCopyResourceGroup.label = `Working Copy | ${
@@ -255,8 +255,6 @@ class RepositorySourceControlManager {
         showResult.fileStatuses,
       );
     }
-
-    return status;
   }
 
   dispose() {
@@ -267,6 +265,10 @@ class RepositorySourceControlManager {
 }
 
 class JJRepository {
+  private _onDidChangeStatus = new vscode.EventEmitter<RepositoryStatus>();
+  readonly onDidRunJJStatus: vscode.Event<RepositoryStatus> =
+    this._onDidChangeStatus.event;
+
   constructor(private repositoryRoot: string) {}
 
   status() {
@@ -282,6 +284,9 @@ class JJRepository {
       childProcess.stdout!.on("data", (data: string) => {
         output += data;
       });
+    }).then((status) => {
+      this._onDidChangeStatus.fire(status);
+      return status;
     });
   }
 

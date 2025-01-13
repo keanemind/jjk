@@ -131,7 +131,12 @@ export async function activate(context: vscode.ExtensionContext) {
         "jj.squash",
         showLoading(
           async (resourceGroup: vscode.SourceControlResourceGroup) => {
-            const status = await workspaceSCM.repoSCMs[0].refresh();
+            const repository =
+              workspaceSCM.getRepositoryFromResourceGroup(resourceGroup);
+            if (!repository) {
+              throw new Error("Repository not found");
+            }
+            const status = await repository.status();
             if (status.parentChanges.length > 1) {
               vscode.window.showErrorMessage(
                 `Squash failed. Revision has multiple parents.`,
@@ -217,8 +222,8 @@ export async function activate(context: vscode.ExtensionContext) {
       init();
     }
 
-    for (const repo of workspaceSCM.repoSCMs) {
-      await repo.refresh();
+    for (const repoSCM of workspaceSCM.repoSCMs) {
+      await repoSCM.repository.status();
     }
   }
 
