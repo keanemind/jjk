@@ -81,10 +81,19 @@
         "command": "jj.restoreResourceGroup",
         "title": "Discard changes",
         "icon": "$(discard)"
+      },
+      {
+        "command": "jj.selectGraphRepo",
+        "title": "Select repository"
       }
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "jj.selectGraphRepo",
+          "when": "view == jjGraphView",
+          "group": "navigation"
+        },
         {
           "command": "jj.refreshLog",
           "when": "view == jjGraphView",

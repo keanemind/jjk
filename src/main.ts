@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import which from "which";
 
 import "./repository";
-import { WorkspaceSourceControlManager, Show } from "./repository";
+import { WorkspaceSourceControlManager, JJRepository } from "./repository";
 import { JJDecorationProvider } from "./decorationProvider";
 import { JJFileSystemProvider } from "./fileSystemProvider";
 import { ChangeNode, JJGraphProvider } from "./graphProvider";
@@ -32,7 +32,19 @@ export async function activate(context: vscode.ExtensionContext) {
   await workspaceSCM.refresh();
   context.subscriptions.push(workspaceSCM);
 
-  const logProvider = new JJGraphProvider(workspaceSCM);
+  const graphRepoRoot = context.globalState.get<string>("graphRepoRoot");
+  let graphRepo: JJRepository;
+
+  if (graphRepoRoot) {
+    graphRepo =
+      workspaceSCM.repoSCMs.find(
+        (repo) => repo.repositoryRoot === graphRepoRoot,
+      )?.repository || workspaceSCM.repoSCMs[0].repository;
+  } else {
+    graphRepo = workspaceSCM.repoSCMs[0].repository;
+  }
+
+  const logProvider = new JJGraphProvider(graphRepo);
 
   vscode.workspace.onDidChangeWorkspaceFolders(
     async (e) => {
@@ -132,8 +144,6 @@ export async function activate(context: vscode.ExtensionContext) {
           }
 
           const showResult = await repository.show(resourceGroup.id);
-
-          console.log(showResult);
 
           const message = await vscode.window.showInputBox({
             prompt: "Provide a description",
@@ -243,7 +253,7 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
       vscode.commands.registerCommand("jj.edit", async (node: ChangeNode) => {
         try {
-          await workspaceSCM.repoSCMs[0].repository.edit(
+          await logProvider.treeDataProvider.repository.edit(
             node.contextValue as string,
           );
           await updateResources();
@@ -263,10 +273,31 @@ export async function activate(context: vscode.ExtensionContext) {
       const revs = selectedNodes.map((node) => node.contextValue as string);
 
       try {
-        await workspaceSCM.repoSCMs[0].repository.new(undefined, revs);
+        await logProvider.treeDataProvider.repository.new(undefined, revs);
         await updateResources();
       } catch (error: any) {
         vscode.window.showErrorMessage(`Failed to create change: ${error}`);
+      }
+    });
+
+    vscode.commands.registerCommand("jj.selectGraphRepo", async () => {
+      const repoNames = workspaceSCM.repoSCMs.map(
+        (repo) => repo.repositoryRoot,
+      );
+      const selectedRepoName = await vscode.window.showQuickPick(repoNames, {
+        placeHolder: "Select a repository",
+      });
+
+      const selectedRepo = workspaceSCM.repoSCMs.find(
+        (repo) => repo.repositoryRoot === selectedRepoName,
+      );
+
+      if (selectedRepo) {
+        logProvider.treeDataProvider.setCurrentRepo(selectedRepo.repository);
+        context.globalState.update(
+          "graphRepoRoot",
+          selectedRepo.repositoryRoot,
+        );
       }
     });
 

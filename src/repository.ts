@@ -87,7 +87,6 @@ export class WorkspaceSourceControlManager {
             (state) => state.resourceUri.toString() === resourceUri.toString(),
           )
         ) {
-          console.log(`Resource belongs to group: ${group.id}`);
           return group;
         }
       }
@@ -119,7 +118,10 @@ class RepositorySourceControlManager {
       this.repository.onDidRunJJStatus((status) => this.refresh(status)),
     );
 
-    this.sourceControl = vscode.scm.createSourceControl("jj", "Jujutsu");
+    this.sourceControl = vscode.scm.createSourceControl(
+      "jj",
+      path.basename(repositoryRoot),
+    );
     this.subscriptions.push(this.sourceControl);
 
     this.workingCopyResourceGroup = this.sourceControl.createResourceGroup(
@@ -288,7 +290,7 @@ class RepositorySourceControlManager {
   }
 }
 
-class JJRepository {
+export class JJRepository {
   private _onDidChangeStatus = new vscode.EventEmitter<RepositoryStatus>();
   readonly onDidRunJJStatus: vscode.Event<RepositoryStatus> =
     this._onDidChangeStatus.event;
