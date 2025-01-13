@@ -269,9 +269,14 @@ class JJRepository {
   readonly onDidRunJJStatus: vscode.Event<RepositoryStatus> =
     this._onDidChangeStatus.event;
 
+  statusCache: RepositoryStatus | undefined;
+
   constructor(private repositoryRoot: string) {}
 
-  status() {
+  status(readCache = false) {
+    if (readCache && this.statusCache) {
+      return Promise.resolve(this.statusCache);
+    }
     return new Promise<RepositoryStatus>((resolve, reject) => {
       const childProcess = spawn("jj", ["status"], {
         timeout: 5000,
@@ -285,6 +290,7 @@ class JJRepository {
         output += data;
       });
     }).then((status) => {
+      this.statusCache = status;
       this._onDidChangeStatus.fire(status);
       return status;
     });

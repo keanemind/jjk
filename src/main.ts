@@ -136,7 +136,7 @@ export async function activate(context: vscode.ExtensionContext) {
             if (!repository) {
               throw new Error("Repository not found");
             }
-            const status = await repository.status();
+            const status = await repository.status(true);
             if (status.parentChanges.length > 1) {
               vscode.window.showErrorMessage(
                 `Squash failed. Revision has multiple parents.`,
