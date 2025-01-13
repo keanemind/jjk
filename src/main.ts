@@ -97,9 +97,20 @@ export async function activate(context: vscode.ExtensionContext) {
       vscode.commands.registerCommand(
         "jj.describe",
         async (resourceGroup: vscode.SourceControlResourceGroup) => {
+          const repository =
+            workspaceSCM.getRepositoryFromResourceGroup(resourceGroup);
+          if (!repository) {
+            throw new Error("Repository not found");
+          }
+
+          const showResult = await repository.show(resourceGroup.id);
+
+          console.log(showResult);
+
           const message = await vscode.window.showInputBox({
             prompt: "Provide a description",
             placeHolder: "Change description here...",
+            value: showResult.change.description,
           });
 
           if (message === undefined) {
@@ -107,11 +118,6 @@ export async function activate(context: vscode.ExtensionContext) {
           }
 
           try {
-            const repository =
-              workspaceSCM.getRepositoryFromResourceGroup(resourceGroup);
-            if (!repository) {
-              throw new Error("Repository not found");
-            }
             await repository.describe(resourceGroup.id, message);
             vscode.window.showInformationMessage(
               "Description updated successfully.",

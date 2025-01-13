@@ -647,7 +647,9 @@ function parseJJShow(repositoryRoot: string, output: string): Show {
   };
 
   for (const line of lines) {
-    if (line.trim() === "" || line[0] === " ") {
+    if (line.startsWith("    ") && line !== "    (no description set)") {
+      ret.change.description += line.slice(4);
+    } else if (line.trim() === "") {
       continue;
     }
 
