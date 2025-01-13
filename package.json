@@ -71,6 +71,11 @@
       {
         "command": "jj.merge",
         "title": "Create merge commit with selected as parents"
+      },
+      {
+        "command": "jj.restore",
+        "title": "Discard changes",
+        "icon": "$(notebook-revert)"
       }
     ],
     "menus": {
@@ -121,6 +126,11 @@
         {
           "command": "jj.openFile",
           "when": "scmProvider == jj && scmResourceGroup == @",
+          "group": "inline"
+        },
+        {
+          "command": "jj.restore",
+          "when": "scmProvider == jj",
           "group": "inline"
         }
       ]

@@ -93,6 +93,36 @@ export async function activate(context: vscode.ExtensionContext) {
 
     context.subscriptions.push(
       vscode.commands.registerCommand(
+        "jj.restore",
+        showLoading(
+          async (resourceState: vscode.SourceControlResourceState) => {
+            try {
+              const repository = workspaceSCM.getRepositoryFromUri(
+                resourceState.resourceUri,
+              );
+              if (!repository) {
+                throw new Error("Repository not found");
+              }
+              const group =
+                workspaceSCM.getResourceGroupFromResourceState(resourceState);
+
+              await repository.restore(group!.id, [
+                resourceState.resourceUri.fsPath,
+              ]);
+
+              await updateResources();
+            } catch (error: any) {
+              vscode.window.showErrorMessage(
+                `Failed to restore: ${error.message}`,
+              );
+            }
+          },
+        ),
+      ),
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand(
         "jj.describe",
         async (resourceGroup: vscode.SourceControlResourceGroup) => {
           const repository =

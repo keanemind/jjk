@@ -70,6 +70,30 @@ export class WorkspaceSourceControlManager {
       ?.repository;
   }
 
+  getResourceGroupFromResourceState(
+    resourceState: vscode.SourceControlResourceState,
+  ) {
+    const resourceUri = resourceState.resourceUri;
+
+    for (const repo of this.repoSCMs) {
+      const groups = [
+        repo.workingCopyResourceGroup,
+        ...repo.parentResourceGroups,
+      ];
+
+      for (const group of groups) {
+        if (
+          group.resourceStates.some(
+            (state) => state.resourceUri.toString() === resourceUri.toString(),
+          )
+        ) {
+          console.log(`Resource belongs to group: ${group.id}`);
+          return group;
+        }
+      }
+    }
+  }
+
   dispose() {
     for (const subscription of this.repoSCMs) {
       subscription.dispose();
@@ -441,22 +465,23 @@ class JJRepository {
     });
   }
 
-  newMulti(rev: string): Promise<void> {
-    return new Promise((resolve, reject) => {
+  restore(rev?: string, files?: string[]): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
       const childProcess = spawn(
         "jj",
-        ["new", "-r", rev, "--ignore-immutable"],
+        ["restore", "--changes-in", rev ? rev : "@", ...(files ? files : [])],
         {
           cwd: this.repositoryRoot,
         },
       );
+
       let output = "";
       childProcess.stderr!.on("data", (data: string) => {
         output += data;
       });
 
       childProcess.on("close", () => {
-        const match = output.trim().match(/^Error:\s*(.+)$/);
+        const match = output.match(/error:\s*([\s\S]+)$/i);
         if (match) {
           const errorMessage = match[1];
           reject(errorMessage);
