@@ -93,7 +93,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     context.subscriptions.push(
       vscode.commands.registerCommand(
-        "jj.restore",
+        "jj.restoreResourceState",
         showLoading(
           async (resourceState: vscode.SourceControlResourceState) => {
             try {
@@ -209,6 +209,30 @@ export async function activate(context: vscode.ExtensionContext) {
             } catch (error: any) {
               vscode.window.showErrorMessage(
                 `Failed to squash: ${error.message}`,
+              );
+            }
+          },
+        ),
+      ),
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand(
+        "jj.restoreResourceGroup",
+        showLoading(
+          async (resourceGroup: vscode.SourceControlResourceGroup) => {
+            try {
+              const repository =
+                workspaceSCM.getRepositoryFromResourceGroup(resourceGroup);
+              if (!repository) {
+                throw new Error("Repository not found");
+              }
+              await repository.restore(resourceGroup.id);
+
+              await updateResources();
+            } catch (error: any) {
+              vscode.window.showErrorMessage(
+                `Failed to restore: ${error.message}`,
               );
             }
           },

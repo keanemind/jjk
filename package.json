@@ -73,9 +73,14 @@
         "title": "Create merge commit with selected as parents"
       },
       {
-        "command": "jj.restore",
+        "command": "jj.restoreResourceState",
         "title": "Discard changes",
-        "icon": "$(notebook-revert)"
+        "icon": "$(discard)"
+      },
+      {
+        "command": "jj.restoreResourceGroup",
+        "title": "Discard changes",
+        "icon": "$(discard)"
       }
     ],
     "menus": {
@@ -120,6 +125,11 @@
           "command": "jj.squash",
           "when": "scmProvider == jj && scmResourceGroup == @",
           "group": "inline"
+        },
+        {
+          "command": "jj.restoreResourceGroup",
+          "when": "scmProvider == jj",
+          "group": "inline"
         }
       ],
       "scm/resourceState/context": [
@@ -129,7 +139,7 @@
           "group": "inline"
         },
         {
-          "command": "jj.restore",
+          "command": "jj.restoreResourceState",
           "when": "scmProvider == jj",
           "group": "inline"
         }
