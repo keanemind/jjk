@@ -1,12 +1,10 @@
 import * as vscode from "vscode";
 import which from "which";
-import path from "node:path";
 
 import "./repository";
 import { WorkspaceSourceControlManager, Show } from "./repository";
 import { JJDecorationProvider } from "./decorationProvider";
 import { JJFileSystemProvider } from "./fileSystemProvider";
-import { toJJUri } from "./uri";
 import { ChangeNode, JJGraphProvider } from "./graphProvider";
 
 export async function activate(context: vscode.ExtensionContext) {

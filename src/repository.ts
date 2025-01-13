@@ -119,12 +119,12 @@ class RepositorySourceControlManager {
   async refresh(status: RepositoryStatus) {
     this.decorationProvider.onDidRunStatus(status);
 
-    this.workingCopyResourceGroup.label = `Working Copy | ${
+    this.workingCopyResourceGroup.label = `Working Copy (${
       status.workingCopy.changeId
-    }${
+    }) ${
       status.workingCopy.description
-        ? `: ${status.workingCopy.description}`
-        : " (no description set)"
+        ? `• ${status.workingCopy.description}`
+        : "(no description set)"
     }`;
     this.workingCopyResourceGroup.resourceStates = status.fileStatuses.map(
       (fileStatus) => {
@@ -163,10 +163,10 @@ class RepositorySourceControlManager {
       if (!parentChange) {
         group.dispose();
       } else {
-        group.label = `Parent Commit | ${parentChange.changeId}${
+        group.label = `Parent Commit (${parentChange.changeId}) ${
           parentChange.description
-            ? `: ${parentChange.description}`
-            : " (no description set)"
+            ? `• ${parentChange.description}`
+            : "(no description set)"
         }`;
         updatedGroups.push(group);
       }
@@ -186,8 +186,8 @@ class RepositorySourceControlManager {
         parentChangeResourceGroup = this.sourceControl.createResourceGroup(
           parentChange.changeId,
           parentChange.description
-            ? `Parent Commit | ${parentChange.changeId}: ${parentChange.description}`
-            : `Parent Commit | ${parentChange.changeId} (no description set)`,
+            ? `Parent Commit (${parentChange.changeId}) • ${parentChange.description}`
+            : `Parent Commit (${parentChange.changeId}) (no description set)`,
         );
 
         this.parentResourceGroups.push(parentChangeResourceGroup);
