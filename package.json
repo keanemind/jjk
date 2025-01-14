@@ -4,7 +4,7 @@
   "publisher": "jjk",
   "description": "Jujutsu (jj) version control system for VS Code",
   "icon": "./images/logo.png",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "engines": {
     "vscode": "^1.96.0"
   },
@@ -81,16 +81,16 @@
       {
         "command": "jj.editGraph",
         "title": "Edit this change",
-        "icon": "$(desktop-download)"
+        "icon": "$(sign-in)"
       },
       {
         "command": "jj.editResourceGroup",
         "title": "Edit this change",
-        "icon": "$(desktop-download)"
+        "icon": "$(sign-in)"
       },
       {
         "command": "jj.merge",
-        "title": "Create merge commit with selected as parents"
+        "title": "Create merge change with selected as parents"
       },
       {
         "command": "jj.restoreResourceState",

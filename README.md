@@ -9,12 +9,18 @@ The goal of this extension is to bring the great UX of Jujutsu into the VS Code 
 - View file statuses of the Working Copy change.
 - View file statuses of all parents of the Working Copy change.
 - View diffs of files modified in the Working Copy or its parents.
-  ![view file diff](images/view_diff.png)
+  ![view file diff](images/diff.png)
 - Edit the description of the Working Copy or its parents.
-  ![edit description](images/edit_description.png)
+  ![edit description](images/describe.png)
 - Create a new change, with or without a description.
-- Move work from the Working Copy to its parent.
+- Move changes between the Working Copy and its parents.
+  ![revision history](images/squash.png)
+- Discard work in a change.
+  ![revision history](images/restore.png)
 - View the revision history and switch between changes.
+  ![revision history](images/edit.png)
+- Create a merge change.
+  ![revision history](images/merge.png)
 
 ## Requirements
 
@@ -22,4 +28,5 @@ The goal of this extension is to bring the great UX of Jujutsu into the VS Code 
 
 ## Known Issues
 
-Opening multiple Jujutsu repositories in the same VS Code workspace is currently not supported. We intend to address this shortcoming soon.
+- ~~Opening multiple Jujutsu repositories in the same VS Code workspace is currently not supported. We intend to address this shortcoming soon.~~
+  Multi-repo support has been added in v0.3.0.
