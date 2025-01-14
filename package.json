@@ -54,9 +54,14 @@
         "icon": "$(plus)"
       },
       {
-        "command": "jj.squash",
+        "command": "jj.squashToParentResourceGroup",
         "title": "Move changes to parent",
         "icon": "$(arrow-down)"
+      },
+      {
+        "command": "jj.squashToWorkingCopyResourceGroup",
+        "title": "Move changes to child",
+        "icon": "$(arrow-up)"
       },
       {
         "command": "jj.refreshLog",
@@ -131,8 +136,13 @@
           "group": "inline"
         },
         {
-          "command": "jj.squash",
+          "command": "jj.squashToParentResourceGroup",
           "when": "scmProvider == jj && scmResourceGroup == @",
+          "group": "inline"
+        },
+        {
+          "command": "jj.squashToWorkingCopyResourceGroup",
+          "when": "scmProvider == jj && scmResourceGroup != @",
           "group": "inline"
         },
         {

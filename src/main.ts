@@ -172,7 +172,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     context.subscriptions.push(
       vscode.commands.registerCommand(
-        "jj.squash",
+        "jj.squashToParentResourceGroup",
         showLoading(
           async (resourceGroup: vscode.SourceControlResourceGroup) => {
             const repository =
@@ -211,7 +211,57 @@ export async function activate(context: vscode.ExtensionContext) {
               if (!repository) {
                 throw new Error("Repository not found");
               }
-              await repository.squash(message);
+              await repository.squash("@", "@-", message);
+              vscode.window.showInformationMessage(
+                "Changes successfully squashed.",
+              );
+              await updateResources();
+            } catch (error: any) {
+              vscode.window.showErrorMessage(
+                `Failed to squash: ${error.message}`,
+              );
+            }
+          },
+        ),
+      ),
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand(
+        "jj.squashToWorkingCopyResourceGroup",
+        showLoading(
+          async (resourceGroup: vscode.SourceControlResourceGroup) => {
+            const repository =
+              workspaceSCM.getRepositoryFromResourceGroup(resourceGroup);
+            if (!repository) {
+              throw new Error("Repository not found");
+            }
+            const status = await repository.status(true);
+
+            let message: string | undefined;
+            if (
+              status.workingCopy.description !== "" &&
+              status.parentChanges[0].description !== ""
+            ) {
+              message = await vscode.window.showInputBox({
+                prompt: "Provide a description",
+                placeHolder: "Set description here...",
+              });
+
+              if (message === undefined) {
+                return;
+              } else if (message === "") {
+                message = status.workingCopy.description;
+              }
+            }
+
+            try {
+              const repository =
+                workspaceSCM.getRepositoryFromResourceGroup(resourceGroup);
+              if (!repository) {
+                throw new Error("Repository not found");
+              }
+              await repository.squash(resourceGroup.id, "@", message);
               vscode.window.showInformationMessage(
                 "Changes successfully squashed.",
               );

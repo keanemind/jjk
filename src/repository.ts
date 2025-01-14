@@ -405,11 +405,18 @@ export class JJRepository {
     });
   }
 
-  squash(message?: string): Promise<void> {
+  squash(fromRev: string, toRev: string, message?: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const childProcess = spawn(
         "jj",
-        ["squash", ...(message ? ["-m", message] : [])],
+        [
+          "squash",
+          "--from",
+          fromRev,
+          "--into",
+          toRev,
+          ...(message ? ["-m", message] : []),
+        ],
         {
           cwd: this.repositoryRoot,
         },
