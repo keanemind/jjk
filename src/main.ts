@@ -32,19 +32,9 @@ export async function activate(context: vscode.ExtensionContext) {
   await workspaceSCM.refresh();
   context.subscriptions.push(workspaceSCM);
 
-  const graphRepoRoot = context.globalState.get<string>("graphRepoRoot");
-  let graphRepo: JJRepository;
-
-  if (graphRepoRoot) {
-    graphRepo =
-      workspaceSCM.repoSCMs.find(
-        (repo) => repo.repositoryRoot === graphRepoRoot,
-      )?.repository || workspaceSCM.repoSCMs[0].repository;
-  } else {
-    graphRepo = workspaceSCM.repoSCMs[0].repository;
-  }
-
-  const logProvider = new JJGraphProvider(graphRepo);
+  const logProvider = new JJGraphProvider(
+    getSelectedGraphRepo(context, workspaceSCM),
+  );
 
   vscode.workspace.onDidChangeWorkspaceFolders(
     async (e) => {
@@ -448,10 +438,11 @@ export async function activate(context: vscode.ExtensionContext) {
 
       if (selectedRepo) {
         logProvider.treeDataProvider.setCurrentRepo(selectedRepo.repository);
-        context.globalState.update(
+        context.workspaceState.update(
           "graphRepoRoot",
           selectedRepo.repositoryRoot,
         );
+        logProvider.treeDataProvider.refresh();
       }
     });
 
@@ -459,6 +450,10 @@ export async function activate(context: vscode.ExtensionContext) {
   }
 
   async function updateResources() {
+    const graphRepo = getSelectedGraphRepo(context, workspaceSCM);
+    logProvider.treeDataProvider.setCurrentRepo(graphRepo);
+    context.workspaceState.update("graphRepoRoot", graphRepo.repositoryRoot);
+
     await logProvider.treeDataProvider.refresh();
 
     if (workspaceSCM.repoSCMs.length > 0 && !isInitialized) {
@@ -493,6 +488,25 @@ function showLoading<T extends unknown[]>(
         await callback(...args);
       },
     );
+}
+
+function getSelectedGraphRepo(
+  context: vscode.ExtensionContext,
+  workspaceSCM: WorkspaceSourceControlManager,
+): JJRepository {
+  const graphRepoRoot = context.workspaceState.get<string>("graphRepoRoot");
+  let graphRepo: JJRepository;
+
+  if (graphRepoRoot) {
+    graphRepo =
+      workspaceSCM.repoSCMs.find(
+        (repo) => repo.repositoryRoot === graphRepoRoot,
+      )?.repository || workspaceSCM.repoSCMs[0].repository;
+  } else {
+    graphRepo = workspaceSCM.repoSCMs[0].repository;
+  }
+
+  return graphRepo;
 }
 
 // This method is called when your extension is deactivated

@@ -71,12 +71,12 @@ export class JJGraphProvider {
     */
 
     vscode.commands.registerCommand("jj.refreshLog", () => {
-      this.treeDataProvider.refresh();
+      this.treeDataProvider.refresh(true);
     });
   }
 
-  get selectedItems(): readonly ChangeNode[] {
-    return this.treeView.selection;
+  updateTreeViewMessage(message: string) {
+    this.treeView.message = message;
   }
 }
 
@@ -105,12 +105,34 @@ class JJGraphTreeDataProvider implements vscode.TreeDataProvider<ChangeNode> {
 
   setCurrentRepo(repo: JJRepository): void {
     this.repository = repo;
-    this.refresh();
   }
 
-  async refresh(): Promise<void> {
+  async refresh(showLoading: boolean = false): Promise<void> {
+    const currData = this.logData;
     const logOutput = await this.repository.log();
     this.logData = logOutput;
-    this._onDidChangeTreeData.fire();
+
+    if (
+      showLoading === true ||
+      this.areChangeNodesEqual(currData, logOutput) === false
+    ) {
+      this._onDidChangeTreeData.fire();
+    }
+  }
+
+  areChangeNodesEqual(a: ChangeNode[], b: ChangeNode[]): boolean {
+    if (a.length !== b.length) {
+      return false;
+    }
+
+    return a.every((nodeA, index) => {
+      const nodeB = b[index];
+      return (
+        nodeA.label === nodeB.label &&
+        nodeA.tooltip === nodeB.tooltip &&
+        nodeA.description === nodeB.description &&
+        nodeA.contextValue === nodeB.contextValue
+      );
+    });
   }
 }

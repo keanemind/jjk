@@ -299,7 +299,7 @@ export class JJRepository {
 
   statusCache: RepositoryStatus | undefined;
 
-  constructor(private repositoryRoot: string) {}
+  constructor(public repositoryRoot: string) {}
 
   status(readCache = false) {
     if (readCache && this.statusCache) {
