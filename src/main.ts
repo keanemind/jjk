@@ -380,18 +380,43 @@ export async function activate(context: vscode.ExtensionContext) {
     );
 
     context.subscriptions.push(
-      vscode.commands.registerCommand("jj.edit", async (node: ChangeNode) => {
-        try {
-          await logProvider.treeDataProvider.repository.edit(
-            node.contextValue as string,
-          );
-          await updateResources();
-        } catch (error: any) {
-          vscode.window.showErrorMessage(
-            `Failed to switch to change: ${error}`,
-          );
-        }
-      }),
+      vscode.commands.registerCommand(
+        "jj.editGraph",
+        async (node: ChangeNode) => {
+          try {
+            await logProvider.treeDataProvider.repository.edit(
+              node.contextValue as string,
+            );
+            await updateResources();
+          } catch (error: any) {
+            vscode.window.showErrorMessage(
+              `Failed to switch to change: ${error}`,
+            );
+          }
+        },
+      ),
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand(
+        "jj.editResourceGroup",
+        async (resourceGroup: vscode.SourceControlResourceGroup) => {
+          try {
+            const repository =
+              workspaceSCM.getRepositoryFromResourceGroup(resourceGroup);
+            if (!repository) {
+              throw new Error("Repository not found");
+            }
+            await repository.edit(resourceGroup.id);
+
+            await updateResources();
+          } catch (error: any) {
+            vscode.window.showErrorMessage(
+              `Failed to switch to change: ${error}`,
+            );
+          }
+        },
+      ),
     );
 
     vscode.commands.registerCommand("jj.merge", async () => {

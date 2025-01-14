@@ -79,9 +79,14 @@
         "icon": "$(refresh)"
       },
       {
-        "command": "jj.edit",
+        "command": "jj.editGraph",
         "title": "Edit this change",
-        "icon": "$(debug-step-into)"
+        "icon": "$(desktop-download)"
+      },
+      {
+        "command": "jj.editResourceGroup",
+        "title": "Edit this change",
+        "icon": "$(desktop-download)"
       },
       {
         "command": "jj.merge",
@@ -122,7 +127,7 @@
       ],
       "view/item/context": [
         {
-          "command": "jj.edit",
+          "command": "jj.editGraph",
           "when": "view == jjGraphView && viewItem != ''",
           "group": "inline"
         }
@@ -158,6 +163,11 @@
         {
           "command": "jj.restoreResourceGroup",
           "when": "scmProvider == jj",
+          "group": "inline"
+        },
+        {
+          "command": "jj.editResourceGroup",
+          "when": "scmProvider == jj && scmResourceGroup != @",
           "group": "inline"
         }
       ],

@@ -476,7 +476,7 @@ export class JJRepository {
       });
 
       childProcess.on("close", () => {
-        const match = output.trim().match(/^Error:\s*(.+)$/i);
+        const match = output.trim().match(/error:\s*([\s\S]+)$/i);
         if (match) {
           const errorMessage = match[1];
           reject(errorMessage);
