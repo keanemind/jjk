@@ -550,8 +550,16 @@ function parseJJLog(output: string): ChangeNode[] {
     const symbolsMatch = oddLine.match(/^[^a-zA-Z0-9(]+/);
     const commitIdMatch = oddLine.match(/([a-zA-Z0-9]{8})$/);
 
-    const symbolFormatted = symbolsMatch![0].replace(/\s/g, "   ").trimEnd();
-    const formattedLine = `${symbolFormatted}   ${description ? description : "root()"} • ${changeId} • ${commitIdMatch ? commitIdMatch[0] : ""}`;
+    const symbolFormatted = symbolsMatch
+      ? symbolsMatch[0].replace(/\s/g, "   ").trimEnd()
+      : "";
+
+    let formattedLine;
+    if (symbolFormatted !== "") {
+      formattedLine = `${symbolFormatted}   ${description}${changeId === "zzzzzzzz" ? "root()" : ""} • ${changeId} • ${commitIdMatch ? commitIdMatch[0] : ""}`;
+    } else {
+      formattedLine = "";
+    }
 
     // Create a ChangeNode for the odd line with the appended description
     changeNodes.push(
