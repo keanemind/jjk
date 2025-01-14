@@ -91,6 +91,8 @@ export class WorkspaceSourceControlManager {
         }
       }
     }
+
+    throw new Error("Resource state not found in any resource group");
   }
 
   dispose() {
@@ -405,7 +407,17 @@ export class JJRepository {
     });
   }
 
-  squash(fromRev: string, toRev: string, message?: string): Promise<void> {
+  squash({
+    fromRev,
+    toRev,
+    message,
+    filepaths,
+  }: {
+    fromRev: string;
+    toRev: string;
+    message?: string;
+    filepaths?: string[];
+  }): Promise<void> {
     return new Promise((resolve, reject) => {
       const childProcess = spawn(
         "jj",
@@ -416,6 +428,7 @@ export class JJRepository {
           "--into",
           toRev,
           ...(message ? ["-m", message] : []),
+          ...(filepaths ? filepaths : []),
         ],
         {
           cwd: this.repositoryRoot,

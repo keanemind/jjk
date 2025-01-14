@@ -118,7 +118,7 @@ export async function activate(context: vscode.ExtensionContext) {
               const group =
                 workspaceSCM.getResourceGroupFromResourceState(resourceState);
 
-              await repository.restore(group!.id, [
+              await repository.restore(group.id, [
                 resourceState.resourceUri.fsPath,
               ]);
 
@@ -126,6 +126,81 @@ export async function activate(context: vscode.ExtensionContext) {
             } catch (error: any) {
               vscode.window.showErrorMessage(
                 `Failed to restore: ${error.message}`,
+              );
+            }
+          },
+        ),
+      ),
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand(
+        "jj.squashToParentResourceState",
+        showLoading(
+          async (resourceState: vscode.SourceControlResourceState) => {
+            try {
+              const repository = workspaceSCM.getRepositoryFromUri(
+                resourceState.resourceUri,
+              );
+              if (!repository) {
+                throw new Error("Repository not found");
+              }
+
+              const status = await repository.status(true);
+              if (status.parentChanges.length > 1) {
+                vscode.window.showErrorMessage(
+                  `Squash failed. Revision has multiple parents.`,
+                );
+                return;
+              }
+
+              await repository.squash({
+                fromRev: "@",
+                toRev: "@-",
+                filepaths: [resourceState.resourceUri.fsPath],
+              });
+              vscode.window.showInformationMessage(
+                "Changes successfully squashed.",
+              );
+              await updateResources();
+            } catch (error: any) {
+              vscode.window.showErrorMessage(
+                `Failed to squash: ${error.message}`,
+              );
+            }
+          },
+        ),
+      ),
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand(
+        "jj.squashToWorkingCopyResourceState",
+        showLoading(
+          async (resourceState: vscode.SourceControlResourceState) => {
+            try {
+              const repository = workspaceSCM.getRepositoryFromUri(
+                resourceState.resourceUri,
+              );
+              if (!repository) {
+                throw new Error("Repository not found");
+              }
+
+              const group =
+                workspaceSCM.getResourceGroupFromResourceState(resourceState);
+
+              await repository.squash({
+                fromRev: group.id,
+                toRev: "@",
+                filepaths: [resourceState.resourceUri.fsPath],
+              });
+              vscode.window.showInformationMessage(
+                "Changes successfully squashed.",
+              );
+              await updateResources();
+            } catch (error: any) {
+              vscode.window.showErrorMessage(
+                `Failed to squash: ${error.message}`,
               );
             }
           },
@@ -211,7 +286,7 @@ export async function activate(context: vscode.ExtensionContext) {
               if (!repository) {
                 throw new Error("Repository not found");
               }
-              await repository.squash("@", "@-", message);
+              await repository.squash({ fromRev: "@", toRev: "@-", message });
               vscode.window.showInformationMessage(
                 "Changes successfully squashed.",
               );
@@ -261,7 +336,11 @@ export async function activate(context: vscode.ExtensionContext) {
               if (!repository) {
                 throw new Error("Repository not found");
               }
-              await repository.squash(resourceGroup.id, "@", message);
+              await repository.squash({
+                fromRev: resourceGroup.id,
+                toRev: "@",
+                message,
+              });
               vscode.window.showInformationMessage(
                 "Changes successfully squashed.",
               );

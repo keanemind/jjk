@@ -60,7 +60,17 @@
       },
       {
         "command": "jj.squashToWorkingCopyResourceGroup",
-        "title": "Move changes to child",
+        "title": "Move changes to working copy",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "jj.squashToParentResourceState",
+        "title": "Move changes to parent",
+        "icon": "$(arrow-down)"
+      },
+      {
+        "command": "jj.squashToWorkingCopyResourceState",
+        "title": "Move changes to working copy",
         "icon": "$(arrow-up)"
       },
       {
@@ -160,6 +170,16 @@
         {
           "command": "jj.restoreResourceState",
           "when": "scmProvider == jj",
+          "group": "inline"
+        },
+        {
+          "command": "jj.squashToParentResourceState",
+          "when": "scmProvider == jj && scmResourceGroup == @",
+          "group": "inline"
+        },
+        {
+          "command": "jj.squashToWorkingCopyResourceState",
+          "when": "scmProvider == jj && scmResourceGroup != @",
           "group": "inline"
         }
       ]
