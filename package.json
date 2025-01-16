@@ -25,7 +25,8 @@
       "scm": [
         {
           "id": "jjGraphView",
-          "name": "Source Control Graph (JJ)"
+          "name": "Source Control Graph (JJ)",
+          "when": "jj.reposExist"
         }
       ]
     },

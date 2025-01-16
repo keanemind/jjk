@@ -32,9 +32,7 @@ export async function activate(context: vscode.ExtensionContext) {
   await workspaceSCM.refresh();
   context.subscriptions.push(workspaceSCM);
 
-  const logProvider = new JJGraphProvider(
-    getSelectedGraphRepo(context, workspaceSCM),
-  );
+  let logProvider: JJGraphProvider;
 
   vscode.workspace.onDidChangeWorkspaceFolders(
     async (e) => {
@@ -47,6 +45,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
   let isInitialized = false;
   function init() {
+    logProvider = new JJGraphProvider(
+      getSelectedGraphRepo(context, workspaceSCM),
+    );
     const fileSystemProvider = new JJFileSystemProvider(workspaceSCM);
     context.subscriptions.push(fileSystemProvider);
     context.subscriptions.push(
@@ -450,14 +451,17 @@ export async function activate(context: vscode.ExtensionContext) {
   }
 
   async function updateResources() {
-    const graphRepo = getSelectedGraphRepo(context, workspaceSCM);
-    logProvider.treeDataProvider.setCurrentRepo(graphRepo);
-    context.workspaceState.update("graphRepoRoot", graphRepo.repositoryRoot);
-
-    await logProvider.treeDataProvider.refresh();
-
-    if (workspaceSCM.repoSCMs.length > 0 && !isInitialized) {
-      init();
+    if (workspaceSCM.repoSCMs.length > 0) {
+      vscode.commands.executeCommand("setContext", "jj.reposExist", true);
+      if (!isInitialized) {
+        init();
+      }
+      const graphRepo = getSelectedGraphRepo(context, workspaceSCM);
+      logProvider.treeDataProvider.setCurrentRepo(graphRepo);
+      context.workspaceState.update("graphRepoRoot", graphRepo.repositoryRoot);
+      await logProvider.treeDataProvider.refresh();
+    } else {
+      vscode.commands.executeCommand("setContext", "jj.reposExist", false);
     }
 
     for (const repoSCM of workspaceSCM.repoSCMs) {
