@@ -2,7 +2,8 @@ import * as vscode from "vscode";
 import which from "which";
 
 import "./repository";
-import { WorkspaceSourceControlManager, JJRepository } from "./repository";
+import { WorkspaceSourceControlManager } from "./repository";
+import type { JJRepository, ChangeWithDetails } from "./repository";
 import { JJDecorationProvider } from "./decorationProvider";
 import { JJFileSystemProvider } from "./fileSystemProvider";
 import { ChangeNode, JJGraphProvider } from "./graphProvider";
@@ -64,7 +65,7 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(statusBarItem);
     statusBarItem.command = "jj.gitFetch";
     let lastOpenedFileUri: vscode.Uri | undefined;
-    const handleDidChangeActiveTextEditor = (
+    const statusBarHandleDidChangeActiveTextEditor = (
       editor: vscode.TextEditor | undefined,
     ) => {
       if (editor && editor.document.uri.scheme === "file") {
@@ -78,8 +79,82 @@ export async function activate(context: vscode.ExtensionContext) {
         }
       }
     };
-    vscode.window.onDidChangeActiveTextEditor(handleDidChangeActiveTextEditor);
-    handleDidChangeActiveTextEditor(vscode.window.activeTextEditor);
+    context.subscriptions.push(
+      vscode.window.onDidChangeActiveTextEditor(
+        statusBarHandleDidChangeActiveTextEditor,
+      ),
+    );
+    statusBarHandleDidChangeActiveTextEditor(vscode.window.activeTextEditor);
+
+    const annotationDecoration = vscode.window.createTextEditorDecorationType({
+      after: {
+        margin: "0 0 0 3em",
+        textDecoration: "none",
+      },
+      rangeBehavior: vscode.DecorationRangeBehavior.OpenOpen,
+    });
+    let annotateInfo:
+      | {
+          changeIdsByLine: string[];
+          changes: Map<string, ChangeWithDetails>;
+        }
+      | undefined;
+    const setDecorations = (editor: vscode.TextEditor, lines: number[]) => {
+      if (annotateInfo) {
+        const decorations = lines.map((line) => {
+          const changeId = annotateInfo!.changeIdsByLine[line];
+          const change = annotateInfo!.changes.get(changeId)!;
+          return {
+            renderOptions: {
+              after: {
+                backgroundColor: "#00000000",
+                color: "#99999959",
+                contentText: ` ${change.author.name} at ${change.date} • ${change.description || "(no description)"} • ${change.changeId.substring(
+                  0,
+                  8,
+                )} `,
+                textDecoration: "none;",
+              },
+            },
+            range: editor.document.validateRange(
+              new vscode.Range(line, 2 ** 30 - 1, line, 2 ** 30 - 1),
+            ),
+          } satisfies vscode.DecorationOptions;
+        });
+        editor.setDecorations(annotationDecoration, decorations);
+      }
+    };
+    const updateAnnotateInfo = async (uri: vscode.Uri) => {
+      const repository = workspaceSCM.getRepositoryFromUri(uri);
+      if (repository) {
+        annotateInfo = await repository.annotate(uri.fsPath);
+      }
+    };
+    context.subscriptions.push(
+      vscode.window.onDidChangeActiveTextEditor(
+        async (editor: vscode.TextEditor | undefined) => {
+          if (editor) {
+            const uri = editor.document.uri;
+            updateAnnotateInfo(uri);
+            const activeLines = editor.selections.map(
+              (selection) => selection.active.line,
+            );
+            setDecorations(editor, activeLines);
+          }
+        },
+      ),
+    );
+    context.subscriptions.push(
+      vscode.window.onDidChangeTextEditorSelection((e) => {
+        const activeLines = e.selections.map(
+          (selection) => selection.active.line,
+        );
+        setDecorations(e.textEditor, activeLines);
+      }),
+    );
+    if (vscode.window.activeTextEditor) {
+      updateAnnotateInfo(vscode.window.activeTextEditor.document.uri);
+    }
 
     context.subscriptions.push(
       vscode.commands.registerCommand(
@@ -434,56 +509,64 @@ export async function activate(context: vscode.ExtensionContext) {
       ),
     );
 
-    vscode.commands.registerCommand("jj.merge", async () => {
-      const selectedNodes = logProvider.treeView.selection as ChangeNode[];
-      if (selectedNodes.length < 2) {
-        return;
-      }
-      const revs = selectedNodes.map((node) => node.contextValue as string);
-
-      try {
-        await logProvider.treeDataProvider.repository.new(undefined, revs);
-        await updateResources();
-      } catch (error: any) {
-        vscode.window.showErrorMessage(`Failed to create change: ${error}`);
-      }
-    });
-
-    vscode.commands.registerCommand("jj.selectGraphRepo", async () => {
-      const repoNames = workspaceSCM.repoSCMs.map(
-        (repo) => repo.repositoryRoot,
-      );
-      const selectedRepoName = await vscode.window.showQuickPick(repoNames, {
-        placeHolder: "Select a repository",
-      });
-
-      const selectedRepo = workspaceSCM.repoSCMs.find(
-        (repo) => repo.repositoryRoot === selectedRepoName,
-      );
-
-      if (selectedRepo) {
-        logProvider.treeDataProvider.setCurrentRepo(selectedRepo.repository);
-        context.workspaceState.update(
-          "graphRepoRoot",
-          selectedRepo.repositoryRoot,
-        );
-        logProvider.treeDataProvider.refresh();
-      }
-    });
-
-    vscode.commands.registerCommand("jj.gitFetch", async () => {
-      if (lastOpenedFileUri) {
-        statusBarItem.text = "$(sync~spin)";
-        statusBarItem.tooltip = "Fetching...";
-        try {
-          await workspaceSCM
-            .getRepositoryFromUri(lastOpenedFileUri)
-            ?.gitFetch();
-        } finally {
-          handleDidChangeActiveTextEditor(vscode.window.activeTextEditor);
+    context.subscriptions.push(
+      vscode.commands.registerCommand("jj.merge", async () => {
+        const selectedNodes = logProvider.treeView.selection as ChangeNode[];
+        if (selectedNodes.length < 2) {
+          return;
         }
-      }
-    });
+        const revs = selectedNodes.map((node) => node.contextValue as string);
+
+        try {
+          await logProvider.treeDataProvider.repository.new(undefined, revs);
+          await updateResources();
+        } catch (error: any) {
+          vscode.window.showErrorMessage(`Failed to create change: ${error}`);
+        }
+      }),
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand("jj.selectGraphRepo", async () => {
+        const repoNames = workspaceSCM.repoSCMs.map(
+          (repo) => repo.repositoryRoot,
+        );
+        const selectedRepoName = await vscode.window.showQuickPick(repoNames, {
+          placeHolder: "Select a repository",
+        });
+
+        const selectedRepo = workspaceSCM.repoSCMs.find(
+          (repo) => repo.repositoryRoot === selectedRepoName,
+        );
+
+        if (selectedRepo) {
+          logProvider.treeDataProvider.setCurrentRepo(selectedRepo.repository);
+          context.workspaceState.update(
+            "graphRepoRoot",
+            selectedRepo.repositoryRoot,
+          );
+          logProvider.treeDataProvider.refresh();
+        }
+      }),
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand("jj.gitFetch", async () => {
+        if (lastOpenedFileUri) {
+          statusBarItem.text = "$(sync~spin)";
+          statusBarItem.tooltip = "Fetching...";
+          try {
+            await workspaceSCM
+              .getRepositoryFromUri(lastOpenedFileUri)
+              ?.gitFetch();
+          } finally {
+            statusBarHandleDidChangeActiveTextEditor(
+              vscode.window.activeTextEditor,
+            );
+          }
+        }
+      }),
+    );
 
     isInitialized = true;
   }

@@ -535,6 +535,42 @@ export class JJRepository {
     }
     return this.gitFetchPromise;
   }
+
+  async annotate(file: string): Promise<{
+    changeIdsByLine: string[];
+    changes: Map<string, ChangeWithDetails>;
+  }> {
+    const commandPromise = new Promise<string>((resolve, reject) => {
+      const childProcess = spawn("jj", ["file", "annotate", file], {
+        cwd: this.repositoryRoot,
+      });
+
+      let output = "";
+      childProcess.on("close", () => {
+        resolve(output);
+      });
+      childProcess.stdout!.on("data", (data: string) => {
+        output += data;
+      });
+    });
+    const output = await commandPromise;
+    const lines = output.split("\n");
+    const changes = new Map<string, ChangeWithDetails>();
+    Promise.all(
+      lines.map(async (line) => {
+        const changeId = line.split(" ")[0];
+        if (changes.has(changeId)) {
+          return;
+        }
+        const showResult = await this.show(changeId);
+        changes.set(changeId, showResult.change);
+      }),
+    );
+    return {
+      changeIdsByLine: lines.map((line) => line.split(" ")[0]),
+      changes,
+    };
+  }
 }
 
 function parseJJLog(output: string): ChangeNode[] {
@@ -613,12 +649,20 @@ export type FileStatus = {
   renamedFrom?: string;
 };
 
-export type Change = {
+export interface Change {
   changeId: string;
   commitId: string;
   branch?: string;
   description: string;
-};
+}
+
+export interface ChangeWithDetails extends Change {
+  author: {
+    name: string;
+    email: string;
+  };
+  date: string;
+}
 
 export type RepositoryStatus = {
   fileStatuses: FileStatus[];
@@ -627,7 +671,7 @@ export type RepositoryStatus = {
 };
 
 export type Show = {
-  change: Change;
+  change: ChangeWithDetails;
   fileStatuses: FileStatus[];
 };
 
@@ -719,7 +763,16 @@ function parseJJShow(repositoryRoot: string, output: string): Show {
   }
 
   const ret: Show = {
-    change: { changeId: "", commitId: "", description: "" },
+    change: {
+      changeId: "",
+      commitId: "",
+      description: "",
+      author: {
+        email: "",
+        name: "",
+      },
+      date: "",
+    },
     fileStatuses: [],
   };
 
@@ -756,6 +809,24 @@ function parseJJShow(repositoryRoot: string, output: string): Show {
       ret.change.commitId = line.split(" ")[2];
     } else if (line.startsWith("Change ID: ")) {
       ret.change.changeId = line.split(" ")[2];
+    } else if (line.startsWith("Author: ")) {
+      const lineWithoutPrefix = line.slice(8); // Remove "Author: "
+      const lastOpenAngleBracketIndex = lineWithoutPrefix.lastIndexOf("<");
+      const lastCloseAngleBracketIndex = lineWithoutPrefix.lastIndexOf(">");
+      const authorNameString = lineWithoutPrefix
+        .slice(0, lastOpenAngleBracketIndex)
+        .trim();
+      const authorEmailString = lineWithoutPrefix.slice(
+        lastOpenAngleBracketIndex + 1,
+        lastCloseAngleBracketIndex,
+      );
+      ret.change.author = {
+        name: authorNameString,
+        email: authorEmailString,
+      };
+      const lastOpenParenIndex = lineWithoutPrefix.lastIndexOf("(");
+      const date = lineWithoutPrefix.slice(lastOpenParenIndex + 1, -1).trim();
+      ret.change.date = date;
     }
   }
 
