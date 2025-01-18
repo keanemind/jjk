@@ -106,6 +106,10 @@
       {
         "command": "jj.selectGraphRepo",
         "title": "Select repository"
+      },
+      {
+        "command": "jj.gitFetch",
+        "title": "Fetch from remote"
       }
     ],
     "menus": {

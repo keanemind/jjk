@@ -57,6 +57,30 @@ export async function activate(context: vscode.ExtensionContext) {
       }),
     );
 
+    const statusBarItem = vscode.window.createStatusBarItem(
+      vscode.StatusBarAlignment.Left,
+      100,
+    );
+    context.subscriptions.push(statusBarItem);
+    statusBarItem.command = "jj.gitFetch";
+    let lastOpenedFileUri: vscode.Uri | undefined;
+    const handleDidChangeActiveTextEditor = (
+      editor: vscode.TextEditor | undefined,
+    ) => {
+      if (editor && editor.document.uri.scheme === "file") {
+        lastOpenedFileUri = editor.document.uri;
+        const repository = workspaceSCM.getRepositoryFromUri(lastOpenedFileUri);
+        if (repository) {
+          const folderName = repository.repositoryRoot.split("/").at(-1)!;
+          statusBarItem.text = "$(cloud-download)";
+          statusBarItem.tooltip = `${folderName} – Run \`jj git fetch\``;
+          statusBarItem.show();
+        }
+      }
+    };
+    vscode.window.onDidChangeActiveTextEditor(handleDidChangeActiveTextEditor);
+    handleDidChangeActiveTextEditor(vscode.window.activeTextEditor);
+
     context.subscriptions.push(
       vscode.commands.registerCommand(
         "jj.new",
@@ -444,6 +468,20 @@ export async function activate(context: vscode.ExtensionContext) {
           selectedRepo.repositoryRoot,
         );
         logProvider.treeDataProvider.refresh();
+      }
+    });
+
+    vscode.commands.registerCommand("jj.gitFetch", async () => {
+      if (lastOpenedFileUri) {
+        statusBarItem.text = "$(sync~spin)";
+        statusBarItem.tooltip = "Fetching...";
+        try {
+          await workspaceSCM
+            .getRepositoryFromUri(lastOpenedFileUri)
+            ?.gitFetch();
+        } finally {
+          handleDidChangeActiveTextEditor(vscode.window.activeTextEditor);
+        }
       }
     });
 

@@ -298,6 +298,7 @@ export class JJRepository {
     this._onDidChangeStatus.event;
 
   statusCache: RepositoryStatus | undefined;
+  gitFetchPromise: Promise<void> | undefined;
 
   constructor(public repositoryRoot: string) {}
 
@@ -512,6 +513,27 @@ export class JJRepository {
         }
       });
     });
+  }
+
+  gitFetch(): Promise<void> {
+    if (!this.gitFetchPromise) {
+      this.gitFetchPromise = new Promise<void>((resolve, reject) => {
+        const childProcess = spawn("jj", ["git", "fetch"], {
+          cwd: this.repositoryRoot,
+        });
+
+        let output = "";
+        childProcess.stderr!.on("data", (data: string) => {
+          output += data;
+        });
+
+        childProcess.on("close", () => {
+          this.gitFetchPromise = undefined;
+          childProcess.exitCode === 0 ? resolve() : reject(new Error(output));
+        });
+      });
+    }
+    return this.gitFetchPromise;
   }
 }
 
