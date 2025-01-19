@@ -556,7 +556,7 @@ export class JJRepository {
     const output = await commandPromise;
     const lines = output.split("\n");
     const changes = new Map<string, ChangeWithDetails>();
-    Promise.all(
+    await Promise.all(
       lines.map(async (line) => {
         const changeId = line.split(" ")[0];
         if (changes.has(changeId)) {

@@ -99,8 +99,9 @@ export async function activate(context: vscode.ExtensionContext) {
           changes: Map<string, ChangeWithDetails>;
         }
       | undefined;
+    let activeEditorUri: vscode.Uri | undefined;
     const setDecorations = (editor: vscode.TextEditor, lines: number[]) => {
-      if (annotateInfo) {
+      if (activeEditorUri === editor.document.uri && annotateInfo) {
         const decorations = lines.map((line) => {
           const changeId = annotateInfo!.changeIdsByLine[line];
           const change = annotateInfo!.changes.get(changeId)!;
@@ -127,7 +128,10 @@ export async function activate(context: vscode.ExtensionContext) {
     const updateAnnotateInfo = async (uri: vscode.Uri) => {
       const repository = workspaceSCM.getRepositoryFromUri(uri);
       if (repository) {
-        annotateInfo = await repository.annotate(uri.fsPath);
+        const result = await repository.annotate(uri.fsPath);
+        if (activeEditorUri === uri) {
+          annotateInfo = result;
+        }
       }
     };
     context.subscriptions.push(
@@ -135,7 +139,8 @@ export async function activate(context: vscode.ExtensionContext) {
         async (editor: vscode.TextEditor | undefined) => {
           if (editor) {
             const uri = editor.document.uri;
-            updateAnnotateInfo(uri);
+            activeEditorUri = uri;
+            await updateAnnotateInfo(uri);
             const activeLines = editor.selections.map(
               (selection) => selection.active.line,
             );
