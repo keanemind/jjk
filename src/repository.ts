@@ -1,7 +1,6 @@
 import path from "path";
 import * as vscode from "vscode";
 import spawn from "cross-spawn";
-import { ChangeNode } from "./graphProvider";
 import type { JJDecorationProvider } from "./decorationProvider";
 import { toJJUri } from "./uri";
 
@@ -558,16 +557,34 @@ export class JJRepository {
     });
   }
 
-  log(): Promise<ChangeNode[]> {
+  log(
+    rev: string = "::",
+    template: string = "builtin_log_compact",
+    limit: number = 50,
+    noGraph: boolean = false,
+  ): Promise<string> {
     return new Promise((resolve, reject) => {
-      const childProcess = spawn("jj", ["log", "-r", "::", "--limit", "50"], {
-        cwd: this.repositoryRoot,
-      });
+      const childProcess = spawn(
+        "jj",
+        [
+          "log",
+          "-r",
+          rev,
+          "-n",
+          limit.toString(),
+          "-T",
+          template,
+          ...(noGraph ? ["--no-graph"] : []),
+        ],
+        {
+          cwd: this.repositoryRoot,
+        },
+      );
 
       let output = "";
       childProcess.on("close", () => {
         try {
-          resolve(parseJJLog(output));
+          resolve(output);
         } catch (e) {
           reject(e);
         }
@@ -816,72 +833,6 @@ export class JJRepository {
       });
     });
   }
-}
-
-function parseJJLog(output: string): ChangeNode[] {
-  const lines = output.split("\n");
-  const changeNodes: ChangeNode[] = [];
-
-  for (let i = 0; i < lines.length; i += 2) {
-    const oddLine = lines[i];
-    let evenLine = lines[i + 1] || "";
-
-    let changeId = "";
-    if (i % 2 === 0) {
-      // Check if the line is odd-numbered (0-based index, so 0, 2, 4... are odd lines)
-      const match = oddLine.match(/\b([a-zA-Z0-9]+)\b/); // Match the first group of alphanumeric characters
-      if (match) {
-        changeId = match[1];
-      }
-    }
-
-    // Match the first alphanumeric character or opening parenthesis and everything after it
-    const match = evenLine.match(/([a-zA-Z0-9(].*)/);
-    const description = match ? match[1] : "";
-
-    // Remove the description from the even line
-    if (description) {
-      evenLine = evenLine.replace(description, "");
-    }
-
-    const emailMatch = oddLine.match(
-      /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/,
-    );
-    const timestampMatch = oddLine.match(
-      /\b\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\b/,
-    );
-    const symbolsMatch = oddLine.match(/^[^a-zA-Z0-9(]+/);
-    const commitIdMatch = oddLine.match(/([a-zA-Z0-9]{8})$/);
-
-    const symbolFormatted = symbolsMatch
-      ? symbolsMatch[0].replace(/\s/g, "   ").trimEnd()
-      : "";
-
-    let formattedLine;
-    if (symbolFormatted !== "") {
-      formattedLine = `${symbolFormatted}   ${description}${changeId === "zzzzzzzz" ? "root()" : ""} • ${changeId} • ${commitIdMatch ? commitIdMatch[0] : ""}`;
-    } else {
-      formattedLine = "";
-    }
-
-    // Create a ChangeNode for the odd line with the appended description
-    changeNodes.push(
-      new ChangeNode(
-        formattedLine,
-        `${emailMatch ? emailMatch[0] : ""} ${timestampMatch ? timestampMatch[0] : ""}`,
-        changeId,
-        changeId,
-      ),
-    );
-
-    // Create a ChangeNode for the remaining even line
-    if (evenLine) {
-      const formattedEvenLine = evenLine.replace(/(?<![a-zA-Z0-9)])\s/g, "   ");
-      changeNodes.push(new ChangeNode(formattedEvenLine, "", "", ""));
-    }
-  }
-
-  return changeNodes;
 }
 
 export type FileStatus = {

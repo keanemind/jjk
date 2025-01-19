@@ -32,6 +32,12 @@
           "id": "jjOperationLog",
           "name": "Operation Log (JJ)",
           "when": "jj.reposExist"
+        },
+        {
+          "type": "webview",
+          "id": "jjGraphWebview",
+          "name": "Source Control Graph (JJ)",
+          "when": "jj.reposExist"
         }
       ]
     },
@@ -135,6 +141,21 @@
         "command": "jj.operationRestore",
         "title": "Restore repo to the state at this operation",
         "icon": "$(history)"
+      },
+      {
+        "command": "jj.refreshGraphWebview",
+        "title": "Refresh source control graph",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "jj.mergeGraphWebview",
+        "title": "Create merge change with selected as parents",
+        "icon": "$(git-merge)"
+      },
+      {
+        "command": "jj.selectGraphWebviewRepo",
+        "title": "Select repository",
+        "icon": "$(repo)"
       }
     ],
     "menus": {
@@ -162,6 +183,21 @@
         {
           "command": "jj.selectOperationLogRepo",
           "when": "view == jjOperationLog",
+          "group": "navigation"
+        },
+        {
+          "command": "jj.refreshGraphWebview",
+          "when": "view == jjGraphWebview",
+          "group": "navigation"
+        },
+        {
+          "command": "jj.mergeGraphWebview",
+          "when": "view == jjGraphWebview && jjGraphView.multipleNodesSelected",
+          "group": "navigation"
+        },
+        {
+          "command": "jj.selectGraphWebviewRepo",
+          "when": "view == jjGraphWebview",
           "group": "navigation"
         }
       ],

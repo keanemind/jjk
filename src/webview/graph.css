@@ -1,0 +1,167 @@
+body {
+    padding: 0;
+    color: var(--vscode-foreground);
+    font-family: var(--vscode-font-family);
+    font-size: var(--vscode-font-size);
+    background-color: var(--vscode-sideBar-background);
+}
+
+#graph {
+    position: relative;
+    padding-left: 8px;
+}
+
+#connections {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+}
+
+/* Transition effects */
+.node-circle circle,
+.connection-line {
+    transition: opacity 0.2s ease-in-out;
+}
+
+.connection-line {
+    stroke: var(--vscode-charts-blue);
+    stroke-width: 2;
+    fill: none;
+}
+
+/* Node styling */
+.change-node {
+    position: relative;
+    z-index: 0;
+    padding: 4px 8px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    min-height: 12px;
+}
+
+.change-node:hover {
+    background-color: var(--vscode-list-hoverBackground);
+}
+
+.change-node.selected {
+    background-color: var(--vscode-list-activeSelectionBackground);
+    color: var(--vscode-list-activeSelectionForeground);
+}
+
+/* Dimming and highlighting effects */
+.node-circle.dimmed circle,
+.node-circle.dimmed .heart-path {
+    opacity: 0.1;
+}
+
+.node-circle.highlighted circle,
+.node-circle.highlighted .heart-path {
+    opacity: 1;
+}
+
+.connection-line.dimmed {
+    opacity: 0.1;
+}
+
+.connection-line.highlighted {
+    opacity: 1;
+}
+
+/* Child connection styling */
+.connection-line.highlighted.child-connection {
+    stroke: #4CAF50;
+}
+
+/* Regular child node styling */
+.node-circle.child-node circle {
+    fill: #4CAF50;
+    stroke: #4CAF50;
+}
+
+/* Diamond-specific child node styling */
+.node-circle.child-node .diamond-path {
+    fill: #4CAF50;
+}
+
+/* Text content styling */
+.text-content {
+    display: flex;
+    flex-direction: column;
+    min-height: 42px;
+    /* Set a consistent minimum height */
+    justify-content: center;
+    margin-left: var(--curve-offset, 0px);
+    padding-left: 12px;
+}
+
+.label-text {
+    line-height: 1.2;
+    word-wrap: break-word;
+}
+
+.description {
+    line-height: 1.2;
+    font-size: 0.9em;
+    opacity: 0.8;
+}
+
+/* Edit button styling */
+.edit-button {
+    opacity: 0;
+    background: none;
+    border: none;
+    color: var(--vscode-button-foreground);
+    cursor: pointer;
+    padding: 2px 6px;
+    font-size: 0.9em;
+}
+
+.change-node:hover .edit-button {
+    opacity: 1;
+}
+
+.edit-button:hover {
+    background-color: var(--vscode-button-hoverBackground);
+}
+
+/* Node circle styling */
+.node-circle {
+    min-width: 12px;
+    height: 12px;
+    pointer-events: none;
+}
+
+.node-circle circle {
+    fill: var(--vscode-charts-blue);
+    stroke: var(--vscode-charts-blue);
+}
+
+.node-circle .heart-path {
+    fill: whitesmoke;
+}
+
+.node-circle .diamond-path {
+    fill: var(--vscode-charts-blue);
+}
+
+.node-content {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+}
+
+/* Add dimming effects for diamond paths */
+.node-circle.dimmed .diamond-path {
+    opacity: 0.1;
+}
+
+.node-circle.highlighted .diamond-path {
+    opacity: 1;
+}

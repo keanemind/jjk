@@ -12,6 +12,7 @@ import {
   OperationLogTreeDataProvider,
   OperationTreeItem,
 } from "./operationLogTreeView";
+import { JJGraphWebview, RefreshArgs } from "./graphWebview";
 
 export async function activate(context: vscode.ExtensionContext) {
   // Use the console to output diagnostic information (console.log) and errors (console.error)
@@ -40,6 +41,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   let logProvider: JJGraphProvider;
   let operationLogManager: OperationLogManager | undefined;
+  let graphWebview: JJGraphWebview;
 
   vscode.workspace.onDidChangeWorkspaceFolders(
     async () => {
@@ -52,9 +54,14 @@ export async function activate(context: vscode.ExtensionContext) {
 
   let isInitialized = false;
   function init() {
-    logProvider = new JJGraphProvider(
-      getSelectedGraphRepo(context, workspaceSCM),
+    const selectedRepo = getSelectedGraphRepo(context, workspaceSCM);
+    logProvider = new JJGraphProvider(selectedRepo);
+    graphWebview = new JJGraphWebview(
+      context.extensionUri,
+      selectedRepo,
+      context,
     );
+
     const fileSystemProvider = new JJFileSystemProvider(workspaceSCM);
     context.subscriptions.push(fileSystemProvider);
     context.subscriptions.push(
@@ -612,6 +619,56 @@ export async function activate(context: vscode.ExtensionContext) {
     );
 
     context.subscriptions.push(
+      vscode.commands.registerCommand("jj.refreshGraphWebview", async () => {
+        await graphWebview.refresh();
+      }),
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand("jj.mergeGraphWebview", async () => {
+        const selectedNodes = Array.from(graphWebview.selectedNodes);
+        if (selectedNodes.length < 2) {
+          return;
+        }
+        const revs = selectedNodes;
+
+        try {
+          await graphWebview.repository.new(undefined, revs);
+
+          await updateResources();
+        } catch (error) {
+          vscode.window.showErrorMessage(
+            `Failed to create change${error instanceof Error ? `: ${error.message}` : ""}`,
+          );
+        }
+      }),
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand("jj.selectGraphWebviewRepo", async () => {
+        const repoNames = workspaceSCM.repoSCMs.map(
+          (repo) => repo.repositoryRoot,
+        );
+        const selectedRepoName = await vscode.window.showQuickPick(repoNames, {
+          placeHolder: "Select a repository",
+        });
+
+        const selectedRepo = workspaceSCM.repoSCMs.find(
+          (repo) => repo.repositoryRoot === selectedRepoName,
+        );
+
+        if (selectedRepo) {
+          graphWebview.setSelectedRepository(selectedRepo.repository);
+          context.workspaceState.update(
+            "graphRepoRoot",
+            selectedRepo.repositoryRoot,
+          );
+          await graphWebview.refresh();
+        }
+      }),
+    );
+
+    context.subscriptions.push(
       vscode.commands.registerCommand("jj.refreshOperationLog", async () => {
         await operationLogTreeDataProvider.refresh();
       }),
@@ -695,7 +752,12 @@ export async function activate(context: vscode.ExtensionContext) {
     isInitialized = true;
   }
 
-  async function updateResources() {
+  async function updateResources(args?: Partial<RefreshArgs>) {
+    const defaultArgs: RefreshArgs = {
+      preserveScroll: false,
+    };
+    const finalArgs = { ...defaultArgs, ...args };
+
     if (workspaceSCM.repoSCMs.length > 0) {
       vscode.commands.executeCommand("setContext", "jj.reposExist", true);
       if (!isInitialized) {
@@ -703,8 +765,12 @@ export async function activate(context: vscode.ExtensionContext) {
       }
       const graphRepo = getSelectedGraphRepo(context, workspaceSCM);
       logProvider.treeDataProvider.setCurrentRepo(graphRepo);
+      graphWebview.setSelectedRepository(graphRepo);
+
       context.workspaceState.update("graphRepoRoot", graphRepo.repositoryRoot);
-      void logProvider.treeDataProvider.refresh();
+
+      await logProvider.treeDataProvider.refresh();
+      await graphWebview.refresh(finalArgs.preserveScroll);
 
       if (operationLogManager) {
         if (
@@ -745,13 +811,14 @@ export async function activate(context: vscode.ExtensionContext) {
 }
 
 function showLoading<T extends unknown[]>(
-  callback: (...args: T) => Promise<void>,
+  callback: (...args: T) => Promise<unknown>,
+  ...initialArgs: Partial<T>
 ) {
   return (...args: T) =>
     vscode.window.withProgress(
       { location: vscode.ProgressLocation.SourceControl },
       async () => {
-        await callback(...args);
+        await callback(...(args.length ? args : (initialArgs as T)));
       },
     );
 }
