@@ -95,13 +95,18 @@ export async function activate(context: vscode.ExtensionContext) {
     });
     let annotateInfo:
       | {
+          uri: vscode.Uri;
           changeIdsByLine: string[];
           changes: Map<string, ChangeWithDetails>;
         }
       | undefined;
     let activeEditorUri: vscode.Uri | undefined;
     const setDecorations = (editor: vscode.TextEditor, lines: number[]) => {
-      if (activeEditorUri === editor.document.uri && annotateInfo) {
+      if (
+        activeEditorUri === editor.document.uri &&
+        annotateInfo &&
+        annotateInfo.uri === editor.document.uri
+      ) {
         const decorations = lines.map((line) => {
           const changeId = annotateInfo!.changeIdsByLine[line];
           const change = annotateInfo!.changes.get(changeId)!;
@@ -130,7 +135,7 @@ export async function activate(context: vscode.ExtensionContext) {
       if (repository) {
         const result = await repository.annotate(uri.fsPath);
         if (activeEditorUri === uri) {
-          annotateInfo = result;
+          annotateInfo = { ...result, uri };
         }
       }
     };

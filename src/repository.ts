@@ -546,8 +546,12 @@ export class JJRepository {
       });
 
       let output = "";
-      childProcess.on("close", () => {
-        resolve(output);
+      childProcess.on("close", (code) => {
+        if (code === 0) {
+          resolve(output);
+        } else {
+          reject(new Error(`jj file annotate exited with code ${code}`));
+        }
       });
       childProcess.stdout!.on("data", (data: string) => {
         output += data;
