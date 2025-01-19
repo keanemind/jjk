@@ -8,25 +8,23 @@ import { toJJUri } from "./uri";
 async function createSCMsInWorkspace(decorationProvider: JJDecorationProvider) {
   const repos: RepositorySourceControlManager[] = [];
   for (const workspaceFolder of vscode.workspace.workspaceFolders || []) {
-    const repoRoot = await new Promise<string | undefined>(
-      (resolve, reject) => {
-        const childProcess = spawn("jj", ["root"], {
-          timeout: 5000,
-          cwd: workspaceFolder.uri.fsPath,
-        });
-        let output = "";
-        childProcess.on("close", (code) => {
-          if (output.includes("There is no jj repo in")) {
-            resolve(undefined);
-          } else {
-            resolve(output.trim());
-          }
-        });
-        childProcess.stdout!.on("data", (data: string) => {
-          output += data;
-        });
-      },
-    );
+    const repoRoot = await new Promise<string | undefined>((resolve) => {
+      const childProcess = spawn("jj", ["root"], {
+        timeout: 5000,
+        cwd: workspaceFolder.uri.fsPath,
+      });
+      let output = "";
+      childProcess.on("close", () => {
+        if (output.includes("There is no jj repo in")) {
+          resolve(undefined);
+        } else {
+          resolve(output.trim());
+        }
+      });
+      childProcess.stdout!.on("data", (data: string) => {
+        output += data;
+      });
+    });
     if (repoRoot) {
       repos.push(
         new RepositorySourceControlManager(repoRoot, decorationProvider),
@@ -104,7 +102,7 @@ export class WorkspaceSourceControlManager {
 
 class RepositorySourceControlManager {
   subscriptions: {
-    dispose(): any;
+    dispose(): unknown;
   }[] = [];
   sourceControl: vscode.SourceControl;
   workingCopyResourceGroup: vscode.SourceControlResourceGroup;
@@ -242,7 +240,7 @@ class RepositorySourceControlManager {
         }
       }
 
-      parentChangeResourceGroup!.resourceStates = showResult.fileStatuses.map(
+      parentChangeResourceGroup.resourceStates = showResult.fileStatuses.map(
         (parentStatus) => {
           return {
             resourceUri: toJJUri(
@@ -306,13 +304,13 @@ export class JJRepository {
     if (readCache && this.statusCache) {
       return Promise.resolve(this.statusCache);
     }
-    return new Promise<RepositoryStatus>((resolve, reject) => {
+    return new Promise<RepositoryStatus>((resolve) => {
       const childProcess = spawn("jj", ["status"], {
         timeout: 5000,
         cwd: this.repositoryRoot,
       });
       let output = "";
-      childProcess.on("close", (code) => {
+      childProcess.on("close", () => {
         resolve(parseJJStatus(this.repositoryRoot, output));
       });
       childProcess.stdout!.on("data", (data: string) => {
@@ -332,7 +330,7 @@ export class JJRepository {
         cwd: this.repositoryRoot,
       });
       let output = "";
-      childProcess.on("close", (code) => {
+      childProcess.on("close", () => {
         try {
           resolve(parseJJShow(this.repositoryRoot, output));
         } catch (e) {
@@ -346,7 +344,7 @@ export class JJRepository {
   }
 
   readFile(rev: string, path: string) {
-    return new Promise<Buffer>((resolve, reject) => {
+    return new Promise<Buffer>((resolve) => {
       const childProcess = spawn(
         "jj",
         ["file", "show", "--no-pager", "--revision", rev, path],
@@ -356,7 +354,7 @@ export class JJRepository {
         },
       );
       const buffers: Buffer[] = [];
-      childProcess.on("close", (code) => {
+      childProcess.on("close", () => {
         resolve(Buffer.concat(buffers));
       });
       childProcess.stdout!.on("data", (data: Buffer) => {
@@ -366,7 +364,7 @@ export class JJRepository {
   }
 
   describe(rev: string, message: string): Promise<void> {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       const childProcess = spawn("jj", ["describe", "-m", message, rev], {
         cwd: this.repositoryRoot,
       });
@@ -400,7 +398,7 @@ export class JJRepository {
         const match = output.match(/error:\s*([\s\S]+)$/i);
         if (match) {
           const errorMessage = match[1];
-          reject(errorMessage);
+          reject(new Error(errorMessage));
         } else {
           resolve();
         }
@@ -419,7 +417,7 @@ export class JJRepository {
     message?: string;
     filepaths?: string[];
   }): Promise<void> {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       const childProcess = spawn(
         "jj",
         [
@@ -480,7 +478,7 @@ export class JJRepository {
         const match = output.trim().match(/error:\s*([\s\S]+)$/i);
         if (match) {
           const errorMessage = match[1];
-          reject(errorMessage);
+          reject(new Error(errorMessage));
         } else {
           resolve();
         }
@@ -507,7 +505,7 @@ export class JJRepository {
         const match = output.match(/error:\s*([\s\S]+)$/i);
         if (match) {
           const errorMessage = match[1];
-          reject(errorMessage);
+          reject(new Error(errorMessage));
         } else {
           resolve();
         }
@@ -527,9 +525,13 @@ export class JJRepository {
           output += data;
         });
 
-        childProcess.on("close", () => {
+        childProcess.on("close", (code) => {
           this.gitFetchPromise = undefined;
-          childProcess.exitCode === 0 ? resolve() : reject(new Error(output));
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(new Error(output));
+          }
         });
       });
     }
@@ -635,10 +637,7 @@ function parseJJLog(output: string): ChangeNode[] {
 
     // Create a ChangeNode for the remaining even line
     if (evenLine) {
-      const formattedEvenLine = evenLine.replace(
-        /(?<![a-zA-Z0-9\)])\s/g,
-        "   ",
-      );
+      const formattedEvenLine = evenLine.replace(/(?<![a-zA-Z0-9)])\s/g, "   ");
       changeNodes.push(new ChangeNode(formattedEvenLine, "", "", ""));
     }
   }
@@ -686,7 +685,7 @@ function parseJJStatus(
   const lines = output.split("\n");
   const fileStatuses: FileStatus[] = [];
   let workingCopy: Change = { changeId: "", commitId: "", description: "" };
-  let parentCommits: Change[] = [];
+  const parentCommits: Change[] = [];
 
   const changeRegex = /^(A|M|D|R) (.+)$/;
   const commitRegex =

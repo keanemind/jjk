@@ -16,6 +16,6 @@ export function toJJUri(uri: Uri, rev: string): Uri {
   });
 }
 
-export function getJJUriParams(uri: Uri): JJUriParams {
-  return JSON.parse(uri.query);
+export function getJJUriParams(uri: Uri) {
+  return JSON.parse(uri.query) as JJUriParams;
 }

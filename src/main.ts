@@ -36,7 +36,7 @@ export async function activate(context: vscode.ExtensionContext) {
   let logProvider: JJGraphProvider;
 
   vscode.workspace.onDidChangeWorkspaceFolders(
-    async (e) => {
+    async () => {
       console.log("Workspace folders changed");
       await workspaceSCM.refresh();
     },
@@ -223,9 +223,9 @@ export async function activate(context: vscode.ExtensionContext) {
               ]);
 
               await updateResources();
-            } catch (error: any) {
+            } catch (error) {
               vscode.window.showErrorMessage(
-                `Failed to restore: ${error.message}`,
+                `Failed to restore${error instanceof Error ? `: ${error.message}` : ""}`,
               );
             }
           },
@@ -263,9 +263,9 @@ export async function activate(context: vscode.ExtensionContext) {
                 "Changes successfully squashed.",
               );
               await updateResources();
-            } catch (error: any) {
+            } catch (error) {
               vscode.window.showErrorMessage(
-                `Failed to squash: ${error.message}`,
+                `Failed to squash${error instanceof Error ? `: ${error.message}` : ""}`,
               );
             }
           },
@@ -298,9 +298,9 @@ export async function activate(context: vscode.ExtensionContext) {
                 "Changes successfully squashed.",
               );
               await updateResources();
-            } catch (error: any) {
+            } catch (error) {
               vscode.window.showErrorMessage(
-                `Failed to squash: ${error.message}`,
+                `Failed to squash${error instanceof Error ? `: ${error.message}` : ""}`,
               );
             }
           },
@@ -336,9 +336,9 @@ export async function activate(context: vscode.ExtensionContext) {
               "Description updated successfully.",
             );
             await updateResources();
-          } catch (error: any) {
+          } catch (error) {
             vscode.window.showErrorMessage(
-              `Failed to update description: ${error.message}`,
+              `Failed to update description${error instanceof Error ? `: ${error.message}` : ""}`,
             );
           }
         },
@@ -391,9 +391,9 @@ export async function activate(context: vscode.ExtensionContext) {
                 "Changes successfully squashed.",
               );
               await updateResources();
-            } catch (error: any) {
+            } catch (error) {
               vscode.window.showErrorMessage(
-                `Failed to squash: ${error.message}`,
+                `Failed to squash${error instanceof Error ? `: ${error.message}` : ""}`,
               );
             }
           },
@@ -445,9 +445,9 @@ export async function activate(context: vscode.ExtensionContext) {
                 "Changes successfully squashed.",
               );
               await updateResources();
-            } catch (error: any) {
+            } catch (error) {
               vscode.window.showErrorMessage(
-                `Failed to squash: ${error.message}`,
+                `Failed to squash${error instanceof Error ? `: ${error.message}` : ""}`,
               );
             }
           },
@@ -469,9 +469,9 @@ export async function activate(context: vscode.ExtensionContext) {
               await repository.restore(resourceGroup.id);
 
               await updateResources();
-            } catch (error: any) {
+            } catch (error) {
               vscode.window.showErrorMessage(
-                `Failed to restore: ${error.message}`,
+                `Failed to restore${error instanceof Error ? `: ${error.message}` : ""}`,
               );
             }
           },
@@ -488,9 +488,9 @@ export async function activate(context: vscode.ExtensionContext) {
               node.contextValue as string,
             );
             await updateResources();
-          } catch (error: any) {
+          } catch (error) {
             vscode.window.showErrorMessage(
-              `Failed to switch to change: ${error}`,
+              `Failed to switch to change${error instanceof Error ? `: ${error.message}` : ""}`,
             );
           }
         },
@@ -510,9 +510,9 @@ export async function activate(context: vscode.ExtensionContext) {
             await repository.edit(resourceGroup.id);
 
             await updateResources();
-          } catch (error: any) {
+          } catch (error) {
             vscode.window.showErrorMessage(
-              `Failed to switch to change: ${error}`,
+              `Failed to switch to change${error instanceof Error ? `: ${error.message}` : ""}`,
             );
           }
         },
@@ -530,8 +530,10 @@ export async function activate(context: vscode.ExtensionContext) {
         try {
           await logProvider.treeDataProvider.repository.new(undefined, revs);
           await updateResources();
-        } catch (error: any) {
-          vscode.window.showErrorMessage(`Failed to create change: ${error}`);
+        } catch (error) {
+          vscode.window.showErrorMessage(
+            `Failed to create change${error instanceof Error ? `: ${error.message}` : ""}`,
+          );
         }
       }),
     );
@@ -605,7 +607,7 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   await updateResources();
-  const intervalId = setInterval(updateResources, 5_000);
+  const intervalId = setInterval(() => void updateResources(), 5_000);
   context.subscriptions.push({
     dispose() {
       clearInterval(intervalId);

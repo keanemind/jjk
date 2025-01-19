@@ -94,7 +94,7 @@ export class JJFileSystemProvider implements FileSystemProvider {
         content: data,
       });
       return data;
-    } catch (err) {
+    } catch (_) {
       // File does not exist in git. This could be
       // because the file is untracked or ignored
       throw FileSystemError.FileNotFound();
