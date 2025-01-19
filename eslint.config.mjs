@@ -1,28 +1,47 @@
-import typescriptEslint from "@typescript-eslint/eslint-plugin";
-import tsParser from "@typescript-eslint/parser";
+// @ts-check
+import eslint from "@eslint/js";
+import tseslint from "typescript-eslint";
+import globals from "globals";
 
-export default [{
+export default tseslint.config(
+  eslint.configs.recommended,
+  {
+    languageOptions: {
+      globals: {
+        ...globals.node,
+      },
+    },
+  },
+  {
     files: ["**/*.ts"],
-}, {
+    extends: [tseslint.configs.recommendedTypeChecked],
     plugins: {
-        "@typescript-eslint": typescriptEslint,
+      "@typescript-eslint": tseslint.plugin,
     },
 
     languageOptions: {
-        parser: tsParser,
-        ecmaVersion: 2022,
-        sourceType: "module",
+      parser: tseslint.parser,
+      ecmaVersion: 2022,
+      sourceType: "module",
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
     },
 
     rules: {
-        "@typescript-eslint/naming-convention": ["warn", {
-            selector: "import",
-            format: ["camelCase", "PascalCase"],
-        }],
+      "@typescript-eslint/naming-convention": [
+        "warn",
+        {
+          selector: "import",
+          format: ["camelCase", "PascalCase"],
+        },
+      ],
 
-        curly: "warn",
-        eqeqeq: "warn",
-        "no-throw-literal": "warn",
-        semi: "warn",
+      curly: "warn",
+      eqeqeq: "warn",
+      "no-throw-literal": "warn",
+      semi: "warn",
     },
-}];
+  },
+);

@@ -163,7 +163,7 @@ export async function activate(context: vscode.ExtensionContext) {
       }),
     );
     if (vscode.window.activeTextEditor) {
-      updateAnnotateInfo(vscode.window.activeTextEditor.document.uri);
+      void updateAnnotateInfo(vscode.window.activeTextEditor.document.uri);
     }
 
     context.subscriptions.push(
@@ -555,7 +555,7 @@ export async function activate(context: vscode.ExtensionContext) {
             "graphRepoRoot",
             selectedRepo.repositoryRoot,
           );
-          logProvider.treeDataProvider.refresh();
+          void logProvider.treeDataProvider.refresh();
         }
       }),
     );

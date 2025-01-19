@@ -71,7 +71,7 @@ export class JJGraphProvider {
     */
 
     vscode.commands.registerCommand("jj.refreshLog", () => {
-      this.treeDataProvider.refresh(true);
+      void this.treeDataProvider.refresh(true);
     });
   }
 
@@ -92,7 +92,7 @@ class JJGraphTreeDataProvider implements vscode.TreeDataProvider<ChangeNode> {
 
   constructor(repo: JJRepository) {
     this.repository = repo;
-    this.refresh();
+    void this.refresh();
   }
 
   getTreeItem(element: ChangeNode): vscode.TreeItem {
