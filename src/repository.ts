@@ -325,20 +325,137 @@ export class JJRepository {
 
   show(rev: string) {
     return new Promise<Show>((resolve, reject) => {
-      const childProcess = spawn("jj", ["show", "-s", "-r", rev], {
-        timeout: 5000,
-        cwd: this.repositoryRoot,
-      });
+      const separator = "ඞjjk\n";
+      const templateFields = [
+        "change_id",
+        "commit_id",
+        "author.name()",
+        "author.email()",
+        'author.timestamp().local().format("%F %H:%M:%S")',
+        "description",
+        "empty",
+        "conflict",
+        "diff.summary()",
+      ];
+      const template = templateFields.join(` ++ "${separator}" ++ `);
+
+      const childProcess = spawn(
+        "jj",
+        ["show", "--no-pager", "--summary", "-T", template, rev],
+        {
+          timeout: 5000,
+          cwd: this.repositoryRoot,
+        },
+      );
       let output = "";
-      childProcess.on("close", () => {
+      let errOutput = "";
+      childProcess.on("close", (code) => {
+        if (code !== 0) {
+          reject(new Error(`jj show exited with code ${code}: ${errOutput}`));
+          return;
+        }
         try {
-          resolve(parseJJShow(this.repositoryRoot, output));
+          const results = output.split(separator);
+          if (results.length > templateFields.length) {
+            throw new Error(
+              "Separator found in a field value. This is not supported.",
+            );
+          } else if (results.length < templateFields.length) {
+            throw new Error("Missing fields in the output.");
+          }
+          const ret: Show = {
+            change: {
+              changeId: "",
+              commitId: "",
+              description: "",
+              author: {
+                email: "",
+                name: "",
+              },
+              authoredDate: "",
+              isEmpty: false,
+              isConflict: false,
+            },
+            fileStatuses: [],
+          };
+
+          for (let i = 0; i < results.length; i++) {
+            const field = results[i];
+            const value = field.trim();
+            switch (templateFields[i]) {
+              case "change_id":
+                ret.change.changeId = value;
+                break;
+              case "commit_id":
+                ret.change.commitId = value;
+                break;
+              case "author.name()":
+                ret.change.author.name = value;
+                break;
+              case "author.email()":
+                ret.change.author.email = value;
+                break;
+              case 'author.timestamp().local().format("%F %H:%M:%S")':
+                ret.change.authoredDate = value;
+                break;
+              case "description":
+                ret.change.description = value;
+                break;
+              case "empty":
+                ret.change.isEmpty = value === "true";
+                break;
+              case "conflict":
+                ret.change.isConflict = value === "true";
+                break;
+              case "diff.summary()": {
+                const changeRegex = /^(A|M|D|R) (.+)$/;
+                const renameRegex = /\{(.+) => (.+)\}$/;
+                for (const line of value.split("\n")) {
+                  const changeMatch = changeRegex.exec(line);
+                  if (changeMatch) {
+                    const [_, type, file] = changeMatch;
+
+                    if (type === "R") {
+                      if (renameRegex.test(file)) {
+                        const renameMatch = renameRegex.exec(file);
+                        if (renameMatch) {
+                          const [_, from, to] = renameMatch;
+                          ret.fileStatuses.push({
+                            type: "R",
+                            file: to,
+                            path: path.join(this.repositoryRoot, to),
+                            renamedFrom: from,
+                          });
+                        }
+                      } else {
+                        throw new Error(`Unexpected rename line: ${line}`);
+                      }
+                    } else {
+                      ret.fileStatuses.push({
+                        type: type as "A" | "M" | "D",
+                        file,
+                        path: path.join(this.repositoryRoot, file),
+                      });
+                    }
+                  } else {
+                    throw new Error(`Unexpected diff summary line: ${line}`);
+                  }
+                }
+                break;
+              }
+            }
+          }
+
+          resolve(ret);
         } catch (e) {
           reject(e);
         }
       });
       childProcess.stdout!.on("data", (data: string) => {
         output += data;
+      });
+      childProcess.stderr!.on("data", (data: string) => {
+        errOutput += data;
       });
     });
   }
@@ -560,20 +677,21 @@ export class JJRepository {
       });
     });
     const output = await commandPromise;
-    const lines = output.split("\n");
-    const changes = new Map<string, ChangeWithDetails>();
-    await Promise.all(
-      lines.map(async (line) => {
-        const changeId = line.split(" ")[0];
-        if (changes.has(changeId)) {
-          return;
-        }
-        const showResult = await this.show(changeId);
-        changes.set(changeId, showResult.change);
-      }),
+    const lines = output.trim().split("\n");
+    const changeIdsByLine = lines.map((line) => line.split(" ")[0]);
+    const changes = new Map<string, ChangeWithDetails>(
+      await Promise.all(
+        [...new Set(changeIdsByLine)].map(async (changeId) => {
+          const showResult = await this.show(changeId);
+          return [changeId, showResult.change] satisfies [
+            string,
+            ChangeWithDetails,
+          ];
+        }),
+      ),
     );
     return {
-      changeIdsByLine: lines.map((line) => line.split(" ")[0]),
+      changeIdsByLine,
       changes,
     };
   }
@@ -657,6 +775,8 @@ export interface Change {
   commitId: string;
   branch?: string;
   description: string;
+  isEmpty: boolean;
+  isConflict: boolean;
 }
 
 export interface ChangeWithDetails extends Change {
@@ -664,7 +784,7 @@ export interface ChangeWithDetails extends Change {
     name: string;
     email: string;
   };
-  date: string;
+  authoredDate: string;
 }
 
 export type RepositoryStatus = {
@@ -684,7 +804,13 @@ function parseJJStatus(
 ): RepositoryStatus {
   const lines = output.split("\n");
   const fileStatuses: FileStatus[] = [];
-  let workingCopy: Change = { changeId: "", commitId: "", description: "" };
+  let workingCopy: Change = {
+    changeId: "",
+    commitId: "",
+    description: "",
+    isEmpty: false,
+    isConflict: false,
+  };
   const parentCommits: Change[] = [];
 
   const changeRegex = /^(A|M|D|R) (.+)$/;
@@ -727,17 +853,19 @@ function parseJJStatus(
       const [_, type, id, hash, branch, description] = commitMatch;
 
       const trimmedDescription = description.trim();
-      const finalDescription =
-        trimmedDescription === "(no description set)" ||
-        trimmedDescription === "(empty) (no description set)"
-          ? ""
-          : trimmedDescription;
+      const finalDescription = trimmedDescription.endsWith(
+        "(no description set)",
+      )
+        ? ""
+        : trimmedDescription;
 
       const commitDetails: Change = {
         changeId: id,
         commitId: hash,
         branch: branch,
         description: finalDescription,
+        isEmpty: false,
+        isConflict: false,
       };
 
       if (type === "Working copy ") {
@@ -753,85 +881,4 @@ function parseJJStatus(
     workingCopy,
     parentChanges: parentCommits,
   };
-}
-
-function parseJJShow(repositoryRoot: string, output: string): Show {
-  const changeRegex = /^(A|M|D|R) (.+)$/;
-  const renameRegex = /^\{(.+) => (.+)\}$/;
-
-  const lines = output.split("\n");
-
-  if (lines[0]?.includes("resolved to more than one revision")) {
-    throw new Error(lines[0]);
-  }
-
-  const ret: Show = {
-    change: {
-      changeId: "",
-      commitId: "",
-      description: "",
-      author: {
-        email: "",
-        name: "",
-      },
-      date: "",
-    },
-    fileStatuses: [],
-  };
-
-  for (const line of lines) {
-    if (line.startsWith("    ") && line !== "    (no description set)") {
-      ret.change.description += line.slice(4);
-    } else if (line.trim() === "") {
-      continue;
-    }
-
-    const changeMatch = changeRegex.exec(line);
-    if (changeMatch) {
-      const [_, type, file] = changeMatch;
-
-      if (type === "R" && renameRegex.test(file)) {
-        const renameMatch = renameRegex.exec(file);
-        if (renameMatch) {
-          const [_, from, to] = renameMatch;
-          ret.fileStatuses.push({
-            type: "R",
-            file: to,
-            path: path.join(repositoryRoot, to),
-            renamedFrom: from,
-          });
-        }
-      } else {
-        ret.fileStatuses.push({
-          type: type as "A" | "M" | "D" | "R",
-          file,
-          path: path.join(repositoryRoot, file),
-        });
-      }
-    } else if (line.startsWith("Commit ID: ")) {
-      ret.change.commitId = line.split(" ")[2];
-    } else if (line.startsWith("Change ID: ")) {
-      ret.change.changeId = line.split(" ")[2];
-    } else if (line.startsWith("Author: ")) {
-      const lineWithoutPrefix = line.slice(8); // Remove "Author: "
-      const lastOpenAngleBracketIndex = lineWithoutPrefix.lastIndexOf("<");
-      const lastCloseAngleBracketIndex = lineWithoutPrefix.lastIndexOf(">");
-      const authorNameString = lineWithoutPrefix
-        .slice(0, lastOpenAngleBracketIndex)
-        .trim();
-      const authorEmailString = lineWithoutPrefix.slice(
-        lastOpenAngleBracketIndex + 1,
-        lastCloseAngleBracketIndex,
-      );
-      ret.change.author = {
-        name: authorNameString,
-        email: authorEmailString,
-      };
-      const lastOpenParenIndex = lineWithoutPrefix.lastIndexOf("(");
-      const date = lineWithoutPrefix.slice(lastOpenParenIndex + 1, -1).trim();
-      ret.change.date = date;
-    }
-  }
-
-  return ret;
 }

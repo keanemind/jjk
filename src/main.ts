@@ -115,7 +115,7 @@ export async function activate(context: vscode.ExtensionContext) {
               after: {
                 backgroundColor: "#00000000",
                 color: "#99999959",
-                contentText: ` ${change.author.name} at ${change.date} • ${change.description || "(no description)"} • ${change.changeId.substring(
+                contentText: ` ${change.author.name} at ${change.authoredDate} • ${change.description || "(no description)"} • ${change.changeId.substring(
                   0,
                   8,
                 )} `,
@@ -139,19 +139,22 @@ export async function activate(context: vscode.ExtensionContext) {
         }
       }
     };
+    const handleDidChangeActiveTextEditor = async (
+      editor: vscode.TextEditor | undefined,
+    ) => {
+      if (editor) {
+        const uri = editor.document.uri;
+        activeEditorUri = uri;
+        await updateAnnotateInfo(uri);
+        const activeLines = editor.selections.map(
+          (selection) => selection.active.line,
+        );
+        setDecorations(editor, activeLines);
+      }
+    };
     context.subscriptions.push(
       vscode.window.onDidChangeActiveTextEditor(
-        async (editor: vscode.TextEditor | undefined) => {
-          if (editor) {
-            const uri = editor.document.uri;
-            activeEditorUri = uri;
-            await updateAnnotateInfo(uri);
-            const activeLines = editor.selections.map(
-              (selection) => selection.active.line,
-            );
-            setDecorations(editor, activeLines);
-          }
-        },
+        handleDidChangeActiveTextEditor,
       ),
     );
     context.subscriptions.push(
@@ -163,7 +166,7 @@ export async function activate(context: vscode.ExtensionContext) {
       }),
     );
     if (vscode.window.activeTextEditor) {
-      void updateAnnotateInfo(vscode.window.activeTextEditor.document.uri);
+      void handleDidChangeActiveTextEditor(vscode.window.activeTextEditor);
     }
 
     context.subscriptions.push(
