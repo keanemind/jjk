@@ -655,10 +655,7 @@ export class JJRepository {
     return this.gitFetchPromise;
   }
 
-  async annotate(file: string): Promise<{
-    changeIdsByLine: string[];
-    changes: Map<string, ChangeWithDetails>;
-  }> {
+  async annotate(file: string): Promise<string[]> {
     const commandPromise = new Promise<string>((resolve, reject) => {
       const childProcess = spawn("jj", ["file", "annotate", file], {
         cwd: this.repositoryRoot,
@@ -679,21 +676,7 @@ export class JJRepository {
     const output = await commandPromise;
     const lines = output.trim().split("\n");
     const changeIdsByLine = lines.map((line) => line.split(" ")[0]);
-    const changes = new Map<string, ChangeWithDetails>(
-      await Promise.all(
-        [...new Set(changeIdsByLine)].map(async (changeId) => {
-          const showResult = await this.show(changeId);
-          return [changeId, showResult.change] satisfies [
-            string,
-            ChangeWithDetails,
-          ];
-        }),
-      ),
-    );
-    return {
-      changeIdsByLine,
-      changes,
-    };
+    return changeIdsByLine;
   }
 }
 

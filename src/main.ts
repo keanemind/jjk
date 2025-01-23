@@ -97,45 +97,81 @@ export async function activate(context: vscode.ExtensionContext) {
       | {
           uri: vscode.Uri;
           changeIdsByLine: string[];
-          changes: Map<string, ChangeWithDetails>;
         }
       | undefined;
     let activeEditorUri: vscode.Uri | undefined;
-    const setDecorations = (editor: vscode.TextEditor, lines: number[]) => {
+    let activeLines: number[] = [];
+    const setDecorations = async (
+      editor: vscode.TextEditor,
+      lines: number[],
+    ) => {
       if (
-        activeEditorUri === editor.document.uri &&
         annotateInfo &&
-        annotateInfo.uri === editor.document.uri
+        annotateInfo.uri === editor.document.uri &&
+        activeEditorUri === editor.document.uri &&
+        activeLines === lines
       ) {
-        const decorations = lines.map((line) => {
-          const changeId = annotateInfo!.changeIdsByLine[line];
-          const change = annotateInfo!.changes.get(changeId)!;
-          return {
-            renderOptions: {
-              after: {
-                backgroundColor: "#00000000",
-                color: "#99999959",
-                contentText: ` ${change.author.name} at ${change.authoredDate} • ${change.description || "(no description)"} • ${change.changeId.substring(
-                  0,
-                  8,
-                )} `,
-                textDecoration: "none;",
+        const repository = workspaceSCM.getRepositoryFromUri(
+          editor.document.uri,
+        );
+        if (!repository) {
+          return;
+        }
+        const changes = new Map<string, ChangeWithDetails>(
+          await Promise.all(
+            lines.map(async (line) => {
+              const changeId = annotateInfo!.changeIdsByLine[line];
+              const showResult = await repository.show(changeId);
+              return [changeId, showResult.change] satisfies [
+                string,
+                ChangeWithDetails,
+              ];
+            }),
+          ),
+        );
+        if (
+          annotateInfo &&
+          annotateInfo.uri === editor.document.uri &&
+          activeEditorUri === editor.document.uri &&
+          activeLines === lines
+        ) {
+          const decorations: vscode.DecorationOptions[] = [];
+          for (const line of lines) {
+            const changeId = annotateInfo.changeIdsByLine[line];
+            if (!changeId) {
+              continue; // Could be possible if `annotateInfo` is stale due to the await
+            }
+            const change = changes.get(changeId);
+            if (!change) {
+              continue; // Could be possible if `annotateInfo` is mismatched with `changes` due to a race
+            }
+            decorations.push({
+              renderOptions: {
+                after: {
+                  backgroundColor: "#00000000",
+                  color: "#99999959",
+                  contentText: ` ${change.author.name} at ${change.authoredDate} • ${change.description || "(no description)"} • ${change.changeId.substring(
+                    0,
+                    8,
+                  )} `,
+                  textDecoration: "none;",
+                },
               },
-            },
-            range: editor.document.validateRange(
-              new vscode.Range(line, 2 ** 30 - 1, line, 2 ** 30 - 1),
-            ),
-          } satisfies vscode.DecorationOptions;
-        });
-        editor.setDecorations(annotationDecoration, decorations);
+              range: editor.document.validateRange(
+                new vscode.Range(line, 2 ** 30 - 1, line, 2 ** 30 - 1),
+              ),
+            });
+          }
+          editor.setDecorations(annotationDecoration, decorations);
+        }
       }
     };
     const updateAnnotateInfo = async (uri: vscode.Uri) => {
       const repository = workspaceSCM.getRepositoryFromUri(uri);
       if (repository) {
-        const result = await repository.annotate(uri.fsPath);
+        const changeIdsByLine = await repository.annotate(uri.fsPath);
         if (activeEditorUri === uri) {
-          annotateInfo = { ...result, uri };
+          annotateInfo = { changeIdsByLine, uri };
         }
       }
     };
@@ -146,10 +182,10 @@ export async function activate(context: vscode.ExtensionContext) {
         const uri = editor.document.uri;
         activeEditorUri = uri;
         await updateAnnotateInfo(uri);
-        const activeLines = editor.selections.map(
+        activeLines = editor.selections.map(
           (selection) => selection.active.line,
         );
-        setDecorations(editor, activeLines);
+        await setDecorations(editor, activeLines);
       }
     };
     context.subscriptions.push(
@@ -158,11 +194,9 @@ export async function activate(context: vscode.ExtensionContext) {
       ),
     );
     context.subscriptions.push(
-      vscode.window.onDidChangeTextEditorSelection((e) => {
-        const activeLines = e.selections.map(
-          (selection) => selection.active.line,
-        );
-        setDecorations(e.textEditor, activeLines);
+      vscode.window.onDidChangeTextEditorSelection(async (e) => {
+        activeLines = e.selections.map((selection) => selection.active.line);
+        await setDecorations(e.textEditor, activeLines);
       }),
     );
     if (vscode.window.activeTextEditor) {
