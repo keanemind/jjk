@@ -27,6 +27,11 @@
           "id": "jjGraphView",
           "name": "Source Control Graph (JJ)",
           "when": "jj.reposExist"
+        },
+        {
+          "id": "jjOperationLog",
+          "name": "Operation Log (JJ)",
+          "when": "jj.reposExist"
         }
       ]
     },
@@ -110,6 +115,26 @@
       {
         "command": "jj.gitFetch",
         "title": "Fetch from remote"
+      },
+      {
+        "command": "jj.refreshOperationLog",
+        "title": "Refresh operation log",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "jj.selectOperationLogRepo",
+        "title": "Select repository",
+        "icon": "$(repo)"
+      },
+      {
+        "command": "jj.operationUndo",
+        "title": "Undo operation",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "jj.operationRestore",
+        "title": "Restore repo to the state at this operation",
+        "icon": "$(history)"
       }
     ],
     "menus": {
@@ -128,12 +153,32 @@
           "command": "jj.merge",
           "when": "view == jjGraphView && jjGraphView.multipleNodesSelected",
           "group": "navigation"
+        },
+        {
+          "command": "jj.refreshOperationLog",
+          "when": "view == jjOperationLog",
+          "group": "navigation"
+        },
+        {
+          "command": "jj.selectOperationLogRepo",
+          "when": "view == jjOperationLog",
+          "group": "navigation"
         }
       ],
       "view/item/context": [
         {
           "command": "jj.editGraph",
           "when": "view == jjGraphView && viewItem != ''",
+          "group": "inline"
+        },
+        {
+          "command": "jj.operationUndo",
+          "when": "view == jjOperationLog",
+          "group": "inline"
+        },
+        {
+          "command": "jj.operationRestore",
+          "when": "view == jjOperationLog",
           "group": "inline"
         }
       ],

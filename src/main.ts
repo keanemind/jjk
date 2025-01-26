@@ -7,6 +7,11 @@ import type { JJRepository, ChangeWithDetails } from "./repository";
 import { JJDecorationProvider } from "./decorationProvider";
 import { JJFileSystemProvider } from "./fileSystemProvider";
 import { ChangeNode, JJGraphProvider } from "./graphProvider";
+import {
+  OperationLogManager,
+  OperationLogTreeDataProvider,
+  OperationTreeItem,
+} from "./operationLogTreeView";
 
 export async function activate(context: vscode.ExtensionContext) {
   // Use the console to output diagnostic information (console.log) and errors (console.error)
@@ -34,6 +39,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(workspaceSCM);
 
   let logProvider: JJGraphProvider;
+  let operationLogManager: OperationLogManager | undefined;
 
   vscode.workspace.onDidChangeWorkspaceFolders(
     async () => {
@@ -57,6 +63,12 @@ export async function activate(context: vscode.ExtensionContext) {
         isCaseSensitive: true,
       }),
     );
+
+    const operationLogTreeDataProvider = new OperationLogTreeDataProvider(
+      workspaceSCM.repoSCMs[0].repository,
+    );
+    operationLogManager = new OperationLogManager(operationLogTreeDataProvider);
+    context.subscriptions.push(operationLogManager);
 
     const statusBarItem = vscode.window.createStatusBarItem(
       vscode.StatusBarAlignment.Left,
@@ -600,6 +612,69 @@ export async function activate(context: vscode.ExtensionContext) {
     );
 
     context.subscriptions.push(
+      vscode.commands.registerCommand("jj.refreshOperationLog", async () => {
+        await operationLogTreeDataProvider.refresh();
+      }),
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand("jj.selectOperationLogRepo", async () => {
+        const repoNames = workspaceSCM.repoSCMs.map(
+          (repo) => repo.repositoryRoot,
+        );
+        const selectedRepoName = await vscode.window.showQuickPick(repoNames, {
+          placeHolder: "Select a repository",
+        });
+
+        const selectedRepo = workspaceSCM.repoSCMs.find(
+          (repo) => repo.repositoryRoot === selectedRepoName,
+        );
+
+        if (selectedRepo) {
+          await operationLogManager!.setSelectedRepo(selectedRepo.repository);
+        }
+      }),
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand(
+        "jj.operationUndo",
+        async (item: unknown) => {
+          console.log(item);
+          if (!(item instanceof OperationTreeItem)) {
+            throw new Error("OperationTreeItem expected");
+          }
+          const repository = workspaceSCM.getRepositoryFromUri(
+            vscode.Uri.file(item.repositoryRoot),
+          );
+          if (!repository) {
+            throw new Error("Repository not found");
+          }
+          await repository.operationUndo(item.operation.id);
+        },
+      ),
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand(
+        "jj.operationRestore",
+        async (item: unknown) => {
+          console.log(item);
+          if (!(item instanceof OperationTreeItem)) {
+            throw new Error("OperationTreeItem expected");
+          }
+          const repository = workspaceSCM.getRepositoryFromUri(
+            vscode.Uri.file(item.repositoryRoot),
+          );
+          if (!repository) {
+            throw new Error("Repository not found");
+          }
+          await repository.operationRestore(item.operation.id);
+        },
+      ),
+    );
+
+    context.subscriptions.push(
       vscode.commands.registerCommand("jj.gitFetch", async () => {
         if (lastOpenedFileUri) {
           statusBarItem.text = "$(sync~spin)";
@@ -629,7 +704,24 @@ export async function activate(context: vscode.ExtensionContext) {
       const graphRepo = getSelectedGraphRepo(context, workspaceSCM);
       logProvider.treeDataProvider.setCurrentRepo(graphRepo);
       context.workspaceState.update("graphRepoRoot", graphRepo.repositoryRoot);
-      await logProvider.treeDataProvider.refresh();
+      void logProvider.treeDataProvider.refresh();
+
+      if (operationLogManager) {
+        if (
+          !workspaceSCM.repoSCMs.some(
+            (repo) =>
+              repo.repositoryRoot ===
+              operationLogManager!.operationLogTreeDataProvider.getSelectedRepo()
+                .repositoryRoot,
+          )
+        ) {
+          void operationLogManager.operationLogTreeDataProvider.setSelectedRepo(
+            workspaceSCM.repoSCMs[0].repository,
+          );
+        } else {
+          void operationLogManager.operationLogTreeDataProvider.refresh();
+        }
+      }
     } else {
       vscode.commands.executeCommand("setContext", "jj.reposExist", false);
     }

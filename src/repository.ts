@@ -679,6 +679,143 @@ export class JJRepository {
     const changeIdsByLine = lines.map((line) => line.split(" ")[0]);
     return changeIdsByLine;
   }
+
+  operationLog(): Promise<Operation[]> {
+    return new Promise((resolve, reject) => {
+      const separator = "ඞjjk";
+      const templateFields = [
+        "self.id()",
+        "self.description()",
+        "self.tags()",
+        "self.time().start()",
+        "self.user()",
+        "self.snapshot()",
+      ];
+      const template =
+        templateFields.join(` ++ "${separator}" ++ `) + ' ++ "\n"';
+
+      const childProcess = spawn(
+        "jj",
+        [
+          "operation",
+          "log",
+          "--limit",
+          "10",
+          "--no-graph",
+          "--no-pager",
+          "--at-operation=@",
+          "--ignore-working-copy",
+          "-T",
+          template,
+        ],
+        {
+          timeout: 5000,
+          cwd: this.repositoryRoot,
+        },
+      );
+      let output = "";
+      childProcess.on("close", (code, signal) => {
+        if (code === 0) {
+          const ret: Operation[] = [];
+          const lines = output.trim().split("\n");
+          for (const line of lines) {
+            const results = line.split(separator);
+            if (results.length > templateFields.length) {
+              throw new Error(
+                "Separator found in a field value. This is not supported.",
+              );
+            } else if (results.length < templateFields.length) {
+              throw new Error("Missing fields in the output.");
+            }
+            const op: Operation = {
+              id: "",
+              description: "",
+              tags: "",
+              start: "",
+              user: "",
+              snapshot: false,
+            };
+
+            for (let i = 0; i < results.length; i++) {
+              const field = results[i];
+              const value = field.trim();
+              switch (templateFields[i]) {
+                case "self.id()":
+                  op.id = value;
+                  break;
+                case "self.description()":
+                  op.description = value;
+                  break;
+                case "self.tags()":
+                  op.tags = value;
+                  break;
+                case "self.time().start()":
+                  op.start = value;
+                  break;
+                case "self.user()":
+                  op.user = value;
+                  break;
+                case "self.snapshot()":
+                  op.snapshot = value === "true";
+                  break;
+              }
+            }
+            ret.push(op);
+          }
+          resolve(ret);
+        } else {
+          reject(
+            new Error(`jj operation log exited with code ${code} (${signal})`),
+          );
+        }
+      });
+      childProcess.stdout!.on("data", (data: string) => {
+        output += data;
+      });
+    });
+  }
+
+  operationUndo(id: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const childProcess = spawn("jj", ["operation", "undo", id], {
+        cwd: this.repositoryRoot,
+      });
+
+      let output = "";
+      childProcess.stderr!.on("data", (data: string) => {
+        output += data;
+      });
+
+      childProcess.on("close", (code) => {
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(output));
+        }
+      });
+    });
+  }
+
+  operationRestore(id: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const childProcess = spawn("jj", ["operation", "restore", id], {
+        cwd: this.repositoryRoot,
+      });
+
+      let output = "";
+      childProcess.stderr!.on("data", (data: string) => {
+        output += data;
+      });
+
+      childProcess.on("close", (code) => {
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(output));
+        }
+      });
+    });
+  }
 }
 
 function parseJJLog(output: string): ChangeNode[] {
@@ -780,6 +917,15 @@ export type RepositoryStatus = {
 export type Show = {
   change: ChangeWithDetails;
   fileStatuses: FileStatus[];
+};
+
+export type Operation = {
+  id: string;
+  description: string;
+  tags: string;
+  start: string;
+  user: string;
+  snapshot: boolean;
 };
 
 function parseJJStatus(
