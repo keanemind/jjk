@@ -337,11 +337,12 @@ export class JJRepository {
         "conflict",
         "diff.summary()",
       ];
-      const template = templateFields.join(` ++ "${separator}" ++ `);
+      const template =
+        templateFields.join(` ++ "${separator}" ++ `) + ` ++ "${separator}"`;
 
       const childProcess = spawn(
         "jj",
-        ["show", "--no-pager", "--summary", "-T", template, rev],
+        ["show", "--no-pager", "-T", template, rev],
         {
           timeout: 5000,
           cwd: this.repositoryRoot,
@@ -356,11 +357,11 @@ export class JJRepository {
         }
         try {
           const results = output.split(separator);
-          if (results.length > templateFields.length) {
+          if (results.length > templateFields.length + 1) {
             throw new Error(
               "Separator found in a field value. This is not supported.",
             );
-          } else if (results.length < templateFields.length) {
+          } else if (results.length < templateFields.length + 1) {
             throw new Error("Missing fields in the output.");
           }
           const ret: Show = {
@@ -410,7 +411,7 @@ export class JJRepository {
               case "diff.summary()": {
                 const changeRegex = /^(A|M|D|R) (.+)$/;
                 const renameRegex = /\{(.+) => (.+)\}$/;
-                for (const line of value.split("\n")) {
+                for (const line of value.split("\n").filter(Boolean)) {
                   const changeMatch = changeRegex.exec(line);
                   if (changeMatch) {
                     const [_, type, file] = changeMatch;
