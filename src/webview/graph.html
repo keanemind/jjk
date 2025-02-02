@@ -35,6 +35,10 @@
                         line.classList.remove('highlighted', 'dimmed', 'child-connection');
                     });
                     currentWorkingCopyId = message.workingCopyId;
+                    vscode.postMessage({
+                        command: 'selectChange',
+                        selectedNodes: []
+                    });
                     updateGraph(message.changes, message.workingCopyId, message.preserveScroll);
                     break;
             }
@@ -370,26 +374,10 @@
                 editButton.title = 'Edit this change';
                 editButton.onclick = async (e) => {
                     e.stopPropagation();
-                    // First send the edit command and wait for it to complete
+                    // Just send the edit command and let updateGraph handle the cleanup
                     await vscode.postMessage({
                         command: 'editChange',
                         changeId: change.contextValue
-                    });
-                    
-                    // Then clear selections and update UI
-                    selectedNodes.clear();
-                    document.querySelectorAll('.change-node').forEach(n => {
-                        n.classList.remove('selected', 'highlighted', 'dimmed');
-                    });
-                    document.querySelectorAll('.node-circle').forEach(circle => {
-                        circle.classList.remove('child-node', 'dimmed');
-                    });
-                    document.querySelectorAll('.connection-line').forEach(line => {
-                        line.classList.remove('highlighted', 'dimmed', 'child-connection');
-                    });
-                    vscode.postMessage({
-                        command: 'selectChange',
-                        selectedNodes: []
                     });
                 };
 

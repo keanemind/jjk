@@ -6,7 +6,6 @@ import { WorkspaceSourceControlManager } from "./repository";
 import type { JJRepository, ChangeWithDetails } from "./repository";
 import { JJDecorationProvider } from "./decorationProvider";
 import { JJFileSystemProvider } from "./fileSystemProvider";
-import { ChangeNode, JJGraphProvider } from "./graphProvider";
 import {
   OperationLogManager,
   OperationLogTreeDataProvider,
@@ -39,7 +38,6 @@ export async function activate(context: vscode.ExtensionContext) {
   await workspaceSCM.refresh();
   context.subscriptions.push(workspaceSCM);
 
-  let logProvider: JJGraphProvider;
   let operationLogManager: OperationLogManager | undefined;
   let graphWebview: JJGraphWebview;
 
@@ -55,7 +53,6 @@ export async function activate(context: vscode.ExtensionContext) {
   let isInitialized = false;
   function init() {
     const selectedRepo = getSelectedGraphRepo(context, workspaceSCM);
-    logProvider = new JJGraphProvider(selectedRepo);
     graphWebview = new JJGraphWebview(
       context.extensionUri,
       selectedRepo,
@@ -537,24 +534,6 @@ export async function activate(context: vscode.ExtensionContext) {
 
     context.subscriptions.push(
       vscode.commands.registerCommand(
-        "jj.editGraph",
-        async (node: ChangeNode) => {
-          try {
-            await logProvider.treeDataProvider.repository.edit(
-              node.contextValue as string,
-            );
-            await updateResources();
-          } catch (error) {
-            vscode.window.showErrorMessage(
-              `Failed to switch to change${error instanceof Error ? `: ${error.message}` : ""}`,
-            );
-          }
-        },
-      ),
-    );
-
-    context.subscriptions.push(
-      vscode.commands.registerCommand(
         "jj.editResourceGroup",
         async (resourceGroup: vscode.SourceControlResourceGroup) => {
           try {
@@ -573,49 +552,6 @@ export async function activate(context: vscode.ExtensionContext) {
           }
         },
       ),
-    );
-
-    context.subscriptions.push(
-      vscode.commands.registerCommand("jj.merge", async () => {
-        const selectedNodes = logProvider.treeView.selection as ChangeNode[];
-        if (selectedNodes.length < 2) {
-          return;
-        }
-        const revs = selectedNodes.map((node) => node.contextValue as string);
-
-        try {
-          await logProvider.treeDataProvider.repository.new(undefined, revs);
-          await updateResources();
-        } catch (error) {
-          vscode.window.showErrorMessage(
-            `Failed to create change${error instanceof Error ? `: ${error.message}` : ""}`,
-          );
-        }
-      }),
-    );
-
-    context.subscriptions.push(
-      vscode.commands.registerCommand("jj.selectGraphRepo", async () => {
-        const repoNames = workspaceSCM.repoSCMs.map(
-          (repo) => repo.repositoryRoot,
-        );
-        const selectedRepoName = await vscode.window.showQuickPick(repoNames, {
-          placeHolder: "Select a repository",
-        });
-
-        const selectedRepo = workspaceSCM.repoSCMs.find(
-          (repo) => repo.repositoryRoot === selectedRepoName,
-        );
-
-        if (selectedRepo) {
-          logProvider.treeDataProvider.setCurrentRepo(selectedRepo.repository);
-          context.workspaceState.update(
-            "graphRepoRoot",
-            selectedRepo.repositoryRoot,
-          );
-          void logProvider.treeDataProvider.refresh();
-        }
-      }),
     );
 
     context.subscriptions.push(
@@ -764,12 +700,10 @@ export async function activate(context: vscode.ExtensionContext) {
         init();
       }
       const graphRepo = getSelectedGraphRepo(context, workspaceSCM);
-      logProvider.treeDataProvider.setCurrentRepo(graphRepo);
       graphWebview.setSelectedRepository(graphRepo);
 
       context.workspaceState.update("graphRepoRoot", graphRepo.repositoryRoot);
 
-      await logProvider.treeDataProvider.refresh();
       await graphWebview.refresh(finalArgs.preserveScroll);
 
       if (operationLogManager) {

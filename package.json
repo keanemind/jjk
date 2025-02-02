@@ -24,11 +24,6 @@
     "views": {
       "scm": [
         {
-          "id": "jjGraphView",
-          "name": "Source Control Graph (JJ)",
-          "when": "jj.reposExist"
-        },
-        {
           "id": "jjOperationLog",
           "name": "Operation Log (JJ)",
           "when": "jj.reposExist"
@@ -86,23 +81,9 @@
         "icon": "$(arrow-up)"
       },
       {
-        "command": "jj.refreshLog",
-        "title": "Refresh change graph",
-        "icon": "$(refresh)"
-      },
-      {
-        "command": "jj.editGraph",
-        "title": "Edit this change",
-        "icon": "$(sign-in)"
-      },
-      {
         "command": "jj.editResourceGroup",
         "title": "Edit this change",
         "icon": "$(sign-in)"
-      },
-      {
-        "command": "jj.merge",
-        "title": "Create merge change with selected as parents"
       },
       {
         "command": "jj.restoreResourceState",
@@ -113,10 +94,6 @@
         "command": "jj.restoreResourceGroup",
         "title": "Discard changes",
         "icon": "$(discard)"
-      },
-      {
-        "command": "jj.selectGraphRepo",
-        "title": "Select repository"
       },
       {
         "command": "jj.gitFetch",
@@ -161,21 +138,6 @@
     "menus": {
       "view/title": [
         {
-          "command": "jj.selectGraphRepo",
-          "when": "view == jjGraphView",
-          "group": "navigation"
-        },
-        {
-          "command": "jj.refreshLog",
-          "when": "view == jjGraphView",
-          "group": "navigation"
-        },
-        {
-          "command": "jj.merge",
-          "when": "view == jjGraphView && jjGraphView.multipleNodesSelected",
-          "group": "navigation"
-        },
-        {
           "command": "jj.refreshOperationLog",
           "when": "view == jjOperationLog",
           "group": "navigation"
@@ -202,11 +164,6 @@
         }
       ],
       "view/item/context": [
-        {
-          "command": "jj.editGraph",
-          "when": "view == jjGraphView && viewItem != ''",
-          "group": "inline"
-        },
         {
           "command": "jj.operationUndo",
           "when": "view == jjOperationLog",
