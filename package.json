@@ -24,14 +24,14 @@
     "views": {
       "scm": [
         {
-          "id": "jjOperationLog",
-          "name": "Operation Log (JJ)",
-          "when": "jj.reposExist"
-        },
-        {
           "type": "webview",
           "id": "jjGraphWebview",
           "name": "Source Control Graph (JJ)",
+          "when": "jj.reposExist"
+        },
+        {
+          "id": "jjOperationLog",
+          "name": "Operation Log (JJ)",
           "when": "jj.reposExist"
         }
       ]

@@ -346,7 +346,7 @@
             });
 
             // Calculate the maximum offset any curve will need
-            const maxOffset = ((maxParentCount - 1) / 2) * 10;
+            const maxOffset = (maxParentCount - 1) * 2 + 5;
             // Set CSS variable for curve offset
             document.documentElement.style.setProperty('--curve-offset', `${maxOffset}px`);
 
