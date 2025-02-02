@@ -164,6 +164,16 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
     );
     const cssUri = webview.asWebviewUri(cssPath);
 
+    // Get path to Codicons CSS file
+    const codiconPath = vscode.Uri.joinPath(
+      this.extensionUri,
+      "node_modules",
+      "@vscode/codicons",
+      "dist",
+      "codicon.css"
+    );
+    const codiconUri = webview.asWebviewUri(codiconPath);
+
     const htmlPath = vscode.Uri.joinPath(
       this.extensionUri,
       "src",
@@ -174,6 +184,7 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
 
     // Replace placeholders in the HTML
     html = html.replace("${cssUri}", cssUri.toString());
+    html = html.replace("${codiconUri}", codiconUri.toString());
 
     return html;
   }

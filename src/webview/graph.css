@@ -120,6 +120,7 @@ body {
     cursor: pointer;
     padding: 2px 6px;
     font-size: 0.9em;
+    border-radius: 3px;
 }
 
 .change-node:hover .edit-button {
@@ -127,7 +128,15 @@ body {
 }
 
 .edit-button:hover {
-    background-color: var(--vscode-button-hoverBackground);
+    background-color: var(--vscode-button-secondaryHoverBackground);
+}
+
+.edit-button .codicon {
+    color: var(--vscode-icon-foreground);
+}
+
+.edit-button:hover .codicon {
+    color: var(--vscode-button-secondaryForeground);
 }
 
 /* Node circle styling */
