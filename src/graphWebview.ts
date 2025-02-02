@@ -124,7 +124,7 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
     }
   }
 
-  public async refresh(preserveScroll: boolean = false) {
+  public async refresh(preserveScroll: boolean = false, force: boolean = false) {
     if (!this.panel) {
       return;
     }
@@ -140,7 +140,7 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
     const workingCopyId = status.workingCopy.changeId;
 
     if (
-      !oldStatus || // Handle first run when cache is empty
+      force || !oldStatus || // Handle first run when cache is empty
       status.workingCopy.changeId !== oldStatus.workingCopy.changeId ||
       !this.areChangeNodesEqual(currChanges, changes)
     ) {

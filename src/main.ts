@@ -556,7 +556,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     context.subscriptions.push(
       vscode.commands.registerCommand("jj.refreshGraphWebview", async () => {
-        await graphWebview.refresh();
+        await graphWebview.refresh(true, true);
       }),
     );
 
