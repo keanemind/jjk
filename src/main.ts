@@ -644,6 +644,7 @@ export async function activate(context: vscode.ExtensionContext) {
             throw new Error("Repository not found");
           }
           await repository.operationUndo(item.operation.id);
+          await updateResources();
         },
       ),
     );
@@ -663,6 +664,7 @@ export async function activate(context: vscode.ExtensionContext) {
             throw new Error("Repository not found");
           }
           await repository.operationRestore(item.operation.id);
+          await updateResources();
         },
       ),
     );
