@@ -6,7 +6,8 @@ import {
   Event,
   ThemeColor,
 } from "vscode";
-import { FileStatus, RepositoryStatus } from "./repository";
+import { FileStatus } from "./repository";
+import { toJJUri } from "./uri";
 
 export class JJDecorationProvider implements FileDecorationProvider {
   private decorations = new Map<string, FileDecoration>();
@@ -15,35 +16,41 @@ export class JJDecorationProvider implements FileDecorationProvider {
   readonly onDidChangeFileDecorations: Event<Uri[]> =
     this._onDidChangeDecorations.event;
 
-  onDidRunStatus(status: RepositoryStatus) {
-    const changedDecorationKeys = new Set<string>(this.decorations.keys());
-    this.decorations.clear();
-    for (const fileStatus of status.fileStatuses) {
-      const key = Uri.file(fileStatus.path).toString();
-      changedDecorationKeys.add(key);
-      this.decorations.set(key, {
-        badge: fileStatus.type,
-        tooltip: fileStatus.file,
-        color: new ThemeColor("jjDecoration.modifiedResourceForeground"),
-      });
+  onRefresh(fileStatusesByChange: Map<string, FileStatus[]>) {
+    const nextDecorations = new Map<string, FileDecoration>();
+    for (const [changeId, fileStatuses] of fileStatusesByChange) {
+      for (const fileStatus of fileStatuses) {
+        const key =
+          changeId === "@"
+            ? Uri.file(fileStatus.path).toString()
+            : toJJUri(Uri.file(fileStatus.path), changeId).toString();
+        nextDecorations.set(key, {
+          badge: fileStatus.type,
+          tooltip: fileStatus.file,
+          color: new ThemeColor("jjDecoration.modifiedResourceForeground"),
+        });
+      }
     }
+
+    const changedDecorationKeys = new Set<string>();
+    for (const [key, fileDecoration] of nextDecorations) {
+      if (
+        !this.decorations.has(key) ||
+        this.decorations.get(key)!.badge !== fileDecoration.badge
+      ) {
+        changedDecorationKeys.add(key);
+      }
+    }
+    for (const key of this.decorations.keys()) {
+      if (!nextDecorations.has(key)) {
+        changedDecorationKeys.add(key);
+      }
+    }
+
+    this.decorations = nextDecorations;
     this._onDidChangeDecorations.fire(
       [...changedDecorationKeys.keys()].map((uri) => Uri.parse(uri)),
     );
-  }
-
-  addDecorators(uris: Uri[], fileStatuses: FileStatus[]) {
-    uris.forEach((uri, index) => {
-      this.decorations.set(uri.toString(), {
-        badge: fileStatuses[index].type,
-        tooltip: fileStatuses[index].file,
-        color: new ThemeColor("jjDecoration.modifiedResourceForeground"),
-      });
-
-      this._onDidChangeDecorations.fire(
-        [...this.decorations.keys()].map((uri) => Uri.parse(uri)),
-      );
-    });
   }
 
   provideFileDecoration(uri: Uri): FileDecoration | undefined {

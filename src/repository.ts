@@ -142,7 +142,9 @@ class RepositorySourceControlManager {
   }
 
   async refresh(status: RepositoryStatus) {
-    this.decorationProvider.onDidRunStatus(status);
+    const fileStatusesByChange = new Map<string, FileStatus[]>([
+      ["@", status.fileStatuses],
+    ]);
 
     this.workingCopyResourceGroup.label = `Working Copy (${
       status.workingCopy.changeId
@@ -273,13 +275,10 @@ class RepositorySourceControlManager {
         },
       );
 
-      this.decorationProvider.addDecorators(
-        showResult.fileStatuses.map((status) =>
-          toJJUri(vscode.Uri.file(status.path), parentChange.changeId),
-        ),
-        showResult.fileStatuses,
-      );
+      fileStatusesByChange.set(parentChange.changeId, showResult.fileStatuses);
     }
+
+    this.decorationProvider.onRefresh(fileStatusesByChange);
   }
 
   dispose() {
