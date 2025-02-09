@@ -184,7 +184,7 @@ export async function activate(context: vscode.ExtensionContext) {
       const repository = workspaceSCM.getRepositoryFromUri(uri);
       if (repository) {
         const changeIdsByLine = await repository.annotate(uri.fsPath);
-        if (activeEditorUri === uri) {
+        if (activeEditorUri === uri && changeIdsByLine.length > 0) {
           annotateInfo = { changeIdsByLine, uri };
         }
       }

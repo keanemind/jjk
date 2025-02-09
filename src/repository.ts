@@ -691,6 +691,9 @@ export class JJRepository {
       });
     });
     const output = await commandPromise;
+    if (output === "") {
+      return [];
+    }
     const lines = output.trim().split("\n");
     const changeIdsByLine = lines.map((line) => line.split(" ")[0]);
     return changeIdsByLine;
