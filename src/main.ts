@@ -52,7 +52,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   let isInitialized = false;
   function init() {
-    const selectedRepo = getSelectedGraphRepo(context, workspaceSCM);
+    const selectedRepo = getSelectedRepo(context, workspaceSCM);
     graphWebview = new JJGraphWebview(
       context.extensionUri,
       selectedRepo,
@@ -68,9 +68,7 @@ export async function activate(context: vscode.ExtensionContext) {
       }),
     );
 
-    const operationLogTreeDataProvider = new OperationLogTreeDataProvider(
-      workspaceSCM.repoSCMs[0].repository,
-    );
+    const operationLogTreeDataProvider = new OperationLogTreeDataProvider(selectedRepo);
     operationLogManager = new OperationLogManager(operationLogTreeDataProvider);
     context.subscriptions.push(operationLogManager);
 
@@ -596,10 +594,10 @@ export async function activate(context: vscode.ExtensionContext) {
         if (selectedRepo) {
           graphWebview.setSelectedRepository(selectedRepo.repository);
           context.workspaceState.update(
-            "graphRepoRoot",
+            "selectedRepository",
             selectedRepo.repositoryRoot,
           );
-          await graphWebview.refresh();
+          await updateResources();
         }
       }),
     );
@@ -625,6 +623,11 @@ export async function activate(context: vscode.ExtensionContext) {
 
         if (selectedRepo) {
           await operationLogManager!.setSelectedRepo(selectedRepo.repository);
+          context.workspaceState.update(
+            "selectedRepository",
+            selectedRepo.repositoryRoot,
+          );
+          await updateResources();
         }
       }),
     );
@@ -633,7 +636,6 @@ export async function activate(context: vscode.ExtensionContext) {
       vscode.commands.registerCommand(
         "jj.operationUndo",
         async (item: unknown) => {
-          console.log(item);
           if (!(item instanceof OperationTreeItem)) {
             throw new Error("OperationTreeItem expected");
           }
@@ -653,7 +655,6 @@ export async function activate(context: vscode.ExtensionContext) {
       vscode.commands.registerCommand(
         "jj.operationRestore",
         async (item: unknown) => {
-          console.log(item);
           if (!(item instanceof OperationTreeItem)) {
             throw new Error("OperationTreeItem expected");
           }
@@ -701,28 +702,14 @@ export async function activate(context: vscode.ExtensionContext) {
       if (!isInitialized) {
         init();
       }
-      const graphRepo = getSelectedGraphRepo(context, workspaceSCM);
-      graphWebview.setSelectedRepository(graphRepo);
+      const selectedRepo = getSelectedRepo(context, workspaceSCM);
+      graphWebview.setSelectedRepository(selectedRepo);
 
-      context.workspaceState.update("graphRepoRoot", graphRepo.repositoryRoot);
 
       await graphWebview.refresh(finalArgs.preserveScroll);
 
       if (operationLogManager) {
-        if (
-          !workspaceSCM.repoSCMs.some(
-            (repo) =>
-              repo.repositoryRoot ===
-              operationLogManager!.operationLogTreeDataProvider.getSelectedRepo()
-                .repositoryRoot,
-          )
-        ) {
-          void operationLogManager.operationLogTreeDataProvider.setSelectedRepo(
-            workspaceSCM.repoSCMs[0].repository,
-          );
-        } else {
-          void operationLogManager.operationLogTreeDataProvider.refresh();
-        }
+        void operationLogManager.setSelectedRepo(selectedRepo);
       }
     } else {
       vscode.commands.executeCommand("setContext", "jj.reposExist", false);
@@ -759,23 +746,23 @@ function showLoading<T extends unknown[]>(
     );
 }
 
-function getSelectedGraphRepo(
+function getSelectedRepo(
   context: vscode.ExtensionContext,
   workspaceSCM: WorkspaceSourceControlManager,
 ): JJRepository {
-  const graphRepoRoot = context.workspaceState.get<string>("graphRepoRoot");
-  let graphRepo: JJRepository;
+  const selectedRepo = context.workspaceState.get<string>("selectedRepository");
+  let repository: JJRepository;
 
-  if (graphRepoRoot) {
-    graphRepo =
+  if (selectedRepo) {
+    repository =
       workspaceSCM.repoSCMs.find(
-        (repo) => repo.repositoryRoot === graphRepoRoot,
+        (repo) => repo.repositoryRoot === selectedRepo,
       )?.repository || workspaceSCM.repoSCMs[0].repository;
   } else {
-    graphRepo = workspaceSCM.repoSCMs[0].repository;
+    repository = workspaceSCM.repoSCMs[0].repository;
   }
 
-  return graphRepo;
+  return repository;
 }
 
 // This method is called when your extension is deactivated
