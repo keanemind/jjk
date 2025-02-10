@@ -1,32 +1,51 @@
 # Jujutsu Kaizen
+![banner](images/banner.png)
+> A Visual Studio Code extension for the [Jujutsu (jj) version control system](https://github.com/jj-vcs/jj).
 
-[Jujutsu (jj) version control system](https://github.com/jj-vcs/jj) extension for VS Code.
+[![VS Code Extension](https://img.shields.io/visual-studio-marketplace/v/jjk.jjk)](https://marketplace.visualstudio.com/items?itemName=jjk.jjk)
 
-## Features
+## 🚀 Features
 
-The goal of this extension is to bring the great UX of Jujutsu into the VS Code UI. We are currently focused on achieving parity for commonly used features of VS Code's built-in Git extension, such as the various operations possible via the Source Control view.
+The goal of this extension is to bring the great UX of Jujutsu into the VS Code UI. We are currently focused on achieving parity for commonly used features of VS Code's built-in Git extension, such as the various operations possible via the Source Control view. 
 
-- View file statuses of the Working Copy change.
-- View file statuses of all parents of the Working Copy change.
-- View diffs of files modified in the Working Copy or its parents.
+Here's what you can do so far:
+
+### 📁 File Management
+
+- Track file statuses in the Working Copy
+- Monitor file statuses across all parent changes
+- View detailed file diffs for Working Copy and parent modifications  
   ![view file diff](images/diff.png)
-- Edit the description of the Working Copy or its parents.
+- View line-by-line blame  
+  <img src="images/blame.gif" width="70%" alt="view blame">
+
+### 💫 Change Management
+
+- Create new changes with optional descriptions
+- Edit descriptions for Working Copy and parent changes  
   ![edit description](images/describe.png)
-- Create a new change, with or without a description.
-- Move changes between the Working Copy and its parents.
+- Move changes between Working Copy and parents  
   ![revision history](images/squash.png)
-- Discard work in a change.
+- Discard changes  
   ![revision history](images/restore.png)
-- View the revision history and switch between changes.
-  ![revision history](images/edit.png)
-- Create a merge change.
-  ![revision history](images/merge.png)
+- Browse and navigate revision history  
+  <img src="images/edit.gif" width="50%" alt="revision history">
+- Create merge changes  
+  <img src="images/merge.gif" width="50%" alt="revision history">
 
-## Requirements
+### 🔄 Operation Management
 
-`jj` must be in your `$PATH` for this extension to work.
+- Undo jj operations or restore to a previous state  
+  <img src="images/undo.gif" width="50%" alt="undo">
 
-## Known Issues
+## 📋 Prerequisites
 
-- ~~Opening multiple Jujutsu repositories in the same VS Code workspace is currently not supported. We intend to address this shortcoming soon.~~
-  Multi-repo support has been added in v0.3.0.
+- Ensure `jj` is installed and available in your system's `$PATH`
+
+## 🐛 Known Issues
+
+If you encounter any problems, please [report them on GitHub](https://github.com/keanemind/jjk/issues/)!
+
+## 📝 License
+
+This project is licensed under the [MIT License](LICENSE).
