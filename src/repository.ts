@@ -233,7 +233,7 @@ class RepositorySourceControlManager {
       } catch (e) {
         if (
           e instanceof Error &&
-          e.message.includes("resolved to more than one revision")
+          (e.message.includes("resolved to more than one revision") || e.message.includes("zzzzzzzz-"))
         ) {
           // Leave grandparentShowResult as undefined
         } else {
