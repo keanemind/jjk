@@ -155,28 +155,28 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
   }
 
   private getWebviewContent(webview: vscode.Webview) {
-    // Get path to CSS file
+    // In development, files are in src/webview
+    // In production (bundled extension), files are in dist/webview
+    const webviewPath = this.extensionUri.fsPath.includes('extensions') ? 'dist' : 'src';
+
     const cssPath = vscode.Uri.joinPath(
       this.extensionUri,
-      "src",
+      webviewPath,
       "webview",
       "graph.css",
     );
     const cssUri = webview.asWebviewUri(cssPath);
 
-    // Get path to Codicons CSS file
     const codiconPath = vscode.Uri.joinPath(
       this.extensionUri,
-      "node_modules",
-      "@vscode/codicons",
-      "dist",
+      webviewPath === 'dist' ? 'dist/codicons' : 'node_modules/@vscode/codicons/dist',
       "codicon.css"
     );
     const codiconUri = webview.asWebviewUri(codiconPath);
 
     const htmlPath = vscode.Uri.joinPath(
       this.extensionUri,
-      "src",
+      webviewPath,
       "webview",
       "graph.html",
     );
