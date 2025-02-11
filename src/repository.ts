@@ -233,7 +233,8 @@ class RepositorySourceControlManager {
       } catch (e) {
         if (
           e instanceof Error &&
-          (e.message.includes("resolved to more than one revision") || e.message.includes("zzzzzzzz-"))
+          (e.message.includes("resolved to more than one revision") ||
+            e.message.includes("zzzzzzzz-"))
         ) {
           // Leave grandparentShowResult as undefined
         } else {
@@ -701,7 +702,8 @@ export class JJRepository {
 
   operationLog(): Promise<Operation[]> {
     return new Promise((resolve, reject) => {
-      const separator = "ඞjjk";
+      const operationSeparator = "ඞඞඞ\n";
+      const fieldSeparator = "kjjඞ";
       const templateFields = [
         "self.id()",
         "self.description()",
@@ -711,7 +713,8 @@ export class JJRepository {
         "self.snapshot()",
       ];
       const template =
-        templateFields.join(` ++ "${separator}" ++ `) + ' ++ "\n"';
+        templateFields.join(` ++ "${fieldSeparator}" ++ `) +
+        ` ++ "${operationSeparator}"`;
 
       const childProcess = spawn(
         "jj",
@@ -736,9 +739,9 @@ export class JJRepository {
       childProcess.on("close", (code, signal) => {
         if (code === 0) {
           const ret: Operation[] = [];
-          const lines = output.trim().split("\n");
+          const lines = output.split(operationSeparator).slice(0, -1); // the output ends in a separator so remove the empty string at the end
           for (const line of lines) {
-            const results = line.split(separator);
+            const results = line.split(fieldSeparator);
             if (results.length > templateFields.length) {
               throw new Error(
                 "Separator found in a field value. This is not supported.",
