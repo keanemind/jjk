@@ -52,6 +52,16 @@ export class JJFileSystemProvider implements FileSystemProvider {
       throw FileSystemError.FileNotFound();
     }
 
+    const cacheValue = this.fileCache.get(uri.toString());
+    if (cacheValue) {
+      return {
+        type: FileType.File,
+        size: cacheValue.content.length,
+        mtime: this.mtime,
+        ctime: 0,
+      };
+    }
+
     let size = 0;
     try {
       const data = await repository.readFile(rev, uri.fsPath);
