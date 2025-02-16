@@ -32,6 +32,8 @@ export default tseslint.config(
       },
     },
 
+    ignores: ["src/vendor"],
+
     rules: {
       "@typescript-eslint/naming-convention": [
         "warn",

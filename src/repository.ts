@@ -1,11 +1,11 @@
 import path from "path";
 import * as vscode from "vscode";
 import spawn from "cross-spawn";
+import fs from "fs/promises";
 import { getRev, toJJUri, withRev } from "./uri";
 import type { JJDecorationProvider } from "./decorationProvider";
 import { logger } from "./logger";
 import type { ChildProcess } from "child_process";
-import fs from "fs";
 
 let jjVersion = "jj 0.28.0";
 let configArgs: string[] = []; // Single global array for config arguments
@@ -45,7 +45,7 @@ export async function initConfigArgs(extensionUri: vscode.Uri) {
 
   if (configOption === "--config-toml") {
     try {
-      const configValue = await fs.promises.readFile(configPath, "utf8");
+      const configValue = await fs.readFile(configPath, "utf8");
       configArgs = [configOption, configValue];
     } catch (e) {
       logger.error(`Failed to read config file at ${configPath}`);
@@ -749,6 +749,72 @@ export class JJRepository {
         ),
       )
     ).toString();
+  }
+
+  squashContent({
+    fromRev,
+    toRev,
+    filepath,
+    content,
+  }: {
+    fromRev: string;
+    toRev: string;
+    filepath: string;
+    content: string;
+  }): Promise<void> {
+    const fakeEditorPath = "/Users/keane/code/jjk/src/fakeeditor/fakeeditor";
+    return new Promise((resolve, reject) => {
+      const childProcess = spawn(
+        "jj",
+        [
+          "squash",
+          "--from",
+          fromRev,
+          "--into",
+          toRev,
+          "--interactive",
+          "--config-toml",
+          `ui.diff-editor = "${fakeEditorPath}"`,
+        ],
+        {
+          cwd: this.repositoryRoot,
+        },
+      );
+
+      childProcess.stdout!.on("data", (data: Buffer) => {
+        const output = data.toString();
+
+        const lines = output.trim().split("\n");
+        if (lines.length !== 4) {
+          reject(new Error("Unexpected output from fakeEditor"));
+          return;
+        }
+        const fakeEditorPID = lines[0];
+        const rightFolderPath = lines[3];
+
+        // Convert filepath to relative path and join with rightFolderPath
+        const relativeFilePath = path.relative(this.repositoryRoot, filepath);
+        const fileToEdit = path.join(rightFolderPath, relativeFilePath);
+
+        // Overwrite the file with the content
+        void fs.writeFile(fileToEdit, content).finally(() => {
+          process.kill(parseInt(fakeEditorPID));
+        });
+      });
+
+      let errOutput = "";
+      childProcess.stderr!.on("data", (data: Buffer) => {
+        errOutput += data.toString();
+      });
+
+      childProcess.on("close", (code) => {
+        if (code !== 0) {
+          reject(new Error(`jj squash exited with code ${code}: ${errOutput}`));
+          return;
+        }
+        resolve();
+      });
+    });
   }
 
   async log(

@@ -156,9 +156,25 @@
         "title": "​",
         "category": "Jujutsu",
         "enablement": "false"
+      },
+      {
+        "command": "jj.squashSelectedRanges",
+        "title": "Squash selected changes"
       }
     ],
     "menus": {
+      "editor/title": [
+        {
+          "command": "jj.squashSelectedRanges",
+          "when": "editorTextFocus && editorHasSelection && !editorReadonly"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "jj.squashSelectedRanges",
+          "when": "editorTextFocus && editorHasSelection && !editorReadonly"
+        }
+      ],
       "view/title": [
         {
           "command": "jj.refreshOperationLog",
