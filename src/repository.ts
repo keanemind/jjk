@@ -2,7 +2,7 @@ import path from "path";
 import * as vscode from "vscode";
 import spawn from "cross-spawn";
 import type { JJDecorationProvider } from "./decorationProvider";
-import { toJJUri } from "./uri";
+import { getJJUriParams, toJJUri } from "./uri";
 
 async function createSCMsInWorkspace(decorationProvider: JJDecorationProvider) {
   const repos: RepositorySourceControlManager[] = [];
@@ -138,6 +138,20 @@ class RepositorySourceControlManager {
       command: "jj.new",
       title: "Create new change",
       arguments: [this.sourceControl],
+    };
+
+    this.sourceControl.quickDiffProvider = {
+      provideOriginalResource: async (uri) => {
+        // Convert to a specific commitId so our fileSystemProvider can cache properly
+        if (uri.scheme === "file") {
+          const show = await this.repository.show("@-");
+          return toJJUri(uri, show.change.commitId);
+        } else if (uri.scheme === "jj") {
+          const params = getJJUriParams(uri);
+          const show = await this.repository.show(`${params.rev}-`);
+          return toJJUri(uri, show.change.commitId);
+        }
+      },
     };
   }
 
