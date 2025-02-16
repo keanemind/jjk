@@ -68,7 +68,9 @@ export async function activate(context: vscode.ExtensionContext) {
       }),
     );
 
-    const operationLogTreeDataProvider = new OperationLogTreeDataProvider(selectedRepo);
+    const operationLogTreeDataProvider = new OperationLogTreeDataProvider(
+      selectedRepo,
+    );
     operationLogManager = new OperationLogManager(operationLogTreeDataProvider);
     context.subscriptions.push(operationLogManager);
 
@@ -131,9 +133,14 @@ export async function activate(context: vscode.ExtensionContext) {
         if (!repository) {
           return;
         }
+        // When the file ends in a newline, the last line can be active in the editor but won't get a blame from
+        // jj file annotate.
+        const safeLines = lines.filter(
+          (line) => line !== annotateInfo!.changeIdsByLine.length,
+        );
         const changes = new Map<string, ChangeWithDetails>(
           await Promise.all(
-            lines.map(async (line) => {
+            safeLines.map(async (line) => {
               const changeId = annotateInfo!.changeIdsByLine[line];
               const showResult = await repository.show(changeId);
               return [changeId, showResult.change] satisfies [
@@ -150,7 +157,7 @@ export async function activate(context: vscode.ExtensionContext) {
           activeLines === lines
         ) {
           const decorations: vscode.DecorationOptions[] = [];
-          for (const line of lines) {
+          for (const line of safeLines) {
             const changeId = annotateInfo.changeIdsByLine[line];
             if (!changeId) {
               continue; // Could be possible if `annotateInfo` is stale due to the await
@@ -705,7 +712,6 @@ export async function activate(context: vscode.ExtensionContext) {
       const selectedRepo = getSelectedRepo(context, workspaceSCM);
       graphWebview.setSelectedRepository(selectedRepo);
 
-
       await graphWebview.refresh(finalArgs.preserveScroll);
 
       if (operationLogManager) {
@@ -755,9 +761,8 @@ function getSelectedRepo(
 
   if (selectedRepo) {
     repository =
-      workspaceSCM.repoSCMs.find(
-        (repo) => repo.repositoryRoot === selectedRepo,
-      )?.repository || workspaceSCM.repoSCMs[0].repository;
+      workspaceSCM.repoSCMs.find((repo) => repo.repositoryRoot === selectedRepo)
+        ?.repository || workspaceSCM.repoSCMs[0].repository;
   } else {
     repository = workspaceSCM.repoSCMs[0].repository;
   }
