@@ -475,7 +475,7 @@ export class JJRepository {
   }
 
   readFile(rev: string, path: string) {
-    return new Promise<Buffer>((resolve) => {
+    return new Promise<Buffer>((resolve, reject) => {
       const childProcess = spawn(
         "jj",
         ["file", "show", "--no-pager", "--revision", rev, path],
@@ -485,11 +485,21 @@ export class JJRepository {
         },
       );
       const buffers: Buffer[] = [];
-      childProcess.on("close", () => {
+      let errOutput = "";
+      childProcess.on("close", (code) => {
+        if (code !== 0) {
+          reject(
+            new Error(`jj file show exited with code ${code}: ${errOutput}`),
+          );
+          return;
+        }
         resolve(Buffer.concat(buffers));
       });
       childProcess.stdout!.on("data", (data: Buffer) => {
         buffers.push(data);
+      });
+      childProcess.stderr!.on("data", (data: string) => {
+        errOutput += data;
       });
     });
   }

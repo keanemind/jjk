@@ -60,8 +60,11 @@ export class JJFileSystemProvider implements FileSystemProvider {
         timestamp: Date.now(),
         content: data,
       });
-    } catch {
-      // noop
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("No such path")) {
+        throw FileSystemError.FileNotFound();
+      }
+      throw e;
     }
     return { type: FileType.File, size: size, mtime: this.mtime, ctime: 0 };
   }
@@ -94,10 +97,11 @@ export class JJFileSystemProvider implements FileSystemProvider {
         content: data,
       });
       return data;
-    } catch (_) {
-      // File does not exist in git. This could be
-      // because the file is untracked or ignored
-      throw FileSystemError.FileNotFound();
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("No such path")) {
+        throw FileSystemError.FileNotFound();
+      }
+      throw e;
     }
   }
 
