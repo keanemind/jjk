@@ -120,6 +120,7 @@ class RepositorySourceControlManager {
     this.sourceControl = vscode.scm.createSourceControl(
       "jj",
       path.basename(repositoryRoot),
+      vscode.Uri.file(repositoryRoot),
     );
     this.subscriptions.push(this.sourceControl);
 
