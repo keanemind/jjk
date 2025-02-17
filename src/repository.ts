@@ -724,7 +724,7 @@ export class JJRepository {
 
   async annotate(file: string, rev: string): Promise<string[]> {
     const commandPromise = new Promise<string>((resolve, reject) => {
-      const childProcess = spawn("jj", ["file", "annotate", file], {
+      const childProcess = spawn("jj", ["file", "annotate", "-r", rev, file], {
         cwd: this.repositoryRoot,
       });
 

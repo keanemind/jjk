@@ -12,6 +12,7 @@ import {
   OperationTreeItem,
 } from "./operationLogTreeView";
 import { JJGraphWebview, RefreshArgs } from "./graphWebview";
+import { getJJUriParams } from "./uri";
 
 export async function activate(context: vscode.ExtensionContext) {
   // Use the console to output diagnostic information (console.log) and errors (console.error)
@@ -190,7 +191,10 @@ export async function activate(context: vscode.ExtensionContext) {
     const updateAnnotateInfo = async (uri: vscode.Uri) => {
       const repository = workspaceSCM.getRepositoryFromUri(uri);
       if (repository) {
-        const changeIdsByLine = await repository.annotate(uri.fsPath);
+        const changeIdsByLine = await repository.annotate(
+          uri.fsPath,
+          uri.scheme === "jj" ? getJJUriParams(uri).rev : "@",
+        );
         if (activeEditorUri === uri && changeIdsByLine.length > 0) {
           annotateInfo = { changeIdsByLine, uri };
         }
