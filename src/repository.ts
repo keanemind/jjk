@@ -177,20 +177,15 @@ class RepositorySourceControlManager {
           },
           command:
             status.parentChanges.length === 1
-              ? {
-                  title: "Open",
-                  command: "vscode.diff",
-                  arguments: [
-                    toJJUri(
-                      vscode.Uri.file(fileStatus.path),
-                      status.parentChanges[0].changeId,
-                    ),
+              ? getResourceStateCommand(
+                  fileStatus,
+                  toJJUri(
                     vscode.Uri.file(fileStatus.path),
-                    (fileStatus.renamedFrom
-                      ? `${fileStatus.renamedFrom} => `
-                      : "") + `${fileStatus.file} (Working Copy)`,
-                  ],
-                }
+                    status.parentChanges[0].changeId,
+                  ),
+                  vscode.Uri.file(fileStatus.path),
+                  "(Working Copy)",
+                )
               : undefined,
         };
       },
@@ -268,23 +263,18 @@ class RepositorySourceControlManager {
               tooltip: path.basename(parentStatus.file),
             },
             command: grandparentShowResult
-              ? {
-                  title: "Open",
-                  command: "vscode.diff",
-                  arguments: [
-                    toJJUri(
-                      vscode.Uri.file(parentStatus.path),
-                      grandparentShowResult.change.changeId,
-                    ),
-                    toJJUri(
-                      vscode.Uri.file(parentStatus.path),
-                      parentChange.changeId,
-                    ),
-                    (parentStatus.renamedFrom
-                      ? `${parentStatus.renamedFrom} => `
-                      : "") + `${parentStatus.file} (Parent Change)`,
-                  ],
-                }
+              ? getResourceStateCommand(
+                  parentStatus,
+                  toJJUri(
+                    vscode.Uri.file(parentStatus.path),
+                    grandparentShowResult.change.changeId,
+                  ),
+                  toJJUri(
+                    vscode.Uri.file(parentStatus.path),
+                    parentChange.changeId,
+                  ),
+                  "(Parent Change)",
+                )
               : undefined,
           };
         },
@@ -301,6 +291,41 @@ class RepositorySourceControlManager {
       subscription.dispose();
     }
   }
+}
+
+function getResourceStateCommand(
+  fileStatus: FileStatus,
+  beforeUri: vscode.Uri,
+  afterUri: vscode.Uri,
+  diffTitleSuffix: string,
+): vscode.Command {
+  if (fileStatus.type === "A") {
+    return {
+      title: "Open",
+      command: "vscode.open",
+      arguments: [afterUri],
+    };
+  } else if (fileStatus.type === "D") {
+    return {
+      title: "Open",
+      command: "vscode.open",
+      arguments: [
+        beforeUri,
+        {} satisfies vscode.TextDocumentShowOptions,
+        `${fileStatus.file} (Deleted)`,
+      ],
+    };
+  }
+  return {
+    title: "Open",
+    command: "vscode.diff",
+    arguments: [
+      beforeUri,
+      afterUri,
+      (fileStatus.renamedFrom ? `${fileStatus.renamedFrom} => ` : "") +
+        `${fileStatus.file} ${diffTitleSuffix}`,
+    ],
+  };
 }
 
 export class JJRepository {
@@ -697,7 +722,7 @@ export class JJRepository {
     return this.gitFetchPromise;
   }
 
-  async annotate(file: string): Promise<string[]> {
+  async annotate(file: string, rev: string): Promise<string[]> {
     const commandPromise = new Promise<string>((resolve, reject) => {
       const childProcess = spawn("jj", ["file", "annotate", file], {
         cwd: this.repositoryRoot,
