@@ -4,18 +4,38 @@ export interface JJUriParams {
   rev: string;
 }
 
-/**
- * @param uri
- * @param rev revision
- * @returns
- */
-export function toJJUri(uri: Uri, rev: string): Uri {
+function isJJUriParams(params: unknown): params is JJUriParams {
+  return (
+    typeof params === "object" &&
+    params !== null &&
+    Object.hasOwnProperty.call(params, "rev") &&
+    typeof (params as { rev: unknown }).rev === "string"
+  );
+}
+
+export function withRev(uri: Uri, rev: string): Uri {
   return uri.with({
-    scheme: "jj",
     query: JSON.stringify({ rev } satisfies JJUriParams),
   });
 }
 
-export function getJJUriParams(uri: Uri) {
-  return JSON.parse(uri.query) as JJUriParams;
+/**
+ * Use this for any URI that will go to JJFileSystemProvider. This just sets the scheme to "jj".
+ * Note that URIs that go to JJFileSystemProvider must have a rev in the query; see `withRev`.
+ */
+export function toJJUri(uri: Uri): Uri {
+  return uri.with({
+    scheme: "jj",
+  });
+}
+
+export function getRev(uri: Uri) {
+  if (uri.query === "") {
+    throw new Error("URI has no query");
+  }
+  const parsed = JSON.parse(uri.query) as unknown;
+  if (!isJJUriParams(parsed)) {
+    throw new Error("URI query is not JJUriParams");
+  }
+  return parsed.rev;
 }

@@ -9,7 +9,7 @@ import {
   FileStat,
   FileType,
 } from "vscode";
-import { getJJUriParams } from "./uri";
+import { getRev } from "./uri";
 import { WorkspaceSourceControlManager } from "./repository";
 
 const THREE_MINUTES = 1000 * 60 * 3;
@@ -45,7 +45,7 @@ export class JJFileSystemProvider implements FileSystemProvider {
   }
 
   async stat(uri: Uri): Promise<FileStat> {
-    const { rev } = getJJUriParams(uri);
+    const rev = getRev(uri);
 
     const repository = this.repositories.getRepositoryFromUri(uri);
     if (!repository) {
@@ -88,7 +88,7 @@ export class JJFileSystemProvider implements FileSystemProvider {
   }
 
   async readFile(uri: Uri): Promise<Uint8Array> {
-    const { rev } = getJJUriParams(uri);
+    const rev = getRev(uri);
 
     const repository = this.repositories.getRepositoryFromUri(uri);
     if (!repository) {

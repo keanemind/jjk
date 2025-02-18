@@ -2,7 +2,7 @@ import path from "path";
 import * as vscode from "vscode";
 import spawn from "cross-spawn";
 import type { JJDecorationProvider } from "./decorationProvider";
-import { getJJUriParams, toJJUri } from "./uri";
+import { getRev, toJJUri, withRev } from "./uri";
 
 async function createSCMsInWorkspace(decorationProvider: JJDecorationProvider) {
   const repos: RepositorySourceControlManager[] = [];
@@ -146,11 +146,11 @@ class RepositorySourceControlManager {
         // Convert to a specific commitId so our fileSystemProvider can cache properly
         if (uri.scheme === "file") {
           const show = await this.repository.show("@-");
-          return toJJUri(uri, show.change.commitId);
+          return toJJUri(withRev(uri, show.change.commitId));
         } else if (uri.scheme === "jj") {
-          const params = getJJUriParams(uri);
-          const show = await this.repository.show(`${params.rev}-`);
-          return toJJUri(uri, show.change.commitId);
+          const rev = getRev(uri);
+          const show = await this.repository.show(`${rev}-`);
+          return toJJUri(withRev(uri, show.change.commitId));
         }
       },
     };
@@ -171,7 +171,7 @@ class RepositorySourceControlManager {
     this.workingCopyResourceGroup.resourceStates = status.fileStatuses.map(
       (fileStatus) => {
         return {
-          resourceUri: vscode.Uri.file(fileStatus.path),
+          resourceUri: withRev(vscode.Uri.file(fileStatus.path), "@"),
           decorations: {
             strikeThrough: fileStatus.type === "D",
             tooltip: path.basename(fileStatus.file),
@@ -181,8 +181,10 @@ class RepositorySourceControlManager {
               ? getResourceStateCommand(
                   fileStatus,
                   toJJUri(
-                    vscode.Uri.file(fileStatus.path),
-                    status.parentChanges[0].changeId,
+                    withRev(
+                      vscode.Uri.file(fileStatus.path),
+                      status.parentChanges[0].changeId,
+                    ),
                   ),
                   vscode.Uri.file(fileStatus.path),
                   "(Working Copy)",
@@ -255,7 +257,7 @@ class RepositorySourceControlManager {
       parentChangeResourceGroup.resourceStates = showResult.fileStatuses.map(
         (parentStatus) => {
           return {
-            resourceUri: toJJUri(
+            resourceUri: withRev(
               vscode.Uri.file(parentStatus.path),
               parentChange.changeId,
             ),
@@ -267,12 +269,16 @@ class RepositorySourceControlManager {
               ? getResourceStateCommand(
                   parentStatus,
                   toJJUri(
-                    vscode.Uri.file(parentStatus.path),
-                    grandparentShowResult.change.changeId,
+                    withRev(
+                      vscode.Uri.file(parentStatus.path),
+                      grandparentShowResult.change.changeId,
+                    ),
                   ),
                   toJJUri(
-                    vscode.Uri.file(parentStatus.path),
-                    parentChange.changeId,
+                    withRev(
+                      vscode.Uri.file(parentStatus.path),
+                      parentChange.changeId,
+                    ),
                   ),
                   "(Parent Change)",
                 )

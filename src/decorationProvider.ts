@@ -7,7 +7,7 @@ import {
   ThemeColor,
 } from "vscode";
 import { FileStatus } from "./repository";
-import { toJJUri } from "./uri";
+import { getRev, withRev } from "./uri";
 
 export class JJDecorationProvider implements FileDecorationProvider {
   private decorations = new Map<string, FileDecoration>();
@@ -20,10 +20,7 @@ export class JJDecorationProvider implements FileDecorationProvider {
     const nextDecorations = new Map<string, FileDecoration>();
     for (const [changeId, fileStatuses] of fileStatusesByChange) {
       for (const fileStatus of fileStatuses) {
-        const key =
-          changeId === "@"
-            ? Uri.file(fileStatus.path).toString()
-            : toJJUri(Uri.file(fileStatus.path), changeId).toString();
+        const key = getKey(Uri.file(fileStatus.path).fsPath, changeId);
         nextDecorations.set(key, {
           badge: fileStatus.type,
           tooltip: fileStatus.file,
@@ -49,11 +46,18 @@ export class JJDecorationProvider implements FileDecorationProvider {
 
     this.decorations = nextDecorations;
     this._onDidChangeDecorations.fire(
-      [...changedDecorationKeys.keys()].map((uri) => Uri.parse(uri)),
+      [...changedDecorationKeys.keys()].map((key) => {
+        const [fsPath, rev] = key.split(":");
+        return withRev(Uri.file(fsPath), rev);
+      }),
     );
   }
 
   provideFileDecoration(uri: Uri): FileDecoration | undefined {
-    return this.decorations.get(uri.toString());
+    return this.decorations.get(getKey(uri.fsPath, getRev(uri)));
   }
+}
+
+function getKey(fsPath: string, rev: string) {
+  return `${fsPath}:${rev}`;
 }
