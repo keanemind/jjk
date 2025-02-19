@@ -124,7 +124,10 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
     }
   }
 
-  public async refresh(preserveScroll: boolean = false, force: boolean = false) {
+  public async refresh(
+    preserveScroll: boolean = false,
+    force: boolean = false,
+  ) {
     if (!this.panel) {
       return;
     }
@@ -136,11 +139,12 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
 
     // Get the old status from cache before fetching new status
     const oldStatus = this.repository.statusCache;
-    const status = await this.repository.status(false); // Get and cache fresh status
+    const status = await this.repository.getStatus();
     const workingCopyId = status.workingCopy.changeId;
 
     if (
-      force || !oldStatus || // Handle first run when cache is empty
+      force ||
+      !oldStatus || // Handle first run when cache is empty
       status.workingCopy.changeId !== oldStatus.workingCopy.changeId ||
       !this.areChangeNodesEqual(currChanges, changes)
     ) {
@@ -157,7 +161,9 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
   private getWebviewContent(webview: vscode.Webview) {
     // In development, files are in src/webview
     // In production (bundled extension), files are in dist/webview
-    const webviewPath = this.extensionUri.fsPath.includes('extensions') ? 'dist' : 'src';
+    const webviewPath = this.extensionUri.fsPath.includes("extensions")
+      ? "dist"
+      : "src";
 
     const cssPath = vscode.Uri.joinPath(
       this.extensionUri,
@@ -169,8 +175,10 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
 
     const codiconPath = vscode.Uri.joinPath(
       this.extensionUri,
-      webviewPath === 'dist' ? 'dist/codicons' : 'node_modules/@vscode/codicons/dist',
-      "codicon.css"
+      webviewPath === "dist"
+        ? "dist/codicons"
+        : "node_modules/@vscode/codicons/dist",
+      "codicon.css",
     );
     const codiconUri = webview.asWebviewUri(codiconPath);
 

@@ -357,15 +357,13 @@ export class JJRepository {
     this._onDidChangeStatus.event;
 
   statusCache: RepositoryStatus | undefined;
-  gitFetchPromise: Promise<void> | undefined;
 
-  constructor(public repositoryRoot: string) {}
-
-  status(readCache = false) {
-    if (readCache && this.statusCache) {
-      return Promise.resolve(this.statusCache);
+  async getStatus(useCache = false): Promise<RepositoryStatus> {
+    if (useCache && this.statusCache) {
+      return this.statusCache;
     }
-    return new Promise<RepositoryStatus>((resolve) => {
+
+    const status = await new Promise<RepositoryStatus>((resolve) => {
       const childProcess = spawn("jj", ["status"], {
         timeout: 5000,
         cwd: this.repositoryRoot,
@@ -377,12 +375,21 @@ export class JJRepository {
       childProcess.stdout!.on("data", (data: string) => {
         output += data;
       });
-    }).then((status) => {
-      this.statusCache = status;
-      this._onDidChangeStatus.fire(status);
-      return status;
     });
+
+    this.statusCache = status;
+    return status;
   }
+
+  async status(useCache = false): Promise<RepositoryStatus> {
+    const status = await this.getStatus(useCache);
+    this._onDidChangeStatus.fire(status);
+    return status;
+  }
+
+  gitFetchPromise: Promise<void> | undefined;
+
+  constructor(public repositoryRoot: string) {}
 
   show(rev: string) {
     return new Promise<Show>((resolve, reject) => {
