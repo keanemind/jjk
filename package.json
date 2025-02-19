@@ -133,6 +133,11 @@
         "command": "jj.selectGraphWebviewRepo",
         "title": "Select repository",
         "icon": "$(repo)"
+      },
+      {
+        "command": "jj.placeholderForFolders",
+        "title": "​",
+        "enablement": "false"
       }
     ],
     "menus": {
@@ -233,6 +238,13 @@
         {
           "command": "jj.squashToWorkingCopyResourceState",
           "when": "scmProvider == jj && scmResourceGroup != @",
+          "group": "inline"
+        }
+      ],
+      "scm/resourceFolder/context": [
+        {
+          "command": "jj.placeholderForFolders",
+          "when": "scmProvider == jj",
           "group": "inline"
         }
       ]
