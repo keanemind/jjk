@@ -6,17 +6,31 @@ import {
   Event,
   ThemeColor,
 } from "vscode";
-import { FileStatus } from "./repository";
-import { getRev, withRev } from "./uri";
+import { FileStatus, FileStatusType } from "./repository";
+import { getRevOpt, withRev } from "./uri";
+
+const colorOfType = (type: FileStatusType) => {
+  switch (type) {
+    case "A":
+      return new ThemeColor("jjDecoration.addedResourceForeground");
+    case "M":
+      return new ThemeColor("jjDecoration.modifiedResourceForeground");
+    case "D":
+      return new ThemeColor("jjDecoration.deletedResourceForeground");
+    case "R":
+      return new ThemeColor("jjDecoration.modifiedResourceForeground");
+  }
+};
 
 export class JJDecorationProvider implements FileDecorationProvider {
   private decorations = new Map<string, FileDecoration>();
+  private trackedFiles = new Set<string>();
 
   private readonly _onDidChangeDecorations = new EventEmitter<Uri[]>();
   readonly onDidChangeFileDecorations: Event<Uri[]> =
     this._onDidChangeDecorations.event;
 
-  onRefresh(fileStatusesByChange: Map<string, FileStatus[]>) {
+  onRefresh(fileStatusesByChange: Map<string, FileStatus[]>, trackedFiles: Set<string>) {
     const nextDecorations = new Map<string, FileDecoration>();
     for (const [changeId, fileStatuses] of fileStatusesByChange) {
       for (const fileStatus of fileStatuses) {
@@ -24,7 +38,7 @@ export class JJDecorationProvider implements FileDecorationProvider {
         nextDecorations.set(key, {
           badge: fileStatus.type,
           tooltip: fileStatus.file,
-          color: new ThemeColor("jjDecoration.modifiedResourceForeground"),
+          color: colorOfType(fileStatus.type),
         });
       }
     }
@@ -45,16 +59,40 @@ export class JJDecorationProvider implements FileDecorationProvider {
     }
 
     this.decorations = nextDecorations;
-    this._onDidChangeDecorations.fire(
-      [...changedDecorationKeys.keys()].map((key) => {
+    this._onDidChangeDecorations.fire([
+      ...[...changedDecorationKeys.keys()].map((key) => {
         const [fsPath, rev] = key.split(":");
         return withRev(Uri.file(fsPath), rev);
       }),
-    );
+      ...[...changedDecorationKeys.keys()].map((key) => {
+        const [fsPath, rev] = key.split(":");
+        if (rev === '@') {
+          return Uri.file(fsPath);
+        }
+      }).filter((x): x is Uri => !!x),
+      ...[...this.trackedFiles].map((key) => {
+        if (!trackedFiles.has(key)) {
+          return Uri.file(key);
+        }
+      }).filter((x): x is Uri => !!x),
+      ...[...trackedFiles].map((key) => {
+        if (!this.trackedFiles.has(key)) {
+          return Uri.file(key);
+        }
+      }).filter((x): x is Uri => !!x),
+    ]);
+    this.trackedFiles = trackedFiles;
   }
 
   provideFileDecoration(uri: Uri): FileDecoration | undefined {
-    return this.decorations.get(getKey(uri.fsPath, getRev(uri)));
+    const rev = getRevOpt(uri) ?? '@';
+    const key = getKey(uri.fsPath, rev);
+    if (rev === '@' && !this.decorations.has(key)) {
+      if (!this.trackedFiles.has(uri.fsPath)) {
+        return { color: new ThemeColor("jjDecoration.ignoredResourceForeground") };
+      }
+    }
+    return this.decorations.get(key);
   }
 }
 
