@@ -230,7 +230,6 @@ class RepositorySourceControlManager {
         );
 
         this.parentResourceGroups.push(parentChangeResourceGroup);
-        this.subscriptions.push(parentChangeResourceGroup);
       } else {
         parentChangeResourceGroup = parentGroup;
       }
@@ -296,6 +295,9 @@ class RepositorySourceControlManager {
   dispose() {
     for (const subscription of this.subscriptions) {
       subscription.dispose();
+    }
+    for (const group of this.parentResourceGroups) {
+      group.dispose();
     }
   }
 }
