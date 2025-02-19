@@ -11,6 +11,10 @@ body {
     padding-left: 8px;
 }
 
+#revsetInput {
+    width: 50%;
+}
+
 #connections {
     position: absolute;
     top: 0;

@@ -7,6 +7,9 @@
 </head>
 
 <body>
+    <div id="toolbar" hidden>
+        Selected revset: <input type="text" id="revsetInput">
+    </div>
     <div id="graph">
         <svg id="connections">
             <defs id="svg-defs"></defs>
@@ -19,6 +22,21 @@
         const vscode = acquireVsCodeApi();
         let selectedNodes = new Set();
         let currentWorkingCopyId;
+
+        const mode = '${mode}';
+        if (mode === 'expanded') {
+            document.getElementById('toolbar').removeAttribute('hidden');
+        }
+
+        const revsetInput = document.getElementById('revsetInput');
+
+        revsetInput.value = '${initialRevset}';
+        revsetInput.oninput = (e) => {
+            vscode.postMessage({
+                command: 'updateRevset',
+                revset: e.target.value,
+            });
+        };
 
         window.addEventListener('message', event => {
             const message = event.data;

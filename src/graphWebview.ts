@@ -4,9 +4,16 @@ import type { JJRepository } from "./repository";
 import path from "path";
 
 type Message = {
-  command: string;
-  changeId: string;
+  command: "selectChange";
   selectedNodes: string[];
+} | {
+  command: "updateRevset";
+  revset: string;
+} | {
+  command: "editChange";
+  changeId: string;
+} | {
+  command: "webviewReady";
 };
 
 export type RefreshArgs = {
@@ -43,6 +50,9 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
   }[] = [];
 
   public panel?: vscode.WebviewView;
+  public webview?: vscode.Webview;
+  public revset: string;
+  public mode: "expanded" | "compact";
   public repository: JJRepository;
   public logData: ChangeNode[] = [];
   public selectedNodes: Set<string> = new Set();
@@ -51,17 +61,24 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
     private readonly extensionUri: vscode.Uri,
     repo: JJRepository,
     private readonly context: vscode.ExtensionContext,
+    initialRevset: string = "::",
+    mode: "expanded" | "compact" = 'compact',
+    register: boolean = true,
   ) {
     this.repository = repo;
+    this.mode = mode;
+    this.revset = initialRevset;
 
-    // Register the webview provider
-    context.subscriptions.push(
-      vscode.window.registerWebviewViewProvider("jjGraphWebview", this, {
-        webviewOptions: {
-          retainContextWhenHidden: true,
-        },
-      }),
-    );
+    if (register) {
+      // Register the webview provider
+      context.subscriptions.push(
+        vscode.window.registerWebviewViewProvider("jjGraphWebview", this, {
+          webviewOptions: {
+            retainContextWhenHidden: true,
+          },
+        }),
+      );
+    }
   }
 
   public async resolveWebviewView(
@@ -69,16 +86,23 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
   ): Promise<void> {
     this.panel = webviewView;
     this.panel.title = `Source Control Graph (${path.basename(this.repository.repositoryRoot)})`;
+    await this.resolveWebview(webviewView.webview);
+  }
 
-    webviewView.webview.options = {
+  public async resolveWebview(
+    webview: vscode.Webview,
+  ): Promise<void> {
+    this.webview = webview;    
+
+    webview.options = {
       enableScripts: true,
       localResourceRoots: [this.extensionUri],
     };
 
-    webviewView.webview.html = this.getWebviewContent(webviewView.webview);
+    webview.html = this.getWebviewContent(webview);
 
     await new Promise<void>((resolve) => {
-      const messageListener = webviewView.webview.onDidReceiveMessage(
+      const messageListener = webview.onDidReceiveMessage(
         (message: Message) => {
           if (message.command === "webviewReady") {
             messageListener.dispose();
@@ -88,7 +112,7 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
       );
     });
 
-    webviewView.webview.onDidReceiveMessage(async (message: Message) => {
+    webview.onDidReceiveMessage(async (message: Message) => {
       switch (message.command) {
         case "editChange":
           try {
@@ -102,6 +126,10 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
               `Failed to switch to change: ${error as string}`,
             );
           }
+          break;
+        case "updateRevset":
+          this.revset = message.revset;
+          await this.refresh(true, true);
           break;
         case "selectChange":
           this.selectedNodes = new Set(message.selectedNodes);
@@ -128,12 +156,12 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
     preserveScroll: boolean = false,
     force: boolean = false,
   ) {
-    if (!this.panel) {
+    if (!this.webview) {
       return;
     }
     const currChanges = this.logData;
 
-    let changes = parseJJLog(await this.repository.log());
+    let changes = parseJJLog(await this.repository.log(this.revset));
     changes = await this.getChangeNodesWithParents(changes);
     this.logData = changes;
 
@@ -149,7 +177,7 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
       !this.areChangeNodesEqual(currChanges, changes)
     ) {
       this.selectedNodes.clear();
-      this.panel.webview.postMessage({
+      this.webview.postMessage({
         command: "updateGraph",
         changes: changes,
         workingCopyId,
@@ -193,6 +221,8 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
     // Replace placeholders in the HTML
     html = html.replace("${cssUri}", cssUri.toString());
     html = html.replace("${codiconUri}", codiconUri.toString());
+    html = html.replace("${mode}", this.mode);
+    html = html.replace("${initialRevset}", this.revset);
 
     return html;
   }
