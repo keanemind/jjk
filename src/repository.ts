@@ -107,6 +107,7 @@ class RepositorySourceControlManager {
   workingCopyResourceGroup: vscode.SourceControlResourceGroup;
   parentResourceGroups: vscode.SourceControlResourceGroup[] = [];
   repository: JJRepository;
+  refreshPromise: Promise<void> | undefined;
 
   constructor(
     public repositoryRoot: string,
@@ -157,6 +158,19 @@ class RepositorySourceControlManager {
   }
 
   async refresh(status: RepositoryStatus) {
+    if (!this.refreshPromise) {
+      this.refreshPromise = this.refreshUnsafe(status);
+      await this.refreshPromise;
+      this.refreshPromise = undefined;
+    } else {
+      await this.refreshPromise;
+    }
+  }
+
+  /**
+   * This should never be called concurrently.
+   */
+  async refreshUnsafe(status: RepositoryStatus) {
     const fileStatusesByChange = new Map<string, FileStatus[]>([
       ["@", status.fileStatuses],
     ]);
