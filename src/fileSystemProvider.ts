@@ -12,8 +12,6 @@ import {
 import { getRev } from "./uri";
 import { WorkspaceSourceControlManager } from "./repository";
 
-const THREE_MINUTES = 1000 * 60 * 3;
-
 export class JJFileSystemProvider implements FileSystemProvider {
   private _onDidChangeFile = new EventEmitter<FileChangeEvent[]>();
   readonly onDidChangeFile: Event<FileChangeEvent[]> =
@@ -21,24 +19,9 @@ export class JJFileSystemProvider implements FileSystemProvider {
 
   private mtime = Date.now();
 
-  private fileCache = new Map<string, { timestamp: number; content: Buffer }>();
+  constructor(private repositories: WorkspaceSourceControlManager) {}
 
-  private cleanupInterval: NodeJS.Timeout;
-
-  constructor(private repositories: WorkspaceSourceControlManager) {
-    this.cleanupInterval = setInterval(() => {
-      const now = Date.now();
-      for (const [uri, value] of this.fileCache) {
-        if (now - value.timestamp > THREE_MINUTES) {
-          this.fileCache.delete(uri);
-        }
-      }
-    }, 1000 * 30);
-  }
-
-  dispose() {
-    clearInterval(this.cleanupInterval);
-  }
+  dispose() {}
 
   watch(): Disposable {
     return new Disposable(() => {});
@@ -52,24 +35,10 @@ export class JJFileSystemProvider implements FileSystemProvider {
       throw FileSystemError.FileNotFound();
     }
 
-    const cacheValue = this.fileCache.get(uri.toString());
-    if (cacheValue) {
-      return {
-        type: FileType.File,
-        size: cacheValue.content.length,
-        mtime: this.mtime,
-        ctime: 0,
-      };
-    }
-
     let size = 0;
     try {
       const data = await repository.readFile(rev, uri.fsPath);
       size = data.length;
-      this.fileCache.set(uri.toString(), {
-        timestamp: Date.now(),
-        content: data,
-      });
     } catch (e) {
       if (e instanceof Error && e.message.includes("No such path")) {
         throw FileSystemError.FileNotFound();
@@ -95,17 +64,8 @@ export class JJFileSystemProvider implements FileSystemProvider {
       throw FileSystemError.FileNotFound();
     }
 
-    const cacheValue = this.fileCache.get(uri.toString());
-    if (cacheValue) {
-      return cacheValue.content;
-    }
-
     try {
       const data = await repository.readFile(rev, uri.fsPath);
-      this.fileCache.set(uri.toString(), {
-        timestamp: Date.now(),
-        content: data,
-      });
       return data;
     } catch (e) {
       if (e instanceof Error && e.message.includes("No such path")) {
