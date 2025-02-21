@@ -39,3 +39,14 @@ export function getRev(uri: Uri) {
   }
   return parsed.rev;
 }
+
+export function getRevOpt(uri: Uri) {
+  if (uri.query === "") {
+    return;
+  }
+  const parsed = JSON.parse(uri.query) as unknown;
+  if (!isJJUriParams(parsed)) {
+    return;
+  }
+  return parsed.rev;
+}
