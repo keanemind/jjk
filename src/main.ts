@@ -831,14 +831,16 @@ export async function activate(context: vscode.ExtensionContext) {
           return;
         }
 
+        const destinationRev = "@+";
+
         async function computeAndSquashSelectedDiff(
           repository: JJRepository,
           diffComputer: ILinesDiffComputer,
-          receiverUri: vscode.Uri,
+          originalUri: vscode.Uri,
           textEditor: vscode.TextEditor,
         ) {
           const originalDocument =
-            await vscode.workspace.openTextDocument(receiverUri);
+            await vscode.workspace.openTextDocument(originalUri);
           console.log("originalDocument", originalDocument.getText());
           const originalLines = originalDocument.getText().split("\n");
           const editorLines = textEditor.document.getText().split("\n");
@@ -883,9 +885,9 @@ export async function activate(context: vscode.ExtensionContext) {
           );
           await repository.squashContent({
             fromRev: "@",
-            toRev: "@-",
+            toRev: destinationRev,
             content: result,
-            filepath: receiverUri.fsPath,
+            filepath: originalUri.fsPath,
           });
         }
 
