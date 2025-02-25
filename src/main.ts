@@ -39,6 +39,9 @@ export async function activate(context: vscode.ExtensionContext) {
   await workspaceSCM.refresh();
   context.subscriptions.push(workspaceSCM);
 
+  // Check for colocated repositories and warn about Git extension
+  await checkColocatedRepositories(workspaceSCM, context);
+
   let operationLogManager: OperationLogManager | undefined;
   let graphWebview: JJGraphWebview;
 
@@ -776,3 +779,214 @@ function getSelectedRepo(
 
 // This method is called when your extension is deactivated
 export function deactivate() {}
+
+/**
+ * Checks if any repositories are colocated (have both .jj and .git directories)
+ * and warns the user about potential conflicts with the Git extension
+ */
+async function checkColocatedRepositories(
+  workspaceSCM: WorkspaceSourceControlManager,
+  context: vscode.ExtensionContext,
+) {
+  // Create a map to store status bar items by repo path
+  const statusBarItems = new Map<string, vscode.StatusBarItem>();
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "jj.openGitSettings",
+      async (repoPath: string) => {
+        if (!repoPath) {
+          return;
+        }
+
+        const folderUri = vscode.Uri.file(repoPath);
+        const settingsUri = vscode.Uri.joinPath(
+          folderUri,
+          ".vscode",
+          "settings.json",
+        );
+        const parentDir = vscode.Uri.joinPath(folderUri, ".vscode");
+        const folderName = repoPath.split("/").at(-1) || repoPath;
+
+        try {
+          // Create .vscode directory if it doesn't exist
+          try {
+            await vscode.workspace.fs.stat(parentDir);
+          } catch {
+            await vscode.workspace.fs.createDirectory(parentDir);
+          }
+
+          // Create a new settings file with git.enabled: false
+          const settingsContent = JSON.stringify(
+            { "git.enabled": false },
+            null,
+            4,
+          );
+
+          try {
+            // Check if settings file already exists
+            await vscode.workspace.fs.stat(settingsUri);
+
+            // If we get here, the file exists - open it directly
+            await vscode.commands.executeCommand("vscode.open", settingsUri);
+
+            // Show a message with instructions
+            vscode.window.showInformationMessage(
+              `Please add "git.enabled": false to the settings file for "${folderName}" to avoid conflicts with Jujutsu.`,
+            );
+          } catch {
+            // File doesn't exist, create it
+            await vscode.workspace.fs.writeFile(
+              settingsUri,
+              Buffer.from(settingsContent, "utf8"),
+            );
+
+            await vscode.commands.executeCommand("vscode.open", settingsUri);
+          }
+        } catch (_error) {
+          console.log(_error);
+        }
+      },
+    ),
+  );
+
+  const checkRepos = async () => {
+    console.log("Checking for colocated repositories...");
+
+    const colocatedRepos = [];
+
+    for (const repoSCM of workspaceSCM.repoSCMs) {
+      const repoRoot = repoSCM.repositoryRoot;
+      const jjDirExists = await fileExists(
+        vscode.Uri.joinPath(vscode.Uri.file(repoRoot), ".jj"),
+      );
+      const gitDirExists = await fileExists(
+        vscode.Uri.joinPath(vscode.Uri.file(repoRoot), ".git"),
+      );
+
+      if (jjDirExists && gitDirExists) {
+        // Check if git.enabled is already set to false in folder settings
+        const settingsUri = vscode.Uri.joinPath(
+          vscode.Uri.file(repoRoot),
+          ".vscode",
+          "settings.json",
+        );
+        let gitEnabledIsFalse = false;
+
+        try {
+          const fileData = await vscode.workspace.fs.readFile(settingsUri);
+          const fileContent = fileData.toString();
+
+          // Check if "git.enabled": false exists in the file (not as a comment)
+          // This regex looks for "git.enabled": false not preceded by // on the same line
+          const regex = /(?<!\/\/.*)"git\.enabled"\s*:\s*false/;
+          if (regex.test(fileContent)) {
+            gitEnabledIsFalse = true;
+          }
+        } catch (_error) {
+          console.log(_error);
+          // If file doesn't exist or can't be read, assume git.enabled is not set to false
+        }
+
+        // Only add to colocated repos if git.enabled is not already false
+        if (!gitEnabledIsFalse) {
+          colocatedRepos.push(repoRoot);
+        } else {
+          // If git.enabled is now false but we had a warning, hide it
+          if (statusBarItems.has(repoRoot)) {
+            statusBarItems.get(repoRoot)?.dispose();
+            statusBarItems.delete(repoRoot);
+          }
+        }
+      }
+    }
+
+    // Clean up status bar items for repositories that are no longer in the workspace
+    for (const [repoRoot, statusBarItem] of statusBarItems.entries()) {
+      if (
+        !workspaceSCM.repoSCMs.some((repo) => repo.repositoryRoot === repoRoot)
+      ) {
+        statusBarItem.dispose();
+        statusBarItems.delete(repoRoot);
+      }
+    }
+
+    // Show warnings for each colocated repository
+    for (const repoRoot of colocatedRepos) {
+      // Skip if we already have a warning for this repo
+      if (statusBarItems.has(repoRoot)) {
+        continue;
+      }
+
+      const folderName = repoRoot.split("/").at(-1) || repoRoot;
+      const message = `Colocated Git and Jujutsu repository detected in "${folderName}". Consider disabling the Git extension to avoid conflicts.`;
+      const openSettings = "Open Folder Settings";
+
+      // Create a persistent notification that won't auto-dismiss
+      const notification = vscode.window.createStatusBarItem(
+        vscode.StatusBarAlignment.Left,
+        100,
+      );
+      notification.text = `$(warning) Git+JJ Conflict: ${folderName}`;
+      notification.tooltip = message;
+      notification.command = {
+        title: "Open Git Settings",
+        command: "jj.openGitSettings",
+        arguments: [repoRoot],
+      };
+      notification.show();
+
+      statusBarItems.set(repoRoot, notification);
+      context.subscriptions.push(notification);
+
+      vscode.window
+        .showWarningMessage(message, openSettings)
+        .then((selection) => {
+          if (selection === openSettings) {
+            vscode.commands.executeCommand("jj.openGitSettings", repoRoot);
+          }
+        });
+    }
+  };
+
+  await checkRepos();
+
+  // Set up a file system watcher for settings.json files
+  const settingsWatcher = vscode.workspace.createFileSystemWatcher(
+    "**/.vscode/settings.json",
+  );
+
+  // Re-check when settings files are changed
+  settingsWatcher.onDidChange(async () => {
+    await checkRepos();
+  });
+
+  settingsWatcher.onDidCreate(async () => {
+    await checkRepos();
+  });
+
+  // Add the watcher to subscriptions to ensure it's disposed when the extension is deactivated
+  context.subscriptions.push(settingsWatcher);
+
+  // Listen for workspace folder changes
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeWorkspaceFolders(() => {
+      // Wait for the workspace SCM to update
+      setTimeout(() => {
+        checkRepos().catch(console.error);
+      }, 1000);
+    }),
+  );
+}
+
+/**
+ * Checks if a file or directory exists at the given URI
+ */
+async function fileExists(uri: vscode.Uri): Promise<boolean> {
+  try {
+    await vscode.workspace.fs.stat(uri);
+    return true;
+  } catch {
+    return false;
+  }
+}
