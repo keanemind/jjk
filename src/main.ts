@@ -793,59 +793,23 @@ async function checkColocatedRepositories(
 
   context.subscriptions.push(
     vscode.commands.registerCommand(
-      "jj.openGitSettings",
+      "jj.openFolderGitSettings",
       async (repoPath: string) => {
         if (!repoPath) {
           return;
         }
-
-        const folderUri = vscode.Uri.file(repoPath);
-        const settingsUri = vscode.Uri.joinPath(
-          folderUri,
-          ".vscode",
-          "settings.json",
+        await vscode.commands.executeCommand("workbench.action.openSettings", {
+          query: "git.enabled",
+        });
+        await vscode.commands.executeCommand(
+          "_workbench.action.openFolderSettings",
+          vscode.Uri.file(repoPath),
         );
-        const parentDir = vscode.Uri.joinPath(folderUri, ".vscode");
+
         const folderName = repoPath.split("/").at(-1) || repoPath;
-
-        try {
-          // Create .vscode directory if it doesn't exist
-          try {
-            await vscode.workspace.fs.stat(parentDir);
-          } catch {
-            await vscode.workspace.fs.createDirectory(parentDir);
-          }
-
-          // Create a new settings file with git.enabled: false
-          const settingsContent = JSON.stringify(
-            { "git.enabled": false },
-            null,
-            4,
-          );
-
-          try {
-            // Check if settings file already exists
-            await vscode.workspace.fs.stat(settingsUri);
-
-            // If we get here, the file exists - open it directly
-            await vscode.commands.executeCommand("vscode.open", settingsUri);
-
-            // Show a message with instructions
-            vscode.window.showInformationMessage(
-              `Please add "git.enabled": false to the settings file for "${folderName}" to avoid conflicts with Jujutsu.`,
-            );
-          } catch {
-            // File doesn't exist, create it
-            await vscode.workspace.fs.writeFile(
-              settingsUri,
-              Buffer.from(settingsContent, "utf8"),
-            );
-
-            await vscode.commands.executeCommand("vscode.open", settingsUri);
-          }
-        } catch (_error) {
-          console.log(_error);
-        }
+        vscode.window.showInformationMessage(
+          `Please set "git.enabled" to false for "${folderName}" to avoid conflicts with Jujutsu.`,
+        );
       },
     ),
   );
@@ -930,8 +894,8 @@ async function checkColocatedRepositories(
       notification.text = `$(warning) Git+JJ Conflict: ${folderName}`;
       notification.tooltip = message;
       notification.command = {
-        title: "Open Git Settings",
-        command: "jj.openGitSettings",
+        title: "",
+        command: "jj.openFolderGitSettings",
         arguments: [repoRoot],
       };
       notification.show();
@@ -943,7 +907,10 @@ async function checkColocatedRepositories(
         .showWarningMessage(message, openSettings)
         .then((selection) => {
           if (selection === openSettings) {
-            vscode.commands.executeCommand("jj.openGitSettings", repoRoot);
+            vscode.commands.executeCommand(
+              "jj.openFolderGitSettings",
+              repoRoot,
+            );
           }
         });
     }
