@@ -227,6 +227,19 @@ class RepositorySourceControlManager {
 
     this.parentResourceGroups = updatedGroups;
 
+    const trackedFilesList = await this.repository.fileList();
+    const trackedFiles = new Set<string>();
+
+    for (const t of trackedFilesList) {
+      const pathParts = t.split(path.sep);
+      let currentPath = this.repositoryRoot + path.sep;
+      for (const p of pathParts) {
+        currentPath += p;
+        trackedFiles.add(currentPath);
+        currentPath += path.sep;
+      }
+    }
+
     for (const parentChange of status.parentChanges) {
       let parentChangeResourceGroup:
         | vscode.SourceControlResourceGroup
@@ -303,7 +316,7 @@ class RepositorySourceControlManager {
       fileStatusesByChange.set(parentChange.changeId, showResult.fileStatuses);
     }
 
-    this.decorationProvider.onRefresh(fileStatusesByChange);
+    this.decorationProvider.onRefresh(fileStatusesByChange, trackedFiles);
   }
 
   dispose() {
@@ -390,6 +403,22 @@ export class JJRepository {
   gitFetchPromise: Promise<void> | undefined;
 
   constructor(public repositoryRoot: string) {}
+
+  fileList() {
+    return new Promise<string[]>((resolve) => {
+      const childProcess = spawn("jj", ["file", "list", "--no-pager"], {
+        timeout: 5000,
+        cwd: this.repositoryRoot,
+      });
+      let output = "";
+      childProcess.on("close", () => {
+        resolve(output.trim().split("\n"));
+      });
+      childProcess.stdout!.on("data", (data: string) => {
+        output += data;
+      });
+    });
+  }
 
   show(rev: string) {
     return new Promise<Show>((resolve, reject) => {
@@ -919,8 +948,10 @@ export class JJRepository {
   }
 }
 
+export type FileStatusType = "A" | "M" | "D" | "R";
+
 export type FileStatus = {
-  type: "A" | "M" | "D" | "R";
+  type: FileStatusType;
   file: string;
   path: string;
   renamedFrom?: string;
