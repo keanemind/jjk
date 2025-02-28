@@ -30,7 +30,10 @@ export class JJDecorationProvider implements FileDecorationProvider {
   readonly onDidChangeFileDecorations: Event<Uri[]> =
     this._onDidChangeDecorations.event;
 
-  onRefresh(fileStatusesByChange: Map<string, FileStatus[]>, trackedFiles: Set<string>) {
+  onRefresh(
+    fileStatusesByChange: Map<string, FileStatus[]>,
+    trackedFiles: Set<string>,
+  ) {
     const nextDecorations = new Map<string, FileDecoration>();
     for (const [changeId, fileStatuses] of fileStatusesByChange) {
       for (const fileStatus of fileStatuses) {
@@ -58,38 +61,43 @@ export class JJDecorationProvider implements FileDecorationProvider {
       }
     }
 
+    const changedTrackedFiles = new Set<string>([
+      ...[...trackedFiles.values()].filter(
+        (file) => !this.trackedFiles.has(file),
+      ),
+      ...[...this.trackedFiles.values()].filter(
+        (file) => !trackedFiles.has(file),
+      ),
+    ]);
+
     this.decorations = nextDecorations;
+    this.trackedFiles = trackedFiles;
+
     this._onDidChangeDecorations.fire([
       ...[...changedDecorationKeys.keys()].map((key) => {
         const [fsPath, rev] = key.split(":");
         return withRev(Uri.file(fsPath), rev);
       }),
-      ...[...changedDecorationKeys.keys()].map((key) => {
-        const [fsPath, rev] = key.split(":");
-        if (rev === '@') {
-          return Uri.file(fsPath);
-        }
-      }).filter((x): x is Uri => !!x),
-      ...[...this.trackedFiles].map((key) => {
-        if (!trackedFiles.has(key)) {
-          return Uri.file(key);
-        }
-      }).filter((x): x is Uri => !!x),
-      ...[...trackedFiles].map((key) => {
-        if (!this.trackedFiles.has(key)) {
-          return Uri.file(key);
-        }
-      }).filter((x): x is Uri => !!x),
+      ...[...changedDecorationKeys.keys()]
+        .map((key) => {
+          const [fsPath, rev] = key.split(":");
+          if (rev === "@") {
+            return Uri.file(fsPath);
+          }
+        })
+        .filter((x): x is Uri => !!x),
+      ...[...changedTrackedFiles.values()].map((file) => Uri.file(file)),
     ]);
-    this.trackedFiles = trackedFiles;
   }
 
   provideFileDecoration(uri: Uri): FileDecoration | undefined {
-    const rev = getRevOpt(uri) ?? '@';
+    const rev = getRevOpt(uri) ?? "@";
     const key = getKey(uri.fsPath, rev);
-    if (rev === '@' && !this.decorations.has(key)) {
+    if (rev === "@" && !this.decorations.has(key)) {
       if (!this.trackedFiles.has(uri.fsPath)) {
-        return { color: new ThemeColor("jjDecoration.ignoredResourceForeground") };
+        return {
+          color: new ThemeColor("jjDecoration.ignoredResourceForeground"),
+        };
       }
     }
     return this.decorations.get(key);
