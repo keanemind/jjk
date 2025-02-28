@@ -25,6 +25,7 @@ const colorOfType = (type: FileStatusType) => {
 export class JJDecorationProvider implements FileDecorationProvider {
   private decorations = new Map<string, FileDecoration>();
   private trackedFiles = new Set<string>();
+  private decorationsProvidedSinceLastRefresh = new Set<string>();
 
   private readonly _onDidChangeDecorations = new EventEmitter<Uri[]>();
   readonly onDidChangeFileDecorations: Event<Uri[]> =
@@ -73,24 +74,30 @@ export class JJDecorationProvider implements FileDecorationProvider {
     this.decorations = nextDecorations;
     this.trackedFiles = trackedFiles;
 
-    this._onDidChangeDecorations.fire([
-      ...[...changedDecorationKeys.keys()].map((key) => {
-        const [fsPath, rev] = key.split(":");
-        return withRev(Uri.file(fsPath), rev);
-      }),
-      ...[...changedDecorationKeys.keys()]
-        .map((key) => {
+    this._onDidChangeDecorations.fire(
+      [
+        ...[...changedDecorationKeys.keys()].map((key) => {
           const [fsPath, rev] = key.split(":");
-          if (rev === "@") {
-            return Uri.file(fsPath);
-          }
-        })
-        .filter((x): x is Uri => !!x),
-      ...[...changedTrackedFiles.values()].map((file) => Uri.file(file)),
-    ]);
+          return withRev(Uri.file(fsPath), rev);
+        }),
+        ...[...changedDecorationKeys.keys()]
+          .map((key) => {
+            const [fsPath, rev] = key.split(":");
+            if (rev === "@") {
+              return Uri.file(fsPath);
+            }
+          })
+          .filter((x): x is Uri => !!x),
+        ...[...changedTrackedFiles.values()].map((file) => Uri.file(file)),
+      ].filter((uri) =>
+        this.decorationsProvidedSinceLastRefresh.has(uri.fsPath),
+      ),
+    );
+    this.decorationsProvidedSinceLastRefresh.clear();
   }
 
   provideFileDecoration(uri: Uri): FileDecoration | undefined {
+    this.decorationsProvidedSinceLastRefresh.add(uri.fsPath);
     const rev = getRevOpt(uri) ?? "@";
     const key = getKey(uri.fsPath, rev);
     if (rev === "@" && !this.decorations.has(key)) {
