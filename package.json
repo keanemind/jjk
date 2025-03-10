@@ -251,7 +251,14 @@
     },
     "configuration": {
       "title": "Jujutsu Kaizen",
-      "properties": {}
+      "properties": {
+        "jjk.enableAnnotations": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enables in-line blame annotations",
+          "scope": "resource"
+        }
+      }
     },
     "colors": [
       {

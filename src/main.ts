@@ -143,20 +143,28 @@ export async function activate(context: vscode.ExtensionContext) {
       editor: vscode.TextEditor,
       lines: number[],
     ) => {
+      const repository = workspaceSCM.getRepositoryFromUri(editor.document.uri);
+      if (!repository) {
+        return;
+      }
+      console.log("setDeco", vscode.Uri.file(repository.repositoryRoot));
+      const config = vscode.workspace.getConfiguration(
+        "jjk",
+        vscode.Uri.file(repository.repositoryRoot),
+      );
+      console.log("config get enable annot", config.get("enableAnnotations"));
+      if (!config.get("enableAnnotations")) {
+        console.log("returning setDeco");
+        editor.setDecorations(annotationDecoration, []);
+        return;
+      }
+
       if (
         annotateInfo &&
         annotateInfo.uri === editor.document.uri &&
         activeEditorUri === editor.document.uri &&
         activeLines === lines
       ) {
-        const repository = workspaceSCM.getRepositoryFromUri(
-          editor.document.uri,
-        );
-        if (!repository) {
-          return;
-        }
-        // When the file ends in a newline, the last line can be active in the editor but won't get a blame from
-        // jj file annotate.
         const safeLines = lines.filter(
           (line) => line !== annotateInfo!.changeIdsByLine.length,
         );
@@ -211,14 +219,26 @@ export async function activate(context: vscode.ExtensionContext) {
     };
     const updateAnnotateInfo = async (uri: vscode.Uri) => {
       const repository = workspaceSCM.getRepositoryFromUri(uri);
-      if (repository) {
-        const changeIdsByLine = await repository.annotate(
-          uri.fsPath,
-          uri.scheme === "jj" ? getRev(uri) : "@",
-        );
-        if (activeEditorUri === uri && changeIdsByLine.length > 0) {
-          annotateInfo = { changeIdsByLine, uri };
-        }
+      if (!repository) {
+        return;
+      }
+      console.log("updateAnno", vscode.Uri.file(repository.repositoryRoot));
+      const config = vscode.workspace.getConfiguration(
+        "jjk",
+        vscode.Uri.file(repository.repositoryRoot),
+      );
+      if (!config.get("enableAnnotations")) {
+        console.log("returning updateAnno");
+        annotateInfo = undefined;
+        return;
+      }
+
+      const changeIdsByLine = await repository.annotate(
+        uri.fsPath,
+        uri.scheme === "jj" ? getRev(uri) : "@",
+      );
+      if (activeEditorUri === uri && changeIdsByLine.length > 0) {
+        annotateInfo = { changeIdsByLine, uri };
       }
     };
     const handleDidChangeActiveTextEditor = async (
@@ -810,6 +830,7 @@ export async function activate(context: vscode.ExtensionContext) {
         );
 
         if (jjDirExists && gitDirExists) {
+          console.log("git enab", vscode.Uri.file(repoRoot));
           const isGitEnabled = vscode.workspace
             .getConfiguration("git", vscode.Uri.file(repoRoot))
             .get("enabled");
