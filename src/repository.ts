@@ -4,11 +4,15 @@ import spawn from "cross-spawn";
 import type { JJDecorationProvider } from "./decorationProvider";
 import { getRev, toJJUri, withRev } from "./uri";
 
+function spawnJJ(args: string[], options: Parameters<typeof spawn>[2]) {
+  return spawn("jj", [...args, "--color", "never", "--no-pager"], options);
+}
+
 async function createSCMsInWorkspace(decorationProvider: JJDecorationProvider) {
   const repos: RepositorySourceControlManager[] = [];
   for (const workspaceFolder of vscode.workspace.workspaceFolders || []) {
     const repoRoot = await new Promise<string | undefined>((resolve) => {
-      const childProcess = spawn("jj", ["root"], {
+      const childProcess = spawnJJ(["root"], {
         timeout: 5000,
         cwd: workspaceFolder.uri.fsPath,
       });
@@ -377,7 +381,7 @@ export class JJRepository {
     }
 
     const status = await new Promise<RepositoryStatus>((resolve) => {
-      const childProcess = spawn("jj", ["status"], {
+      const childProcess = spawnJJ(["status"], {
         timeout: 5000,
         cwd: this.repositoryRoot,
       });
@@ -437,14 +441,10 @@ export class JJRepository {
       const template =
         templateFields.join(` ++ "${separator}" ++ `) + ` ++ "${separator}"`;
 
-      const childProcess = spawn(
-        "jj",
-        ["show", "--no-pager", "-T", template, rev],
-        {
-          timeout: 5000,
-          cwd: this.repositoryRoot,
-        },
-      );
+      const childProcess = spawnJJ(["show", "-T", template, rev], {
+        timeout: 5000,
+        cwd: this.repositoryRoot,
+      });
       let output = "";
       let errOutput = "";
       childProcess.on("close", (code) => {
@@ -560,14 +560,10 @@ export class JJRepository {
 
   readFile(rev: string, path: string) {
     return new Promise<Buffer>((resolve, reject) => {
-      const childProcess = spawn(
-        "jj",
-        ["file", "show", "--no-pager", "--revision", rev, path],
-        {
-          timeout: 5000,
-          cwd: this.repositoryRoot,
-        },
-      );
+      const childProcess = spawnJJ(["file", "show", "--revision", rev, path], {
+        timeout: 5000,
+        cwd: this.repositoryRoot,
+      });
       const buffers: Buffer[] = [];
       let errOutput = "";
       childProcess.on("close", (code) => {
@@ -590,7 +586,7 @@ export class JJRepository {
 
   describe(rev: string, message: string): Promise<void> {
     return new Promise((resolve) => {
-      const childProcess = spawn("jj", ["describe", "-m", message, rev], {
+      const childProcess = spawnJJ(["describe", "-m", message, rev], {
         cwd: this.repositoryRoot,
       });
 
@@ -602,8 +598,7 @@ export class JJRepository {
 
   new(message?: string, revs?: string[]): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      const childProcess = spawn(
-        "jj",
+      const childProcess = spawnJJ(
         [
           "new",
           ...(message ? ["-m", message] : []),
@@ -643,8 +638,7 @@ export class JJRepository {
     filepaths?: string[];
   }): Promise<void> {
     return new Promise((resolve) => {
-      const childProcess = spawn(
-        "jj",
+      const childProcess = spawnJJ(
         [
           "squash",
           "--from",
@@ -672,8 +666,7 @@ export class JJRepository {
     noGraph: boolean = false,
   ): Promise<string> {
     return new Promise((resolve, reject) => {
-      const childProcess = spawn(
-        "jj",
+      const childProcess = spawnJJ(
         [
           "log",
           "-r",
@@ -705,13 +698,9 @@ export class JJRepository {
 
   edit(rev: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      const childProcess = spawn(
-        "jj",
-        ["edit", "-r", rev, "--ignore-immutable"],
-        {
-          cwd: this.repositoryRoot,
-        },
-      );
+      const childProcess = spawnJJ(["edit", "-r", rev, "--ignore-immutable"], {
+        cwd: this.repositoryRoot,
+      });
       let output = "";
       childProcess.stderr!.on("data", (data: string) => {
         output += data;
@@ -731,8 +720,7 @@ export class JJRepository {
 
   restore(rev?: string, files?: string[]): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      const childProcess = spawn(
-        "jj",
+      const childProcess = spawnJJ(
         ["restore", "--changes-in", rev ? rev : "@", ...(files ? files : [])],
         {
           cwd: this.repositoryRoot,
@@ -759,7 +747,7 @@ export class JJRepository {
   gitFetch(): Promise<void> {
     if (!this.gitFetchPromise) {
       this.gitFetchPromise = new Promise<void>((resolve, reject) => {
-        const childProcess = spawn("jj", ["git", "fetch"], {
+        const childProcess = spawnJJ(["git", "fetch"], {
           cwd: this.repositoryRoot,
         });
 
@@ -783,7 +771,7 @@ export class JJRepository {
 
   async annotate(file: string, rev: string): Promise<string[]> {
     const commandPromise = new Promise<string>((resolve, reject) => {
-      const childProcess = spawn("jj", ["file", "annotate", "-r", rev, file], {
+      const childProcess = spawnJJ(["file", "annotate", "-r", rev, file], {
         cwd: this.repositoryRoot,
       });
 
@@ -824,15 +812,13 @@ export class JJRepository {
         templateFields.join(` ++ "${fieldSeparator}" ++ `) +
         ` ++ "${operationSeparator}"`;
 
-      const childProcess = spawn(
-        "jj",
+      const childProcess = spawnJJ(
         [
           "operation",
           "log",
           "--limit",
           "10",
           "--no-graph",
-          "--no-pager",
           "--at-operation=@",
           "--ignore-working-copy",
           "-T",
@@ -907,7 +893,7 @@ export class JJRepository {
 
   operationUndo(id: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      const childProcess = spawn("jj", ["operation", "undo", id], {
+      const childProcess = spawnJJ(["operation", "undo", id], {
         cwd: this.repositoryRoot,
       });
 
@@ -928,7 +914,7 @@ export class JJRepository {
 
   operationRestore(id: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      const childProcess = spawn("jj", ["operation", "restore", id], {
+      const childProcess = spawnJJ(["operation", "restore", id], {
         cwd: this.repositoryRoot,
       });
 
