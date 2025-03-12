@@ -558,12 +558,16 @@ export class JJRepository {
     });
   }
 
-  readFile(rev: string, path: string) {
+  readFile(rev: string, filepath: string) {
     return new Promise<Buffer>((resolve, reject) => {
-      const childProcess = spawnJJ(["file", "show", "--revision", rev, path], {
-        timeout: 5000,
-        cwd: this.repositoryRoot,
-      });
+      const relativeFilepath = path.relative(this.repositoryRoot, filepath);
+      const childProcess = spawnJJ(
+        ["file", "show", "--revision", rev, relativeFilepath],
+        {
+          timeout: 5000,
+          cwd: this.repositoryRoot,
+        },
+      );
       const buffers: Buffer[] = [];
       let errOutput = "";
       childProcess.on("close", (code) => {
@@ -646,7 +650,11 @@ export class JJRepository {
           "--into",
           toRev,
           ...(message ? ["-m", message] : []),
-          ...(filepaths ? filepaths : []),
+          ...(filepaths
+            ? filepaths.map((filepath) =>
+                path.relative(this.repositoryRoot, filepath),
+              )
+            : []),
         ],
         {
           cwd: this.repositoryRoot,
@@ -718,10 +726,19 @@ export class JJRepository {
     });
   }
 
-  restore(rev?: string, files?: string[]): Promise<void> {
+  restore(rev?: string, filepaths?: string[]): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const childProcess = spawnJJ(
-        ["restore", "--changes-in", rev ? rev : "@", ...(files ? files : [])],
+        [
+          "restore",
+          "--changes-in",
+          rev ? rev : "@",
+          ...(filepaths
+            ? filepaths.map((filepath) =>
+                path.relative(this.repositoryRoot, filepath),
+              )
+            : []),
+        ],
         {
           cwd: this.repositoryRoot,
         },
@@ -769,11 +786,20 @@ export class JJRepository {
     return this.gitFetchPromise;
   }
 
-  async annotate(file: string, rev: string): Promise<string[]> {
+  async annotate(filepath: string, rev: string): Promise<string[]> {
     const commandPromise = new Promise<string>((resolve, reject) => {
-      const childProcess = spawnJJ(["file", "annotate", "-r", rev, file], {
-        cwd: this.repositoryRoot,
-      });
+      const childProcess = spawnJJ(
+        [
+          "file",
+          "annotate",
+          "-r",
+          rev,
+          path.relative(this.repositoryRoot, filepath),
+        ],
+        {
+          cwd: this.repositoryRoot,
+        },
+      );
 
       let output = "";
       childProcess.on("close", (code) => {
