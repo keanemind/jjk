@@ -59,7 +59,6 @@ export async function activate(context: vscode.ExtensionContext) {
 
   vscode.workspace.onDidChangeConfiguration(async (e) => {
     if (e.affectsConfiguration("git")) {
-      console.log("Git config changed");
       const workspaceFolders = vscode.workspace.workspaceFolders || [];
 
       const affectedFolders = workspaceFolders
@@ -147,14 +146,11 @@ export async function activate(context: vscode.ExtensionContext) {
       if (!repository) {
         return;
       }
-      console.log("setDeco", vscode.Uri.file(repository.repositoryRoot));
       const config = vscode.workspace.getConfiguration(
         "jjk",
         vscode.Uri.file(repository.repositoryRoot),
       );
-      console.log("config get enable annot", config.get("enableAnnotations"));
       if (!config.get("enableAnnotations")) {
-        console.log("returning setDeco");
         editor.setDecorations(annotationDecoration, []);
         return;
       }
@@ -222,13 +218,11 @@ export async function activate(context: vscode.ExtensionContext) {
       if (!repository) {
         return;
       }
-      console.log("updateAnno", vscode.Uri.file(repository.repositoryRoot));
       const config = vscode.workspace.getConfiguration(
         "jjk",
         vscode.Uri.file(repository.repositoryRoot),
       );
       if (!config.get("enableAnnotations")) {
-        console.log("returning updateAnno");
         annotateInfo = undefined;
         return;
       }
@@ -830,7 +824,6 @@ export async function activate(context: vscode.ExtensionContext) {
         );
 
         if (jjDirExists && gitDirExists) {
-          console.log("git enab", vscode.Uri.file(repoRoot));
           const isGitEnabled = vscode.workspace
             .getConfiguration("git", vscode.Uri.file(repoRoot))
             .get("enabled");
