@@ -441,7 +441,7 @@ export class JJRepository {
       const template =
         templateFields.join(` ++ "${separator}" ++ `) + ` ++ "${separator}"`;
 
-      const childProcess = spawnJJ(["show", "-T", template, rev], {
+      const childProcess = spawnJJ(["log", "-T", template, "--no-graph", "-r", rev], {
         timeout: 5000,
         cwd: this.repositoryRoot,
       });
