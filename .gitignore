@@ -2,6 +2,8 @@
 .cache
 node_modules/
 dist/
+out/
+.vscode-test/
 *.vsix
 src/**/*.js
 src/**/*.js.map
