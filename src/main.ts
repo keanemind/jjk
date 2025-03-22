@@ -13,6 +13,7 @@ import {
 } from "./operationLogTreeView";
 import { JJGraphWebview, RefreshArgs } from "./graphWebview";
 import { getRev } from "./uri";
+import type { FileDecorationProviderGetter } from "./types";
 
 export async function activate(context: vscode.ExtensionContext) {
   // Use the console to output diagnostic information (console.log) and errors (console.error)
@@ -24,10 +25,18 @@ export async function activate(context: vscode.ExtensionContext) {
   });
   context.subscriptions.push(logger);
 
-  const decorationProvider = new JJDecorationProvider();
-  context.subscriptions.push(
-    vscode.window.registerFileDecorationProvider(decorationProvider),
-  );
+  let decorationProvider: JJDecorationProvider | undefined;
+  const getFileDecorationProvider = ((
+    ...params: ConstructorParameters<typeof JJDecorationProvider>
+  ) => {
+    if (!decorationProvider) {
+      decorationProvider = new JJDecorationProvider(...params);
+      context.subscriptions.push(
+        vscode.window.registerFileDecorationProvider(decorationProvider),
+      );
+    }
+    return decorationProvider;
+  }) satisfies FileDecorationProviderGetter;
 
   // Check if the jj CLI is installed
   const jjPath = await which("jj", { nothrow: true });
@@ -35,7 +44,9 @@ export async function activate(context: vscode.ExtensionContext) {
     throw new Error("jj CLI not found");
   }
 
-  const workspaceSCM = new WorkspaceSourceControlManager(decorationProvider);
+  const workspaceSCM = new WorkspaceSourceControlManager(
+    getFileDecorationProvider,
+  );
   await workspaceSCM.refresh();
   context.subscriptions.push(workspaceSCM);
 
