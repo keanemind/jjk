@@ -112,6 +112,11 @@ export class JJDecorationProvider implements FileDecorationProvider {
   }
 
   provideFileDecoration(uri: Uri): FileDecoration | undefined {
+    if (!this.hasData) {
+      throw new Error(
+        "provideFileDecoration was called before data was available",
+      );
+    }
     const rev = getRevOpt(uri) ?? "@";
     const key = getKey(uri.fsPath, rev);
     if (rev === "@" && !this.decorations.has(key)) {
