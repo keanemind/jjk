@@ -26,29 +26,21 @@ export class JJDecorationProvider implements FileDecorationProvider {
   private readonly _onDidChangeDecorations = new EventEmitter<Uri[]>();
   readonly onDidChangeFileDecorations: Event<Uri[]> =
     this._onDidChangeDecorations.event;
-  private decorations: Map<string, FileDecoration>;
-  private trackedFiles: Set<string>;
+  private decorations = new Map<string, FileDecoration>();
+  private trackedFiles = new Set<string>();
+  private hasData = false;
 
-  constructor(
-    fileStatusesByChange: Map<string, FileStatus[]>,
-    trackedFiles: Set<string>,
-  ) {
-    const nextDecorations = new Map<string, FileDecoration>();
-    for (const [changeId, fileStatuses] of fileStatusesByChange) {
-      for (const fileStatus of fileStatuses) {
-        const key = getKey(Uri.file(fileStatus.path).fsPath, changeId);
-        nextDecorations.set(key, {
-          badge: fileStatus.type,
-          tooltip: fileStatus.file,
-          color: colorOfType(fileStatus.type),
-        });
-      }
-    }
+  /**
+   * @param register Function that will register this provider with vscode.
+   * This will be called lazily once the provider has data to show.
+   */
+  constructor(private register: (provider: JJDecorationProvider) => void) {}
 
-    this.decorations = nextDecorations;
-    this.trackedFiles = trackedFiles;
-  }
-
+  /**
+   * Updates the internal state of the provider with new decorations. If
+   * being called for the first time, registers the provider with vscode.
+   * Otherwise, fires an event to notify vscode of the updated decorations.
+   */
   onRefresh(
     fileStatusesByChange: Map<string, FileStatus[]>,
     trackedFiles: Set<string>,
@@ -91,6 +83,13 @@ export class JJDecorationProvider implements FileDecorationProvider {
 
     this.decorations = nextDecorations;
     this.trackedFiles = trackedFiles;
+
+    if (!this.hasData) {
+      this.hasData = true;
+      // Register the provider with vscode now that we have data to show.
+      this.register(this);
+      return;
+    }
 
     const changedUris = [
       ...[...changedDecorationKeys.keys()].map((key) => {

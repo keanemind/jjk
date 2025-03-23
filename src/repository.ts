@@ -2,15 +2,13 @@ import path from "path";
 import * as vscode from "vscode";
 import spawn from "cross-spawn";
 import { getRev, toJJUri, withRev } from "./uri";
-import { FileDecorationProviderGetter } from "./types";
+import type { JJDecorationProvider } from "./decorationProvider";
 
 function spawnJJ(args: string[], options: Parameters<typeof spawn>[2]) {
   return spawn("jj", [...args, "--color", "never", "--no-pager"], options);
 }
 
-async function createSCMsInWorkspace(
-  decorationProviderGetter: FileDecorationProviderGetter,
-) {
+async function createSCMsInWorkspace(decorationProvider: JJDecorationProvider) {
   const repos: RepositorySourceControlManager[] = [];
   for (const workspaceFolder of vscode.workspace.workspaceFolders || []) {
     const repoRoot = await new Promise<string | undefined>((resolve) => {
@@ -32,7 +30,7 @@ async function createSCMsInWorkspace(
     });
     if (repoRoot) {
       repos.push(
-        new RepositorySourceControlManager(repoRoot, decorationProviderGetter),
+        new RepositorySourceControlManager(repoRoot, decorationProvider),
       );
     }
   }
@@ -42,13 +40,13 @@ async function createSCMsInWorkspace(
 export class WorkspaceSourceControlManager {
   repoSCMs: RepositorySourceControlManager[] = [];
 
-  constructor(private decorationProviderGetter: FileDecorationProviderGetter) {}
+  constructor(private decorationProvider: JJDecorationProvider) {}
 
   async refresh() {
     for (const repo of this.repoSCMs) {
       repo.dispose();
     }
-    this.repoSCMs = await createSCMsInWorkspace(this.decorationProviderGetter);
+    this.repoSCMs = await createSCMsInWorkspace(this.decorationProvider);
   }
 
   getRepositoryFromUri(uri: vscode.Uri) {
@@ -117,7 +115,7 @@ class RepositorySourceControlManager {
 
   constructor(
     public repositoryRoot: string,
-    private decorationProviderGetter: FileDecorationProviderGetter,
+    private decorationProvider: JJDecorationProvider,
   ) {
     this.repository = new JJRepository(repositoryRoot);
     this.subscriptions.push(
@@ -322,10 +320,7 @@ class RepositorySourceControlManager {
       fileStatusesByChange.set(parentChange.changeId, showResult.fileStatuses);
     }
 
-    this.decorationProviderGetter(fileStatusesByChange, trackedFiles).onRefresh(
-      fileStatusesByChange,
-      trackedFiles,
-    );
+    this.decorationProvider.onRefresh(fileStatusesByChange, trackedFiles);
   }
 
   dispose() {
