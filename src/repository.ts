@@ -1,8 +1,8 @@
 import path from "path";
 import * as vscode from "vscode";
 import spawn from "cross-spawn";
-import type { JJDecorationProvider } from "./decorationProvider";
 import { getRev, toJJUri, withRev } from "./uri";
+import type { JJDecorationProvider } from "./decorationProvider";
 
 function spawnJJ(args: string[], options: Parameters<typeof spawn>[2]) {
   return spawn("jj", [...args, "--color", "never", "--no-pager"], options);
@@ -441,10 +441,13 @@ export class JJRepository {
       const template =
         templateFields.join(` ++ "${separator}" ++ `) + ` ++ "${separator}"`;
 
-      const childProcess = spawnJJ(["log", "-T", template, "--no-graph", "-r", rev], {
-        timeout: 5000,
-        cwd: this.repositoryRoot,
-      });
+      const childProcess = spawnJJ(
+        ["log", "-T", template, "--no-graph", "-r", rev],
+        {
+          timeout: 5000,
+          cwd: this.repositoryRoot,
+        },
+      );
       let output = "";
       let errOutput = "";
       childProcess.on("close", (code) => {

@@ -23,14 +23,24 @@ const colorOfType = (type: FileStatusType) => {
 };
 
 export class JJDecorationProvider implements FileDecorationProvider {
-  private decorations = new Map<string, FileDecoration>();
-  private trackedFiles = new Set<string>();
-  private decorationsProvidedSinceLastRefresh = new Set<string>();
-
   private readonly _onDidChangeDecorations = new EventEmitter<Uri[]>();
   readonly onDidChangeFileDecorations: Event<Uri[]> =
     this._onDidChangeDecorations.event;
+  private decorations = new Map<string, FileDecoration>();
+  private trackedFiles = new Set<string>();
+  private hasData = false;
 
+  /**
+   * @param register Function that will register this provider with vscode.
+   * This will be called lazily once the provider has data to show.
+   */
+  constructor(private register: (provider: JJDecorationProvider) => void) {}
+
+  /**
+   * Updates the internal state of the provider with new decorations. If
+   * being called for the first time, registers the provider with vscode.
+   * Otherwise, fires an event to notify vscode of the updated decorations.
+   */
   onRefresh(
     fileStatusesByChange: Map<string, FileStatus[]>,
     trackedFiles: Set<string>,
@@ -74,30 +84,39 @@ export class JJDecorationProvider implements FileDecorationProvider {
     this.decorations = nextDecorations;
     this.trackedFiles = trackedFiles;
 
-    this._onDidChangeDecorations.fire(
-      [
-        ...[...changedDecorationKeys.keys()].map((key) => {
-          const [fsPath, rev] = key.split(":");
-          return withRev(Uri.file(fsPath), rev);
+    if (!this.hasData) {
+      this.hasData = true;
+      // Register the provider with vscode now that we have data to show.
+      this.register(this);
+      return;
+    }
+
+    const changedUris = [
+      ...[...changedDecorationKeys.keys()].map((key) => {
+        const [fsPath, rev] = key.split(":");
+        return withRev(Uri.file(fsPath), rev);
+      }),
+      ...[...changedDecorationKeys.keys()]
+        .filter((key) => {
+          const [_, rev] = key.split(":");
+          return rev === "@";
+        })
+        .map((key) => {
+          const [fsPath] = key.split(":");
+          return Uri.file(fsPath);
         }),
-        ...[...changedDecorationKeys.keys()]
-          .map((key) => {
-            const [fsPath, rev] = key.split(":");
-            if (rev === "@") {
-              return Uri.file(fsPath);
-            }
-          })
-          .filter((x): x is Uri => !!x),
-        ...[...changedTrackedFiles.values()].map((file) => Uri.file(file)),
-      ].filter((uri) =>
-        this.decorationsProvidedSinceLastRefresh.has(uri.fsPath),
-      ),
-    );
-    this.decorationsProvidedSinceLastRefresh.clear();
+      ...[...changedTrackedFiles.values()].map((file) => Uri.file(file)),
+    ];
+
+    this._onDidChangeDecorations.fire(changedUris);
   }
 
   provideFileDecoration(uri: Uri): FileDecoration | undefined {
-    this.decorationsProvidedSinceLastRefresh.add(uri.fsPath);
+    if (!this.hasData) {
+      throw new Error(
+        "provideFileDecoration was called before data was available",
+      );
+    }
     const rev = getRevOpt(uri) ?? "@";
     const key = getKey(uri.fsPath, rev);
     if (rev === "@" && !this.decorations.has(key)) {

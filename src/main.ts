@@ -24,10 +24,11 @@ export async function activate(context: vscode.ExtensionContext) {
   });
   context.subscriptions.push(logger);
 
-  const decorationProvider = new JJDecorationProvider();
-  context.subscriptions.push(
-    vscode.window.registerFileDecorationProvider(decorationProvider),
-  );
+  const decorationProvider = new JJDecorationProvider((decorationProvider) => {
+    context.subscriptions.push(
+      vscode.window.registerFileDecorationProvider(decorationProvider),
+    );
+  });
 
   // Check if the jj CLI is installed
   const jjPath = await which("jj", { nothrow: true });
