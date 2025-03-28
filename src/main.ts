@@ -260,6 +260,17 @@ export async function activate(context: vscode.ExtensionContext) {
         await setDecorations(e.textEditor, activeLines);
       }),
     );
+    context.subscriptions.push(
+      vscode.workspace.onDidChangeTextDocument(async (e) => {
+        const editor = vscode.window.activeTextEditor;
+        if (
+          editor &&
+          editor.document.uri.toString() === e.document.uri.toString()
+        ) {
+          await setDecorations(editor, activeLines);
+        }
+      }),
+    );
     if (vscode.window.activeTextEditor) {
       void handleDidChangeActiveTextEditor(vscode.window.activeTextEditor);
     }
