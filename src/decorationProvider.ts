@@ -93,16 +93,16 @@ export class JJDecorationProvider implements FileDecorationProvider {
 
     const changedUris = [
       ...[...changedDecorationKeys.keys()].map((key) => {
-        const [fsPath, rev] = key.split(":");
+        const { fsPath, rev } = parseKey(key);
         return withRev(Uri.file(fsPath), rev);
       }),
       ...[...changedDecorationKeys.keys()]
         .filter((key) => {
-          const [_, rev] = key.split(":");
+          const { rev } = parseKey(key);
           return rev === "@";
         })
         .map((key) => {
-          const [fsPath] = key.split(":");
+          const { fsPath } = parseKey(key);
           return Uri.file(fsPath);
         }),
       ...[...changedTrackedFiles.values()].map((file) => Uri.file(file)),
@@ -131,5 +131,9 @@ export class JJDecorationProvider implements FileDecorationProvider {
 }
 
 function getKey(fsPath: string, rev: string) {
-  return `${fsPath}:${rev}`;
+  return JSON.stringify({ fsPath, rev });
+}
+
+function parseKey(key: string) {
+  return JSON.parse(key) as { fsPath: string; rev: string };
 }
