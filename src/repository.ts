@@ -276,7 +276,7 @@ class RepositorySourceControlManager {
         if (
           e instanceof Error &&
           (e.message.includes("resolved to more than one revision") ||
-            e.message.includes("zzzzzzzz-"))
+            e.message.includes("No output"))
         ) {
           // Leave grandparentShowResult as undefined
         } else {
@@ -456,6 +456,11 @@ export class JJRepository {
           return;
         }
         try {
+          if (!output) {
+            throw new Error(
+              "No output from jj log. Maybe the revision couldn't be found?",
+            );
+          }
           const results = output.split(separator);
           if (results.length > templateFields.length + 1) {
             throw new Error(
