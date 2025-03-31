@@ -16,8 +16,11 @@ import { getRev } from "./uri";
 import { logger } from "./logger";
 import { LogOutputChannelTransport } from "./vendor/winston-transport-vscode/logOutputChannelTransport";
 import winston from "winston";
+import { setExtensionUri } from "./repository";
 
 export async function activate(context: vscode.ExtensionContext) {
+  setExtensionUri(context.extensionUri);
+
   const outputChannel = vscode.window.createOutputChannel("Jujutsu Kaizen", {
     log: true,
   });

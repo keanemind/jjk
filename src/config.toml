@@ -1,0 +1,16 @@
+[ui]
+log-word-wrap = false
+paginate = "never"
+color = "never"
+
+[template-aliases]
+'commit_timestamp(commit)' = 'commit.committer().timestamp()'
+'format_short_id(id)' = 'id.shortest(8)'
+'format_short_change_id(id)' = 'format_short_id(id)'
+'format_short_commit_id(id)' = 'format_short_id(id)'
+'format_short_operation_id(id)' = 'id.short()'
+'format_short_signature(signature)' = '''
+  coalesce(signature.email(), email_placeholder)'''
+'format_short_signature_oneline(signature)' = '''
+  coalesce(signature.email().local(), email_placeholder)'''
+'format_timestamp(timestamp)' = 'timestamp.local().format("%Y-%m-%d %H:%M:%S")'
