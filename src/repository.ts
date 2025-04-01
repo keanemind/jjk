@@ -65,6 +65,7 @@ async function createSCMsInWorkspace(decorationProvider: JJDecorationProvider) {
     } catch (e) {
       if (e instanceof Error && e.message.includes("no jj repo in")) {
         // Ignore this error, as it means there is no jj repo in this workspace folder
+        logger.info(`No jj repo in ${workspaceFolder.uri.fsPath}`);
         continue;
       }
       throw e;
