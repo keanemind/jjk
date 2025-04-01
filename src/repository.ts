@@ -30,13 +30,13 @@ function handleCommand(childProcess: ChildProcess) {
       if (code) {
         reject(
           new Error(
-            `Command failed with exit code ${code}: ${Buffer.concat(errOutput).toString()}`,
+            `Command failed with exit code ${code}.\nstdout: ${Buffer.concat(output).toString()}\nstderr: ${Buffer.concat(errOutput).toString()}`,
           ),
         );
       } else if (signal) {
         reject(
           new Error(
-            `Command failed with signal ${signal}: ${Buffer.concat(errOutput).toString()}`,
+            `Command failed with signal ${signal}.\nstdout: ${Buffer.concat(output).toString()}\nstderr: ${Buffer.concat(errOutput).toString()}`,
           ),
         );
       } else {
@@ -49,19 +49,25 @@ function handleCommand(childProcess: ChildProcess) {
 async function createSCMsInWorkspace(decorationProvider: JJDecorationProvider) {
   const repos: RepositorySourceControlManager[] = [];
   for (const workspaceFolder of vscode.workspace.workspaceFolders || []) {
-    const output = (
-      await handleCommand(
-        spawnJJ(["root"], {
-          timeout: 5000,
-          cwd: workspaceFolder.uri.fsPath,
-        }),
-      )
-    ).toString();
-    if (!output.includes("no jj repo in")) {
+    try {
+      const output = (
+        await handleCommand(
+          spawnJJ(["root"], {
+            timeout: 5000,
+            cwd: workspaceFolder.uri.fsPath,
+          }),
+        )
+      ).toString();
       const repoRoot = output.trim();
       repos.push(
         new RepositorySourceControlManager(repoRoot, decorationProvider),
       );
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("no jj repo in")) {
+        // Ignore this error, as it means there is no jj repo in this workspace folder
+        continue;
+      }
+      throw e;
     }
   }
   return repos;
