@@ -211,6 +211,7 @@ class RepositorySourceControlManager {
         };
       },
     );
+    this.sourceControl.count = status.fileStatuses.length;
 
     const updatedGroups: vscode.SourceControlResourceGroup[] = [];
     for (const group of this.parentResourceGroups) {
