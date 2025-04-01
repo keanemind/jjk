@@ -1,8 +1,8 @@
 import winston from "winston";
+import { config } from "./vendor/winston-transport-vscode/logOutputChannelTransport";
 
 export const logger = winston.createLogger({
   level: "info",
-  format: winston.format.json(),
   transports: [
     new winston.transports.Console({
       format: winston.format.combine(
@@ -11,4 +11,5 @@ export const logger = winston.createLogger({
       ),
     }),
   ],
+  levels: config.levels,
 });

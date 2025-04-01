@@ -14,13 +14,24 @@ import {
 import { JJGraphWebview, RefreshArgs } from "./graphWebview";
 import { getRev } from "./uri";
 import { logger } from "./logger";
+import { LogOutputChannelTransport } from "./vendor/winston-transport-vscode/logOutputChannelTransport";
+import winston from "winston";
 
 export async function activate(context: vscode.ExtensionContext) {
-  context.subscriptions.push(
-    vscode.window.createOutputChannel("Jujutsu Kaizen", {
-      log: true,
-    }),
-  );
+  const outputChannel = vscode.window.createOutputChannel("Jujutsu Kaizen", {
+    log: true,
+  });
+  const loggerTransport = new LogOutputChannelTransport({
+    outputChannel,
+    format: winston.format.simple(),
+  });
+  logger.add(loggerTransport);
+  context.subscriptions.push({
+    dispose() {
+      logger.remove(loggerTransport);
+      outputChannel.dispose();
+    },
+  });
 
   logger.info("Extension activated");
 
