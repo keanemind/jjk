@@ -6,17 +6,13 @@ import type { JJDecorationProvider } from "./decorationProvider";
 import { logger } from "./logger";
 import type { ChildProcess } from "child_process";
 
-let extensionUri: vscode.Uri | undefined;
-let configPath: string | undefined;
 let configArgs: string[] = [];
 
-export function setExtensionUri(uri: vscode.Uri) {
-  extensionUri = uri;
-
+export function setConfigArgs(extensionUri: vscode.Uri) {
   // Determine if we're in development or production mode
   const configDir = extensionUri.fsPath.includes("extensions") ? "dist" : "src";
 
-  configPath = vscode.Uri.joinPath(
+  const configPath = vscode.Uri.joinPath(
     extensionUri,
     configDir,
     "config.toml",
