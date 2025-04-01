@@ -410,7 +410,7 @@ export class JJRepository {
 
   fileList() {
     return new Promise<string[]>((resolve) => {
-      const childProcess = spawn("jj", ["file", "list", "--no-pager"], {
+      const childProcess = spawnJJ(["file", "list"], {
         timeout: 5000,
         cwd: this.repositoryRoot,
       });
