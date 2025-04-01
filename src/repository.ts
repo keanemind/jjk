@@ -8,7 +8,7 @@ import type { ChildProcess } from "child_process";
 
 let configPath = "";
 
-export function setConfigArgs(extensionUri: vscode.Uri) {
+export function initConfigPath(extensionUri: vscode.Uri) {
   // Determine if we're in development or production mode
   const configDir = extensionUri.fsPath.includes("extensions") ? "dist" : "src";
 
