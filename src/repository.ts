@@ -6,11 +6,24 @@ import type { JJDecorationProvider } from "./decorationProvider";
 import { logger } from "./logger";
 import type { ChildProcess } from "child_process";
 
+let configPath = "";
+
+export function initConfigPath(extensionUri: vscode.Uri) {
+  // Determine if we're in development or production mode
+  const configDir = extensionUri.fsPath.includes("extensions") ? "dist" : "src";
+
+  configPath = vscode.Uri.joinPath(
+    extensionUri,
+    configDir,
+    "config.toml",
+  ).fsPath;
+}
+
 function spawnJJ(args: string[], options: Parameters<typeof spawn>[2]) {
   logger.info(`spawn: jj ${args.join(" ")}`, {
     spawnOptions: options,
   });
-  return spawn("jj", [...args, "--color", "never", "--no-pager"], options);
+  return spawn("jj", [...args, "--config-file", configPath], options);
 }
 
 function handleCommand(childProcess: ChildProcess) {
