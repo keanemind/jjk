@@ -13,16 +13,16 @@ import {
 } from "./operationLogTreeView";
 import { JJGraphWebview, RefreshArgs } from "./graphWebview";
 import { getRev } from "./uri";
+import { logger } from "./logger";
 
 export async function activate(context: vscode.ExtensionContext) {
-  // Use the console to output diagnostic information (console.log) and errors (console.error)
-  // This line of code will only be executed once when your extension is activated
-  console.log('Congratulations, your extension "jjk" is now active!');
+  context.subscriptions.push(
+    vscode.window.createOutputChannel("Jujutsu Kaizen", {
+      log: true,
+    }),
+  );
 
-  const logger = vscode.window.createOutputChannel("Jujutsu Kaizen", {
-    log: true,
-  });
-  context.subscriptions.push(logger);
+  logger.info("Extension activated");
 
   const decorationProvider = new JJDecorationProvider((decorationProvider) => {
     context.subscriptions.push(
@@ -50,7 +50,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   vscode.workspace.onDidChangeWorkspaceFolders(
     async () => {
-      console.log("Workspace folders changed");
+      logger.info("Workspace folders changed");
       await workspaceSCM.refresh();
       await checkReposFunction();
     },
@@ -60,6 +60,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   vscode.workspace.onDidChangeConfiguration(async (e) => {
     if (e.affectsConfiguration("git")) {
+      logger.info("Git configuration changed");
       const workspaceFolders = vscode.workspace.workspaceFolders || [];
 
       const affectedFolders = workspaceFolders

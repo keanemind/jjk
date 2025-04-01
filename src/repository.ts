@@ -3,8 +3,12 @@ import * as vscode from "vscode";
 import spawn from "cross-spawn";
 import { getRev, toJJUri, withRev } from "./uri";
 import type { JJDecorationProvider } from "./decorationProvider";
+import { logger } from "./logger";
 
 function spawnJJ(args: string[], options: Parameters<typeof spawn>[2]) {
+  logger.info(`spawn: jj ${args.join(" ")}`, {
+    spawnOptions: options,
+  });
   return spawn("jj", [...args, "--color", "never", "--no-pager"], options);
 }
 
