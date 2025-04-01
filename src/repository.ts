@@ -604,6 +604,7 @@ export class JJRepository {
             ...(revs ? ["-r", ...revs] : []),
           ],
           {
+            timeout: 5000,
             cwd: this.repositoryRoot,
           },
         ),
@@ -651,6 +652,7 @@ export class JJRepository {
               : []),
           ],
           {
+            timeout: 5000,
             cwd: this.repositoryRoot,
           },
         ),
@@ -678,6 +680,7 @@ export class JJRepository {
             ...(noGraph ? ["--no-graph"] : []),
           ],
           {
+            timeout: 5000,
             cwd: this.repositoryRoot,
           },
         ),
@@ -689,6 +692,7 @@ export class JJRepository {
     try {
       return await handleCommand(
         spawnJJ(["edit", "-r", rev, "--ignore-immutable"], {
+          timeout: 5000,
           cwd: this.repositoryRoot,
         }),
       );
@@ -722,6 +726,7 @@ export class JJRepository {
               : []),
           ],
           {
+            timeout: 5000,
             cwd: this.repositoryRoot,
           },
         ),
@@ -747,6 +752,7 @@ export class JJRepository {
         try {
           await handleCommand(
             spawnJJ(["git", "fetch"], {
+              timeout: 60_000,
               cwd: this.repositoryRoot,
             }),
           );
@@ -770,6 +776,7 @@ export class JJRepository {
             path.relative(this.repositoryRoot, filepath),
           ],
           {
+            timeout: 60_000,
             cwd: this.repositoryRoot,
           },
         ),
@@ -874,6 +881,7 @@ export class JJRepository {
     return (
       await handleCommand(
         spawnJJ(["operation", "undo", id], {
+          timeout: 5000,
           cwd: this.repositoryRoot,
         }),
       )
@@ -884,6 +892,7 @@ export class JJRepository {
     return (
       await handleCommand(
         spawnJJ(["operation", "restore", id], {
+          timeout: 5000,
           cwd: this.repositoryRoot,
         }),
       )
