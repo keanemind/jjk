@@ -4,6 +4,7 @@ import spawn from "cross-spawn";
 import { getRev, toJJUri, withRev } from "./uri";
 import type { JJDecorationProvider } from "./decorationProvider";
 import { logger } from "./logger";
+import type { ChildProcess } from "child_process";
 
 function spawnJJ(args: string[], options: Parameters<typeof spawn>[2]) {
   logger.info(`spawn: jj ${args.join(" ")}`, {
@@ -12,30 +13,62 @@ function spawnJJ(args: string[], options: Parameters<typeof spawn>[2]) {
   return spawn("jj", [...args, "--color", "never", "--no-pager"], options);
 }
 
+function handleCommand(childProcess: ChildProcess) {
+  return new Promise<Buffer>((resolve, reject) => {
+    const output: Buffer[] = [];
+    const errOutput: Buffer[] = [];
+    childProcess.stdout!.on("data", (data: Buffer) => {
+      output.push(data);
+    });
+    childProcess.stderr!.on("data", (data: Buffer) => {
+      errOutput.push(data);
+    });
+    childProcess.on("error", (error: Error) => {
+      reject(new Error(`Spawning command failed: ${error.message}`));
+    });
+    childProcess.on("close", (code, signal) => {
+      if (code) {
+        reject(
+          new Error(
+            `Command failed with exit code ${code}.\nstdout: ${Buffer.concat(output).toString()}\nstderr: ${Buffer.concat(errOutput).toString()}`,
+          ),
+        );
+      } else if (signal) {
+        reject(
+          new Error(
+            `Command failed with signal ${signal}.\nstdout: ${Buffer.concat(output).toString()}\nstderr: ${Buffer.concat(errOutput).toString()}`,
+          ),
+        );
+      } else {
+        resolve(Buffer.concat(output));
+      }
+    });
+  });
+}
+
 async function createSCMsInWorkspace(decorationProvider: JJDecorationProvider) {
   const repos: RepositorySourceControlManager[] = [];
   for (const workspaceFolder of vscode.workspace.workspaceFolders || []) {
-    const repoRoot = await new Promise<string | undefined>((resolve) => {
-      const childProcess = spawnJJ(["root"], {
-        timeout: 5000,
-        cwd: workspaceFolder.uri.fsPath,
-      });
-      let output = "";
-      childProcess.on("close", () => {
-        if (output.includes("There is no jj repo in")) {
-          resolve(undefined);
-        } else {
-          resolve(output.trim());
-        }
-      });
-      childProcess.stdout!.on("data", (data: string) => {
-        output += data;
-      });
-    });
-    if (repoRoot) {
+    try {
+      const output = (
+        await handleCommand(
+          spawnJJ(["root"], {
+            timeout: 5000,
+            cwd: workspaceFolder.uri.fsPath,
+          }),
+        )
+      ).toString();
+      const repoRoot = output.trim();
       repos.push(
         new RepositorySourceControlManager(repoRoot, decorationProvider),
       );
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("no jj repo in")) {
+        // Ignore this error, as it means there is no jj repo in this workspace folder
+        logger.info(`No jj repo in ${workspaceFolder.uri.fsPath}`);
+        continue;
+      }
+      throw e;
     }
   }
   return repos;
@@ -385,19 +418,15 @@ export class JJRepository {
       return this.statusCache;
     }
 
-    const status = await new Promise<RepositoryStatus>((resolve) => {
-      const childProcess = spawnJJ(["status"], {
-        timeout: 5000,
-        cwd: this.repositoryRoot,
-      });
-      let output = "";
-      childProcess.on("close", () => {
-        resolve(parseJJStatus(this.repositoryRoot, output));
-      });
-      childProcess.stdout!.on("data", (data: string) => {
-        output += data;
-      });
-    });
+    const output = (
+      await handleCommand(
+        spawnJJ(["status"], {
+          timeout: 5000,
+          cwd: this.repositoryRoot,
+        }),
+      )
+    ).toString();
+    const status = parseJJStatus(this.repositoryRoot, output);
 
     this.statusCache = status;
     return status;
@@ -413,237 +442,196 @@ export class JJRepository {
 
   constructor(public repositoryRoot: string) {}
 
-  fileList() {
-    return new Promise<string[]>((resolve) => {
-      const childProcess = spawnJJ(["file", "list"], {
-        timeout: 5000,
-        cwd: this.repositoryRoot,
-      });
-      let output = "";
-      childProcess.on("close", () => {
-        resolve(output.trim().split("\n"));
-      });
-      childProcess.stdout!.on("data", (data: string) => {
-        output += data;
-      });
-    });
-  }
-
-  show(rev: string) {
-    return new Promise<Show>((resolve, reject) => {
-      const separator = "ඞjjk\n";
-      const templateFields = [
-        "change_id",
-        "commit_id",
-        "author.name()",
-        "author.email()",
-        'author.timestamp().local().format("%F %H:%M:%S")',
-        "description",
-        "empty",
-        "conflict",
-        "diff.summary()",
-      ];
-      const template =
-        templateFields.join(` ++ "${separator}" ++ `) + ` ++ "${separator}"`;
-
-      const childProcess = spawnJJ(
-        ["log", "-T", template, "--no-graph", "-r", rev],
-        {
+  async fileList() {
+    return (
+      await handleCommand(
+        spawnJJ(["file", "list"], {
           timeout: 5000,
           cwd: this.repositoryRoot,
-        },
+        }),
+      )
+    )
+      .toString()
+      .trim()
+      .split("\n");
+  }
+
+  async show(rev: string) {
+    const separator = "ඞjjk\n";
+    const templateFields = [
+      "change_id",
+      "commit_id",
+      "author.name()",
+      "author.email()",
+      'author.timestamp().local().format("%F %H:%M:%S")',
+      "description",
+      "empty",
+      "conflict",
+      "diff.summary()",
+    ];
+    const template =
+      templateFields.join(` ++ "${separator}" ++ `) + ` ++ "${separator}"`;
+
+    const output = (
+      await handleCommand(
+        spawnJJ(["log", "-T", template, "--no-graph", "-r", rev], {
+          timeout: 5000,
+          cwd: this.repositoryRoot,
+        }),
+      )
+    ).toString();
+
+    if (!output) {
+      throw new Error(
+        "No output from jj log. Maybe the revision couldn't be found?",
       );
-      let output = "";
-      let errOutput = "";
-      childProcess.on("close", (code) => {
-        if (code !== 0) {
-          reject(new Error(`jj show exited with code ${code}: ${errOutput}`));
-          return;
-        }
-        try {
-          if (!output) {
-            throw new Error(
-              "No output from jj log. Maybe the revision couldn't be found?",
-            );
-          }
-          const results = output.split(separator);
-          if (results.length > templateFields.length + 1) {
-            throw new Error(
-              "Separator found in a field value. This is not supported.",
-            );
-          } else if (results.length < templateFields.length + 1) {
-            throw new Error("Missing fields in the output.");
-          }
-          const ret: Show = {
-            change: {
-              changeId: "",
-              commitId: "",
-              description: "",
-              author: {
-                email: "",
-                name: "",
-              },
-              authoredDate: "",
-              isEmpty: false,
-              isConflict: false,
-            },
-            fileStatuses: [],
-          };
+    }
+    const results = output.split(separator);
+    if (results.length > templateFields.length + 1) {
+      throw new Error(
+        "Separator found in a field value. This is not supported.",
+      );
+    } else if (results.length < templateFields.length + 1) {
+      throw new Error("Missing fields in the output.");
+    }
+    const ret: Show = {
+      change: {
+        changeId: "",
+        commitId: "",
+        description: "",
+        author: {
+          email: "",
+          name: "",
+        },
+        authoredDate: "",
+        isEmpty: false,
+        isConflict: false,
+      },
+      fileStatuses: [],
+    };
 
-          for (let i = 0; i < results.length; i++) {
-            const field = results[i];
-            const value = field.trim();
-            switch (templateFields[i]) {
-              case "change_id":
-                ret.change.changeId = value;
-                break;
-              case "commit_id":
-                ret.change.commitId = value;
-                break;
-              case "author.name()":
-                ret.change.author.name = value;
-                break;
-              case "author.email()":
-                ret.change.author.email = value;
-                break;
-              case 'author.timestamp().local().format("%F %H:%M:%S")':
-                ret.change.authoredDate = value;
-                break;
-              case "description":
-                ret.change.description = value;
-                break;
-              case "empty":
-                ret.change.isEmpty = value === "true";
-                break;
-              case "conflict":
-                ret.change.isConflict = value === "true";
-                break;
-              case "diff.summary()": {
-                const changeRegex = /^(A|M|D|R) (.+)$/;
-                const renameRegex = /\{(.+) => (.+)\}$/;
-                for (const line of value.split("\n").filter(Boolean)) {
-                  const changeMatch = changeRegex.exec(line);
-                  if (changeMatch) {
-                    const [_, type, file] = changeMatch;
+    for (let i = 0; i < results.length; i++) {
+      const field = results[i];
+      const value = field.trim();
+      switch (templateFields[i]) {
+        case "change_id":
+          ret.change.changeId = value;
+          break;
+        case "commit_id":
+          ret.change.commitId = value;
+          break;
+        case "author.name()":
+          ret.change.author.name = value;
+          break;
+        case "author.email()":
+          ret.change.author.email = value;
+          break;
+        case 'author.timestamp().local().format("%F %H:%M:%S")':
+          ret.change.authoredDate = value;
+          break;
+        case "description":
+          ret.change.description = value;
+          break;
+        case "empty":
+          ret.change.isEmpty = value === "true";
+          break;
+        case "conflict":
+          ret.change.isConflict = value === "true";
+          break;
+        case "diff.summary()": {
+          const changeRegex = /^(A|M|D|R) (.+)$/;
+          const renameRegex = /\{(.+) => (.+)\}$/;
+          for (const line of value.split("\n").filter(Boolean)) {
+            const changeMatch = changeRegex.exec(line);
+            if (changeMatch) {
+              const [_, type, file] = changeMatch;
 
-                    if (type === "R") {
-                      if (renameRegex.test(file)) {
-                        const renameMatch = renameRegex.exec(file);
-                        if (renameMatch) {
-                          const [_, from, to] = renameMatch;
-                          ret.fileStatuses.push({
-                            type: "R",
-                            file: to,
-                            path: path.join(this.repositoryRoot, to),
-                            renamedFrom: from,
-                          });
-                        }
-                      } else {
-                        throw new Error(`Unexpected rename line: ${line}`);
-                      }
-                    } else {
-                      ret.fileStatuses.push({
-                        type: type as "A" | "M" | "D",
-                        file,
-                        path: path.join(this.repositoryRoot, file),
-                      });
-                    }
-                  } else {
-                    throw new Error(`Unexpected diff summary line: ${line}`);
+              if (type === "R") {
+                if (renameRegex.test(file)) {
+                  const renameMatch = renameRegex.exec(file);
+                  if (renameMatch) {
+                    const [_, from, to] = renameMatch;
+                    ret.fileStatuses.push({
+                      type: "R",
+                      file: to,
+                      path: path.join(this.repositoryRoot, to),
+                      renamedFrom: from,
+                    });
                   }
+                } else {
+                  throw new Error(`Unexpected rename line: ${line}`);
                 }
-                break;
+              } else {
+                ret.fileStatuses.push({
+                  type: type as "A" | "M" | "D",
+                  file,
+                  path: path.join(this.repositoryRoot, file),
+                });
               }
+            } else {
+              throw new Error(`Unexpected diff summary line: ${line}`);
             }
           }
-
-          resolve(ret);
-        } catch (e) {
-          reject(e);
+          break;
         }
-      });
-      childProcess.stdout!.on("data", (data: string) => {
-        output += data;
-      });
-      childProcess.stderr!.on("data", (data: string) => {
-        errOutput += data;
-      });
-    });
+      }
+    }
+
+    return ret;
   }
 
   readFile(rev: string, filepath: string) {
-    return new Promise<Buffer>((resolve, reject) => {
-      const relativeFilepath = path.relative(this.repositoryRoot, filepath);
-      const childProcess = spawnJJ(
-        ["file", "show", "--revision", rev, relativeFilepath],
-        {
+    const relativeFilepath = path.relative(this.repositoryRoot, filepath);
+    return handleCommand(
+      spawnJJ(["file", "show", "--revision", rev, relativeFilepath], {
+        timeout: 5000,
+        cwd: this.repositoryRoot,
+      }),
+    );
+  }
+
+  async describe(rev: string, message: string) {
+    return (
+      await handleCommand(
+        spawnJJ(["describe", "-m", message, rev], {
           timeout: 5000,
           cwd: this.repositoryRoot,
-        },
-      );
-      const buffers: Buffer[] = [];
-      let errOutput = "";
-      childProcess.on("close", (code) => {
-        if (code !== 0) {
-          reject(
-            new Error(`jj file show exited with code ${code}: ${errOutput}`),
-          );
-          return;
-        }
-        resolve(Buffer.concat(buffers));
-      });
-      childProcess.stdout!.on("data", (data: Buffer) => {
-        buffers.push(data);
-      });
-      childProcess.stderr!.on("data", (data: string) => {
-        errOutput += data;
-      });
-    });
+        }),
+      )
+    ).toString();
   }
 
-  describe(rev: string, message: string): Promise<void> {
-    return new Promise((resolve) => {
-      const childProcess = spawnJJ(["describe", "-m", message, rev], {
-        cwd: this.repositoryRoot,
-      });
-
-      childProcess.on("close", () => {
-        resolve();
-      });
-    });
-  }
-
-  new(message?: string, revs?: string[]): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      const childProcess = spawnJJ(
-        [
-          "new",
-          ...(message ? ["-m", message] : []),
-          ...(revs ? ["-r", ...revs] : []),
-        ],
-        {
-          cwd: this.repositoryRoot,
-        },
+  async new(message?: string, revs?: string[]) {
+    try {
+      return await handleCommand(
+        spawnJJ(
+          [
+            "new",
+            ...(message ? ["-m", message] : []),
+            ...(revs ? ["-r", ...revs] : []),
+          ],
+          {
+            timeout: 5000,
+            cwd: this.repositoryRoot,
+          },
+        ),
       );
-
-      let output = "";
-      childProcess.stderr!.on("data", (data: string) => {
-        output += data;
-      });
-
-      childProcess.on("close", () => {
-        const match = output.match(/error:\s*([\s\S]+)$/i);
+    } catch (error) {
+      if (error instanceof Error) {
+        const match = error.message.match(/error:\s*([\s\S]+)$/i);
         if (match) {
           const errorMessage = match[1];
-          reject(new Error(errorMessage));
+          throw new Error(errorMessage);
         } else {
-          resolve();
+          throw error;
         }
-      });
-    });
+      } else {
+        throw error;
+      }
+    }
   }
 
-  squash({
+  async squash({
     fromRev,
     toRev,
     message,
@@ -653,180 +641,154 @@ export class JJRepository {
     toRev: string;
     message?: string;
     filepaths?: string[];
-  }): Promise<void> {
-    return new Promise((resolve) => {
-      const childProcess = spawnJJ(
-        [
-          "squash",
-          "--from",
-          fromRev,
-          "--into",
-          toRev,
-          ...(message ? ["-m", message] : []),
-          ...(filepaths
-            ? filepaths.map((filepath) =>
-                path.relative(this.repositoryRoot, filepath),
-              )
-            : []),
-        ],
-        {
-          cwd: this.repositoryRoot,
-        },
-      );
-
-      childProcess.on("close", () => {
-        resolve();
-      });
-    });
+  }) {
+    return (
+      await handleCommand(
+        spawnJJ(
+          [
+            "squash",
+            "--from",
+            fromRev,
+            "--into",
+            toRev,
+            ...(message ? ["-m", message] : []),
+            ...(filepaths
+              ? filepaths.map((filepath) =>
+                  path.relative(this.repositoryRoot, filepath),
+                )
+              : []),
+          ],
+          {
+            timeout: 5000,
+            cwd: this.repositoryRoot,
+          },
+        ),
+      )
+    ).toString();
   }
 
-  log(
+  async log(
     rev: string = "::",
     template: string = "builtin_log_compact",
     limit: number = 50,
     noGraph: boolean = false,
-  ): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const childProcess = spawnJJ(
-        [
-          "log",
-          "-r",
-          rev,
-          "-n",
-          limit.toString(),
-          "-T",
-          template,
-          ...(noGraph ? ["--no-graph"] : []),
-        ],
-        {
-          cwd: this.repositoryRoot,
-        },
-      );
-
-      let output = "";
-      childProcess.on("close", () => {
-        try {
-          resolve(output);
-        } catch (e) {
-          reject(e);
-        }
-      });
-      childProcess.stdout!.on("data", (data: string) => {
-        output += data;
-      });
-    });
+  ) {
+    return (
+      await handleCommand(
+        spawnJJ(
+          [
+            "log",
+            "-r",
+            rev,
+            "-n",
+            limit.toString(),
+            "-T",
+            template,
+            ...(noGraph ? ["--no-graph"] : []),
+          ],
+          {
+            timeout: 5000,
+            cwd: this.repositoryRoot,
+          },
+        ),
+      )
+    ).toString();
   }
 
-  edit(rev: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const childProcess = spawnJJ(["edit", "-r", rev, "--ignore-immutable"], {
-        cwd: this.repositoryRoot,
-      });
-      let output = "";
-      childProcess.stderr!.on("data", (data: string) => {
-        output += data;
-      });
-
-      childProcess.on("close", () => {
-        const match = output.trim().match(/error:\s*([\s\S]+)$/i);
+  async edit(rev: string) {
+    try {
+      return await handleCommand(
+        spawnJJ(["edit", "-r", rev, "--ignore-immutable"], {
+          timeout: 5000,
+          cwd: this.repositoryRoot,
+        }),
+      );
+    } catch (error) {
+      if (error instanceof Error) {
+        const match = error.message.match(/error:\s*([\s\S]+)$/i);
         if (match) {
           const errorMessage = match[1];
-          reject(new Error(errorMessage));
+          throw new Error(errorMessage);
         } else {
-          resolve();
+          throw error;
         }
-      });
-    });
+      } else {
+        throw error;
+      }
+    }
   }
 
-  restore(rev?: string, filepaths?: string[]): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      const childProcess = spawnJJ(
-        [
-          "restore",
-          "--changes-in",
-          rev ? rev : "@",
-          ...(filepaths
-            ? filepaths.map((filepath) =>
-                path.relative(this.repositoryRoot, filepath),
-              )
-            : []),
-        ],
-        {
-          cwd: this.repositoryRoot,
-        },
+  async restore(rev?: string, filepaths?: string[]) {
+    try {
+      return await handleCommand(
+        spawnJJ(
+          [
+            "restore",
+            "--changes-in",
+            rev ? rev : "@",
+            ...(filepaths
+              ? filepaths.map((filepath) =>
+                  path.relative(this.repositoryRoot, filepath),
+                )
+              : []),
+          ],
+          {
+            timeout: 5000,
+            cwd: this.repositoryRoot,
+          },
+        ),
       );
-
-      let output = "";
-      childProcess.stderr!.on("data", (data: string) => {
-        output += data;
-      });
-
-      childProcess.on("close", () => {
-        const match = output.match(/error:\s*([\s\S]+)$/i);
+    } catch (error) {
+      if (error instanceof Error) {
+        const match = error.message.match(/error:\s*([\s\S]+)$/i);
         if (match) {
           const errorMessage = match[1];
-          reject(new Error(errorMessage));
+          throw new Error(errorMessage);
         } else {
-          resolve();
+          throw error;
         }
-      });
-    });
+      } else {
+        throw error;
+      }
+    }
   }
 
   gitFetch(): Promise<void> {
     if (!this.gitFetchPromise) {
-      this.gitFetchPromise = new Promise<void>((resolve, reject) => {
-        const childProcess = spawnJJ(["git", "fetch"], {
-          cwd: this.repositoryRoot,
-        });
-
-        let output = "";
-        childProcess.stderr!.on("data", (data: string) => {
-          output += data;
-        });
-
-        childProcess.on("close", (code) => {
+      this.gitFetchPromise = (async () => {
+        try {
+          await handleCommand(
+            spawnJJ(["git", "fetch"], {
+              timeout: 60_000,
+              cwd: this.repositoryRoot,
+            }),
+          );
+        } finally {
           this.gitFetchPromise = undefined;
-          if (code === 0) {
-            resolve();
-          } else {
-            reject(new Error(output));
-          }
-        });
-      });
+        }
+      })();
     }
     return this.gitFetchPromise;
   }
 
   async annotate(filepath: string, rev: string): Promise<string[]> {
-    const commandPromise = new Promise<string>((resolve, reject) => {
-      const childProcess = spawnJJ(
-        [
-          "file",
-          "annotate",
-          "-r",
-          rev,
-          path.relative(this.repositoryRoot, filepath),
-        ],
-        {
-          cwd: this.repositoryRoot,
-        },
-      );
-
-      let output = "";
-      childProcess.on("close", (code) => {
-        if (code === 0) {
-          resolve(output);
-        } else {
-          reject(new Error(`jj file annotate exited with code ${code}`));
-        }
-      });
-      childProcess.stdout!.on("data", (data: string) => {
-        output += data;
-      });
-    });
-    const output = await commandPromise;
+    const output = (
+      await handleCommand(
+        spawnJJ(
+          [
+            "file",
+            "annotate",
+            "-r",
+            rev,
+            path.relative(this.repositoryRoot, filepath),
+          ],
+          {
+            timeout: 60_000,
+            cwd: this.repositoryRoot,
+          },
+        ),
+      )
+    ).toString();
     if (output === "") {
       return [];
     }
@@ -835,141 +797,113 @@ export class JJRepository {
     return changeIdsByLine;
   }
 
-  operationLog(): Promise<Operation[]> {
-    return new Promise((resolve, reject) => {
-      const operationSeparator = "ඞඞඞ\n";
-      const fieldSeparator = "kjjඞ";
-      const templateFields = [
-        "self.id()",
-        "self.description()",
-        "self.tags()",
-        "self.time().start()",
-        "self.user()",
-        "self.snapshot()",
-      ];
-      const template =
-        templateFields.join(` ++ "${fieldSeparator}" ++ `) +
-        ` ++ "${operationSeparator}"`;
+  async operationLog(): Promise<Operation[]> {
+    const operationSeparator = "ඞඞඞ\n";
+    const fieldSeparator = "kjjඞ";
+    const templateFields = [
+      "self.id()",
+      "self.description()",
+      "self.tags()",
+      "self.time().start()",
+      "self.user()",
+      "self.snapshot()",
+    ];
+    const template =
+      templateFields.join(` ++ "${fieldSeparator}" ++ `) +
+      ` ++ "${operationSeparator}"`;
 
-      const childProcess = spawnJJ(
-        [
-          "operation",
-          "log",
-          "--limit",
-          "10",
-          "--no-graph",
-          "--at-operation=@",
-          "--ignore-working-copy",
-          "-T",
-          template,
-        ],
-        {
+    const output = (
+      await handleCommand(
+        spawnJJ(
+          [
+            "operation",
+            "log",
+            "--limit",
+            "10",
+            "--no-graph",
+            "--at-operation=@",
+            "--ignore-working-copy",
+            "-T",
+            template,
+          ],
+          {
+            timeout: 5000,
+            cwd: this.repositoryRoot,
+          },
+        ),
+      )
+    ).toString();
+
+    const ret: Operation[] = [];
+    const lines = output.split(operationSeparator).slice(0, -1); // the output ends in a separator so remove the empty string at the end
+    for (const line of lines) {
+      const results = line.split(fieldSeparator);
+      if (results.length > templateFields.length) {
+        throw new Error(
+          "Separator found in a field value. This is not supported.",
+        );
+      } else if (results.length < templateFields.length) {
+        throw new Error("Missing fields in the output.");
+      }
+      const op: Operation = {
+        id: "",
+        description: "",
+        tags: "",
+        start: "",
+        user: "",
+        snapshot: false,
+      };
+
+      for (let i = 0; i < results.length; i++) {
+        const field = results[i];
+        const value = field.trim();
+        switch (templateFields[i]) {
+          case "self.id()":
+            op.id = value;
+            break;
+          case "self.description()":
+            op.description = value;
+            break;
+          case "self.tags()":
+            op.tags = value;
+            break;
+          case "self.time().start()":
+            op.start = value;
+            break;
+          case "self.user()":
+            op.user = value;
+            break;
+          case "self.snapshot()":
+            op.snapshot = value === "true";
+            break;
+        }
+      }
+      ret.push(op);
+    }
+
+    return ret;
+  }
+
+  async operationUndo(id: string) {
+    return (
+      await handleCommand(
+        spawnJJ(["operation", "undo", id], {
           timeout: 5000,
           cwd: this.repositoryRoot,
-        },
-      );
-      let output = "";
-      childProcess.on("close", (code, signal) => {
-        if (code === 0) {
-          const ret: Operation[] = [];
-          const lines = output.split(operationSeparator).slice(0, -1); // the output ends in a separator so remove the empty string at the end
-          for (const line of lines) {
-            const results = line.split(fieldSeparator);
-            if (results.length > templateFields.length) {
-              throw new Error(
-                "Separator found in a field value. This is not supported.",
-              );
-            } else if (results.length < templateFields.length) {
-              throw new Error("Missing fields in the output.");
-            }
-            const op: Operation = {
-              id: "",
-              description: "",
-              tags: "",
-              start: "",
-              user: "",
-              snapshot: false,
-            };
-
-            for (let i = 0; i < results.length; i++) {
-              const field = results[i];
-              const value = field.trim();
-              switch (templateFields[i]) {
-                case "self.id()":
-                  op.id = value;
-                  break;
-                case "self.description()":
-                  op.description = value;
-                  break;
-                case "self.tags()":
-                  op.tags = value;
-                  break;
-                case "self.time().start()":
-                  op.start = value;
-                  break;
-                case "self.user()":
-                  op.user = value;
-                  break;
-                case "self.snapshot()":
-                  op.snapshot = value === "true";
-                  break;
-              }
-            }
-            ret.push(op);
-          }
-          resolve(ret);
-        } else {
-          reject(
-            new Error(`jj operation log exited with code ${code} (${signal})`),
-          );
-        }
-      });
-      childProcess.stdout!.on("data", (data: string) => {
-        output += data;
-      });
-    });
+        }),
+      )
+    ).toString();
   }
 
-  operationUndo(id: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const childProcess = spawnJJ(["operation", "undo", id], {
-        cwd: this.repositoryRoot,
-      });
-
-      let output = "";
-      childProcess.stderr!.on("data", (data: string) => {
-        output += data;
-      });
-
-      childProcess.on("close", (code) => {
-        if (code === 0) {
-          resolve();
-        } else {
-          reject(new Error(output));
-        }
-      });
-    });
-  }
-
-  operationRestore(id: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const childProcess = spawnJJ(["operation", "restore", id], {
-        cwd: this.repositoryRoot,
-      });
-
-      let output = "";
-      childProcess.stderr!.on("data", (data: string) => {
-        output += data;
-      });
-
-      childProcess.on("close", (code) => {
-        if (code === 0) {
-          resolve();
-        } else {
-          reject(new Error(output));
-        }
-      });
-    });
+  async operationRestore(id: string) {
+    return (
+      await handleCommand(
+        spawnJJ(["operation", "restore", id], {
+          timeout: 5000,
+          cwd: this.repositoryRoot,
+        }),
+      )
+    ).toString();
   }
 }
 
