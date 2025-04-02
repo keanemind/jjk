@@ -5,25 +5,63 @@ import { getRev, toJJUri, withRev } from "./uri";
 import type { JJDecorationProvider } from "./decorationProvider";
 import { logger } from "./logger";
 import type { ChildProcess } from "child_process";
+import fs from "fs";
 
-let configPath = "";
+let jjVersion = "jj 0.27.0";
+let configArgs: string[] = []; // Single global array for config arguments
 
-export function initConfigPath(extensionUri: vscode.Uri) {
+export async function initJJVersion() {
+  try {
+    const version = (
+      await handleCommand(
+        spawn("jj", ["version"], {
+          timeout: 5000,
+        }),
+      )
+    ).toString();
+
+    if (version.startsWith("jj")) {
+      jjVersion = version;
+    }
+  } catch {
+    // Default to 0.27.0
+  }
+  logger.info(jjVersion);
+}
+
+export async function initConfigArgs(extensionUri: vscode.Uri) {
   // Determine if we're in development or production mode
   const configDir = extensionUri.fsPath.includes("extensions") ? "dist" : "src";
 
-  configPath = vscode.Uri.joinPath(
+  const configPath = vscode.Uri.joinPath(
     extensionUri,
     configDir,
     "config.toml",
   ).fsPath;
+
+  // Determine the config option and value based on jj version
+  const configOption =
+    jjVersion >= "jj 0.25.0" ? "--config-file" : "--config-toml";
+
+  if (configOption === "--config-toml") {
+    try {
+      const configValue = await fs.promises.readFile(configPath, "utf8");
+      configArgs = [configOption, configValue];
+    } catch (e) {
+      logger.error(`Failed to read config file at ${configPath}`);
+      throw e;
+    }
+  } else {
+    configArgs = [configOption, configPath];
+  }
 }
 
 function spawnJJ(args: string[], options: Parameters<typeof spawn>[2]) {
   logger.info(`spawn: jj ${args.join(" ")}`, {
     spawnOptions: options,
   });
-  return spawn("jj", [...args, "--config-file", configPath], options);
+
+  return spawn("jj", [...args, ...configArgs], options);
 }
 
 function handleCommand(childProcess: ChildProcess) {

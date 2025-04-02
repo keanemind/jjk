@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import which from "which";
 
 import "./repository";
-import { WorkspaceSourceControlManager } from "./repository";
+import { initJJVersion, WorkspaceSourceControlManager } from "./repository";
 import type { JJRepository, ChangeWithDetails } from "./repository";
 import { JJDecorationProvider } from "./decorationProvider";
 import { JJFileSystemProvider } from "./fileSystemProvider";
@@ -16,10 +16,11 @@ import { getRev } from "./uri";
 import { logger } from "./logger";
 import { LogOutputChannelTransport } from "./vendor/winston-transport-vscode/logOutputChannelTransport";
 import winston from "winston";
-import { initConfigPath } from "./repository";
+import { initConfigArgs } from "./repository";
 
 export async function activate(context: vscode.ExtensionContext) {
-  initConfigPath(context.extensionUri);
+  await initJJVersion();
+  await initConfigArgs(context.extensionUri);
 
   const outputChannel = vscode.window.createOutputChannel("Jujutsu Kaizen", {
     log: true,
