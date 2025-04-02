@@ -831,7 +831,57 @@ export async function activate(context: vscode.ExtensionContext) {
           return;
         }
 
-        const destinationRev = "@+";
+        const status = await repository.status(true);
+
+        const items: ({ changeId: string } & vscode.QuickPickItem)[] = [];
+
+        for (const parent of status.parentChanges) {
+          items.push({
+            label: `$(arrow-up) Parent: ${parent.changeId.substring(0, 8)}`,
+            description: parent.description || "(no description)",
+            alwaysShow: true,
+            changeId: parent.changeId,
+          });
+        }
+
+        try {
+          const childChanges = await repository.log(
+            "all:@+",
+            'change_id ++ "\n"',
+            undefined,
+            true,
+          );
+
+          items.push(
+            ...(await Promise.all(
+              childChanges
+                .trim()
+                .split("\n")
+                .map(async (changeId) => {
+                  const show = await repository.show(changeId);
+                  return {
+                    label: `$(arrow-down) Child: ${changeId.substring(0, 8)}`,
+                    description: show.change.description || "(no description)",
+                    alwaysShow: true,
+                    changeId,
+                  };
+                }),
+            )),
+          );
+        } catch (_) {
+          // No child changes or error, continue with just parents
+        }
+
+        const selected = await vscode.window.showQuickPick(items, {
+          placeHolder: "Select destination change for squashing selected lines",
+          ignoreFocusOut: true,
+        });
+
+        if (!selected) {
+          return;
+        }
+
+        const destinationRev = selected.changeId;
 
         async function computeAndSquashSelectedDiff(
           repository: JJRepository,
@@ -839,6 +889,7 @@ export async function activate(context: vscode.ExtensionContext) {
           originalUri: vscode.Uri,
           textEditor: vscode.TextEditor,
         ) {
+          console.log("originalUri", originalUri);
           const originalDocument =
             await vscode.workspace.openTextDocument(originalUri);
           console.log("originalDocument", originalDocument.getText());
@@ -883,6 +934,9 @@ export async function activate(context: vscode.ExtensionContext) {
             textEditor.document,
             selectedChanges,
           );
+
+          console.log("result", result);
+
           await repository.squashContent({
             fromRev: "@",
             toRev: destinationRev,
@@ -921,7 +975,6 @@ export async function activate(context: vscode.ExtensionContext) {
           activeTab.input.modified.scheme === "file" &&
           ["@", undefined].includes(getRevOpt(activeTab.input.modified)) &&
           [
-            "@-",
             workingCopyParent.change.changeId,
             workingCopyParent.change.commitId,
           ].includes(getRevOpt(activeTab.input.original) ?? "not matching")
@@ -939,7 +992,12 @@ export async function activate(context: vscode.ExtensionContext) {
           await computeAndSquashSelectedDiff(
             repository,
             linesDiffComputers.getLegacy(),
-            toJJUri(withRev(textEditor.document.uri, "@-")),
+            toJJUri(
+              withRev(
+                textEditor.document.uri,
+                workingCopyParent.change.commitId,
+              ),
+            ),
             textEditor,
           );
         }

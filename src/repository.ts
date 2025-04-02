@@ -764,8 +764,7 @@ export class JJRepository {
   }): Promise<void> {
     const fakeEditorPath = "/Users/keane/code/jjk/src/fakeeditor/fakeeditor";
     return new Promise((resolve, reject) => {
-      const childProcess = spawn(
-        "jj",
+      const childProcess = spawnJJ(
         [
           "squash",
           "--from",
@@ -775,6 +774,7 @@ export class JJRepository {
           "--interactive",
           "--config-toml",
           `ui.diff-editor = "${fakeEditorPath}"`,
+          "--use-destination-message",
         ],
         {
           cwd: this.repositoryRoot,
@@ -786,7 +786,7 @@ export class JJRepository {
 
         const lines = output.trim().split("\n");
         if (lines.length !== 4) {
-          reject(new Error("Unexpected output from fakeEditor"));
+          reject(new Error(`Unexpected output from fakeEditor: ${output}`));
           return;
         }
         const fakeEditorPID = lines[0];
