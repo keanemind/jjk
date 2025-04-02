@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import which from "which";
 
 import "./repository";
-import { WorkspaceSourceControlManager } from "./repository";
+import { initJJVersion, WorkspaceSourceControlManager } from "./repository";
 import type { JJRepository, ChangeWithDetails } from "./repository";
 import { JJDecorationProvider } from "./decorationProvider";
 import { JJFileSystemProvider } from "./fileSystemProvider";
@@ -19,6 +19,7 @@ import winston from "winston";
 import { initConfigPath } from "./repository";
 
 export async function activate(context: vscode.ExtensionContext) {
+  await initJJVersion();
   initConfigPath(context.extensionUri);
 
   const outputChannel = vscode.window.createOutputChannel("Jujutsu Kaizen", {

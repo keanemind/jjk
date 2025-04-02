@@ -6,7 +6,23 @@ import type { JJDecorationProvider } from "./decorationProvider";
 import { logger } from "./logger";
 import type { ChildProcess } from "child_process";
 
+let jjVersion = "jj 0.27.0";
 let configPath = "";
+
+export async function initJJVersion() {
+  const version = (
+    await handleCommand(
+      spawn("jj", ["version"], {
+        timeout: 5000,
+      }),
+    )
+  ).toString();
+
+  if (version.startsWith("jj")) {
+    jjVersion = version;
+  }
+  logger.info(jjVersion);
+}
 
 export function initConfigPath(extensionUri: vscode.Uri) {
   // Determine if we're in development or production mode
@@ -23,7 +39,15 @@ function spawnJJ(args: string[], options: Parameters<typeof spawn>[2]) {
   logger.info(`spawn: jj ${args.join(" ")}`, {
     spawnOptions: options,
   });
-  return spawn("jj", [...args, "--config-file", configPath], options);
+  return spawn(
+    "jj",
+    [
+      ...args,
+      jjVersion >= "jj 0.25.0" ? "--config-file" : "--config-toml",
+      configPath,
+    ],
+    options,
+  );
 }
 
 function handleCommand(childProcess: ChildProcess) {
