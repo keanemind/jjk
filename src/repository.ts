@@ -520,8 +520,7 @@ export class JJRepository {
       "conflict",
       "diff.summary()",
     ];
-    const template =
-      templateFields.join(` ++ "${separator}" ++ `) + ` ++ "${separator}"`;
+    const template = templateFields.join(` ++ "${separator}" ++ `);
 
     const output = (
       await handleCommand(
@@ -538,11 +537,11 @@ export class JJRepository {
       );
     }
     const results = output.split(separator);
-    if (results.length > templateFields.length + 1) {
+    if (results.length > templateFields.length) {
       throw new Error(
         "Separator found in a field value. This is not supported.",
       );
-    } else if (results.length < templateFields.length + 1) {
+    } else if (results.length < templateFields.length) {
       throw new Error("Missing fields in the output.");
     }
     const ret: Show = {
