@@ -2,7 +2,13 @@ import * as vscode from "vscode";
 import which from "which";
 
 import "./repository";
-import { initJJVersion, WorkspaceSourceControlManager } from "./repository";
+import {
+  extensionDir,
+  initExtensionDir,
+  initJJVersion,
+  jjVersion,
+  WorkspaceSourceControlManager,
+} from "./repository";
 import type { JJRepository, ChangeWithDetails, Show } from "./repository";
 import { JJDecorationProvider } from "./decorationProvider";
 import { JJFileSystemProvider } from "./fileSystemProvider";
@@ -42,7 +48,8 @@ export async function activate(context: vscode.ExtensionContext) {
   logger.info("Extension activated");
 
   await initJJVersion();
-  await initConfigArgs(context.extensionUri);
+  initExtensionDir(context.extensionUri);
+  await initConfigArgs(extensionDir, jjVersion);
 
   const decorationProvider = new JJDecorationProvider((decorationProvider) => {
     context.subscriptions.push(

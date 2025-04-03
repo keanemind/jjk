@@ -7,9 +7,7 @@ import type { JJDecorationProvider } from "./decorationProvider";
 import { logger } from "./logger";
 import type { ChildProcess } from "child_process";
 
-let jjVersion = "jj 0.28.0";
-let configArgs: string[] = []; // Single global array for config arguments
-
+export let jjVersion = "jj 0.28.0";
 export async function initJJVersion() {
   try {
     const version = (
@@ -29,15 +27,64 @@ export async function initJJVersion() {
   logger.info(jjVersion);
 }
 
-export async function initConfigArgs(extensionUri: vscode.Uri) {
-  // Determine if we're in development or production mode
-  const configDir = extensionUri.fsPath.includes("extensions") ? "dist" : "src";
-
-  const configPath = vscode.Uri.joinPath(
+export let extensionDir = "";
+let fakeEditorPath = "";
+export function initExtensionDir(extensionUri: vscode.Uri) {
+  extensionDir = vscode.Uri.joinPath(
     extensionUri,
-    configDir,
-    "config.toml",
+    extensionUri.fsPath.includes("extensions") ? "dist" : "src",
   ).fsPath;
+
+  const fakeEditorExecutables: {
+    [platform in typeof process.platform]?: {
+      [arch in typeof process.arch]?: string;
+    };
+  } = {
+    freebsd: {
+      arm: "fakeeditor_linux_arm",
+      arm64: "fakeeditor_linux_arm64",
+      x64: "fakeeditor_linux_amd64",
+    },
+    netbsd: {
+      arm: "fakeeditor_linux_arm",
+      arm64: "fakeeditor_linux_arm64",
+      x64: "fakeeditor_linux_amd64",
+    },
+    openbsd: {
+      arm: "fakeeditor_linux_arm",
+      arm64: "fakeeditor_linux_arm64",
+      x64: "fakeeditor_linux_amd64",
+    },
+    linux: {
+      arm: "fakeeditor_linux_arm",
+      arm64: "fakeeditor_linux_arm64",
+      x64: "fakeeditor_linux_amd64",
+    },
+    win32: {
+      arm64: "fakeeditor_windows_arm64.exe",
+      x64: "fakeeditor_windows_amd64.exe",
+    },
+    darwin: {
+      arm64: "fakeeditor_darwin_arm64",
+      x64: "fakeeditor_darwin_amd64",
+    },
+  };
+
+  const fakeEditorExecutableName =
+    fakeEditorExecutables[process.platform]?.[process.arch];
+  if (fakeEditorExecutableName) {
+    fakeEditorPath = path.join(
+      extensionDir,
+      "fakeeditor",
+      "out",
+      fakeEditorExecutableName,
+    );
+  }
+}
+
+let configArgs: string[] = []; // Single global array for config arguments
+export async function initConfigArgs(extensionDir: string, jjVersion: string) {
+  const configPath = path.join(extensionDir, "config.toml");
 
   // Determine the config option and value based on jj version
   const configOption =
@@ -762,7 +809,6 @@ export class JJRepository {
     filepath: string;
     content: string;
   }): Promise<void> {
-    const fakeEditorPath = "/Users/keane/code/jjk/src/fakeeditor/fakeeditor";
     return new Promise((resolve, reject) => {
       const childProcess = spawnJJ(
         [
