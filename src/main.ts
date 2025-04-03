@@ -381,6 +381,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
               let message: string | undefined;
               if (
+                status.fileStatuses.length === 1 && // this is the only file in the source change
                 status.workingCopy.description !== "" &&
                 status.parentChanges[0].description !== ""
               ) {
@@ -444,6 +445,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
               let message: string | undefined;
               if (
+                resourceGroup.resourceStates.length === 1 && // this is the only file in the source change
                 status.workingCopy.description !== "" &&
                 parentChange.description !== ""
               ) {
