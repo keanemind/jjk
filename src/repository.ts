@@ -508,7 +508,19 @@ export class JJRepository {
   }
 
   async show(rev: string) {
-    const separator = "ඞjjk\n";
+    const results = await this.showAll([rev]);
+    if (results.length > 1) {
+      throw new Error("Multiple results found for the given revision.");
+    }
+    if (results.length === 0) {
+      throw new Error("No results found for the given revision.");
+    }
+    return results[0];
+  }
+
+  async showAll(revsets: string[]) {
+    const revSeparator = "jjkඞ\n";
+    const separator = "ඞjjk";
     const templateFields = [
       "change_id",
       "commit_id",
@@ -520,14 +532,24 @@ export class JJRepository {
       "conflict",
       "diff.summary()",
     ];
-    const template = templateFields.join(` ++ "${separator}" ++ `);
+    const template =
+      templateFields.join(` ++ "${separator}" ++ `) + ` ++ "${revSeparator}"`;
 
     const output = (
       await handleCommand(
-        spawnJJ(["log", "-T", template, "--no-graph", "-r", rev], {
-          timeout: 5000,
-          cwd: this.repositoryRoot,
-        }),
+        spawnJJ(
+          [
+            "log",
+            "-T",
+            template,
+            "--no-graph",
+            ...revsets.flatMap((revset) => ["-r", revset]),
+          ],
+          {
+            timeout: 5000,
+            cwd: this.repositoryRoot,
+          },
+        ),
       )
     ).toString();
 
@@ -536,98 +558,102 @@ export class JJRepository {
         "No output from jj log. Maybe the revision couldn't be found?",
       );
     }
-    const results = output.split(separator);
-    if (results.length > templateFields.length) {
-      throw new Error(
-        "Separator found in a field value. This is not supported.",
-      );
-    } else if (results.length < templateFields.length) {
-      throw new Error("Missing fields in the output.");
-    }
-    const ret: Show = {
-      change: {
-        changeId: "",
-        commitId: "",
-        description: "",
-        author: {
-          email: "",
-          name: "",
+
+    const revResults = output.split(revSeparator).slice(0, -1); // the output ends in a separator so remove the empty string at the end
+    return revResults.map((revResult) => {
+      const fields = revResult.split(separator);
+      if (fields.length > templateFields.length) {
+        throw new Error(
+          "Separator found in a field value. This is not supported.",
+        );
+      } else if (fields.length < templateFields.length) {
+        throw new Error("Missing fields in the output.");
+      }
+      const ret: Show = {
+        change: {
+          changeId: "",
+          commitId: "",
+          description: "",
+          author: {
+            email: "",
+            name: "",
+          },
+          authoredDate: "",
+          isEmpty: false,
+          isConflict: false,
         },
-        authoredDate: "",
-        isEmpty: false,
-        isConflict: false,
-      },
-      fileStatuses: [],
-    };
+        fileStatuses: [],
+      };
 
-    for (let i = 0; i < results.length; i++) {
-      const field = results[i];
-      const value = field.trim();
-      switch (templateFields[i]) {
-        case "change_id":
-          ret.change.changeId = value;
-          break;
-        case "commit_id":
-          ret.change.commitId = value;
-          break;
-        case "author.name()":
-          ret.change.author.name = value;
-          break;
-        case "author.email()":
-          ret.change.author.email = value;
-          break;
-        case 'author.timestamp().local().format("%F %H:%M:%S")':
-          ret.change.authoredDate = value;
-          break;
-        case "description":
-          ret.change.description = value;
-          break;
-        case "empty":
-          ret.change.isEmpty = value === "true";
-          break;
-        case "conflict":
-          ret.change.isConflict = value === "true";
-          break;
-        case "diff.summary()": {
-          const changeRegex = /^(A|M|D|R) (.+)$/;
-          const renameRegex = /\{(.+) => (.+)\}$/;
-          for (const line of value.split("\n").filter(Boolean)) {
-            const changeMatch = changeRegex.exec(line);
-            if (changeMatch) {
-              const [_, type, file] = changeMatch;
+      for (let i = 0; i < fields.length; i++) {
+        const field = fields[i];
+        const value = field.trim();
+        switch (templateFields[i]) {
+          case "change_id":
+            ret.change.changeId = value;
+            break;
+          case "commit_id":
+            ret.change.commitId = value;
+            break;
+          case "author.name()":
+            ret.change.author.name = value;
+            break;
+          case "author.email()":
+            ret.change.author.email = value;
+            break;
+          case 'author.timestamp().local().format("%F %H:%M:%S")':
+            ret.change.authoredDate = value;
+            break;
+          case "description":
+            ret.change.description = value;
+            break;
+          case "empty":
+            ret.change.isEmpty = value === "true";
+            break;
+          case "conflict":
+            ret.change.isConflict = value === "true";
+            break;
+          case "diff.summary()": {
+            const changeRegex = /^(A|M|D|R) (.+)$/;
+            const renameRegex = /\{(.+) => (.+)\}$/;
+            for (const line of value.split("\n").filter(Boolean)) {
+              const changeMatch = changeRegex.exec(line);
+              if (changeMatch) {
+                const [_, type, file] = changeMatch;
 
-              if (type === "R") {
-                if (renameRegex.test(file)) {
-                  const renameMatch = renameRegex.exec(file);
-                  if (renameMatch) {
-                    const [_, from, to] = renameMatch;
-                    ret.fileStatuses.push({
-                      type: "R",
-                      file: to,
-                      path: path.join(this.repositoryRoot, to),
-                      renamedFrom: from,
-                    });
+                if (type === "R") {
+                  if (renameRegex.test(file)) {
+                    const renameMatch = renameRegex.exec(file);
+                    if (renameMatch) {
+                      const [_, from, to] = renameMatch;
+                      ret.fileStatuses.push({
+                        type: "R",
+                        file: to,
+                        path: path.join(this.repositoryRoot, to),
+                        renamedFrom: from,
+                      });
+                    }
+                  } else {
+                    throw new Error(`Unexpected rename line: ${line}`);
                   }
                 } else {
-                  throw new Error(`Unexpected rename line: ${line}`);
+                  ret.fileStatuses.push({
+                    type: type as "A" | "M" | "D",
+                    file,
+                    path: path.join(this.repositoryRoot, file),
+                  });
                 }
               } else {
-                ret.fileStatuses.push({
-                  type: type as "A" | "M" | "D",
-                  file,
-                  path: path.join(this.repositoryRoot, file),
-                });
+                throw new Error(`Unexpected diff summary line: ${line}`);
               }
-            } else {
-              throw new Error(`Unexpected diff summary line: ${line}`);
             }
+            break;
           }
-          break;
         }
       }
-    }
 
-    return ret;
+      return ret;
+    });
   }
 
   readFile(rev: string, filepath: string) {
