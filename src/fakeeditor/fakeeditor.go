@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 )
 
 func main() {
@@ -22,6 +23,8 @@ func main() {
 
 	// Use select to handle the interrupt signal
 	select {
+	case <-time.After(10 * time.Second):
+		os.Exit(1)
 	case <-sigChan:
 		os.Exit(0)
 	}
