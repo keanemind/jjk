@@ -159,7 +159,7 @@
       },
       {
         "command": "jj.squashSelectedRanges",
-        "title": "Squash selected changes"
+        "title": "Squash selected changes..."
       }
     ],
     "menus": {
