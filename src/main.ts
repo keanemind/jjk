@@ -889,10 +889,8 @@ export async function activate(context: vscode.ExtensionContext) {
           originalUri: vscode.Uri,
           textEditor: vscode.TextEditor,
         ) {
-          console.log("originalUri", originalUri);
           const originalDocument =
             await vscode.workspace.openTextDocument(originalUri);
-          console.log("originalDocument", originalDocument.getText());
           const originalLines = originalDocument.getText().split("\n");
           const editorLines = textEditor.document.getText().split("\n");
           const diff = diffComputer.computeDiff(originalLines, editorLines, {
@@ -900,14 +898,12 @@ export async function activate(context: vscode.ExtensionContext) {
             maxComputationTimeMs: 5000,
             computeMoves: false,
           });
-          console.log("diff", diff);
 
           const lineChanges = toLineChanges(diff);
           const selectedLines = toLineRanges(
             textEditor.selections,
             textEditor.document,
           );
-          console.log("selectedLines", selectedLines);
           const selectedChanges = lineChanges
             .map((change) =>
               selectedLines.reduce<LineChange | null>(
@@ -918,7 +914,6 @@ export async function activate(context: vscode.ExtensionContext) {
               ),
             )
             .filter((d) => !!d);
-          console.log("selectedChanges", selectedChanges);
 
           if (!selectedChanges.length) {
             vscode.window.showInformationMessage(
@@ -927,15 +922,11 @@ export async function activate(context: vscode.ExtensionContext) {
             return;
           }
 
-          console.log("squash range", selectedChanges);
-
           const result = applyLineChanges(
             originalDocument,
             textEditor.document,
             selectedChanges,
           );
-
-          console.log("result", result);
 
           await repository.squashContent({
             fromRev: "@",

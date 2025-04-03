@@ -777,6 +777,7 @@ export class JJRepository {
           "--use-destination-message",
         ],
         {
+          timeout: 10_000,
           cwd: this.repositoryRoot,
         },
       );
@@ -807,12 +808,22 @@ export class JJRepository {
         errOutput += data.toString();
       });
 
-      childProcess.on("close", (code) => {
-        if (code !== 0) {
-          reject(new Error(`jj squash exited with code ${code}: ${errOutput}`));
-          return;
+      childProcess.on("close", (code, signal) => {
+        if (code) {
+          reject(
+            new Error(
+              `Command failed with exit code ${code}.\nstderr: ${errOutput}`,
+            ),
+          );
+        } else if (signal) {
+          reject(
+            new Error(
+              `Command failed with signal ${signal}.\nstderr: ${errOutput}`,
+            ),
+          );
+        } else {
+          resolve();
         }
-        resolve();
       });
     });
   }
