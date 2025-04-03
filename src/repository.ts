@@ -238,12 +238,16 @@ class RepositorySourceControlManager {
       provideOriginalResource: async (uri) => {
         // Convert to a specific commitId so our fileSystemProvider can cache properly
         if (uri.scheme === "file") {
-          const show = await this.repository.show("@-");
-          return toJJUri(withRev(uri, show.change.commitId));
+          const status = await this.repository.getStatus(true);
+          if (status.parentChanges.length === 1) {
+            return toJJUri(withRev(uri, status.parentChanges[0].commitId));
+          }
         } else if (uri.scheme === "jj") {
           const rev = getRev(uri);
-          const show = await this.repository.show(`${rev}-`);
-          return toJJUri(withRev(uri, show.change.commitId));
+          const showResults = await this.repository.showAll([`${rev}-`]);
+          if (showResults.length === 1) {
+            return toJJUri(withRev(uri, showResults[0].change.commitId));
+          }
         }
       },
     };
