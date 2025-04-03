@@ -379,9 +379,27 @@ export async function activate(context: vscode.ExtensionContext) {
                 return;
               }
 
+              let message: string | undefined;
+              if (
+                status.workingCopy.description !== "" &&
+                status.parentChanges[0].description !== ""
+              ) {
+                message = await vscode.window.showInputBox({
+                  prompt: "Provide a description",
+                  placeHolder: "Set description here...",
+                });
+
+                if (message === undefined) {
+                  return;
+                } else if (message === "") {
+                  message = status.parentChanges[0].description;
+                }
+              }
+
               await repository.squash({
                 fromRev: "@",
                 toRev: "@-",
+                message,
                 filepaths: [resourceState.resourceUri.fsPath],
               });
               vscode.window.showInformationMessage(
@@ -410,13 +428,41 @@ export async function activate(context: vscode.ExtensionContext) {
               if (!repository) {
                 throw new Error("Repository not found");
               }
+              const status = await repository.status(true);
 
-              const group =
+              const resourceGroup =
                 workspaceSCM.getResourceGroupFromResourceState(resourceState);
 
+              const parentChange = status.parentChanges.find(
+                (change) => change.changeId === resourceGroup.id,
+              );
+              if (parentChange === undefined) {
+                throw new Error(
+                  "Parent change we're squashing from was not found in status",
+                );
+              }
+
+              let message: string | undefined;
+              if (
+                status.workingCopy.description !== "" &&
+                parentChange.description !== ""
+              ) {
+                message = await vscode.window.showInputBox({
+                  prompt: "Provide a description",
+                  placeHolder: "Set description here...",
+                });
+
+                if (message === undefined) {
+                  return;
+                } else if (message === "") {
+                  message = status.workingCopy.description;
+                }
+              }
+
               await repository.squash({
-                fromRev: group.id,
+                fromRev: resourceGroup.id,
                 toRev: "@",
+                message,
                 filepaths: [resourceState.resourceUri.fsPath],
               });
               vscode.window.showInformationMessage(
@@ -506,11 +552,6 @@ export async function activate(context: vscode.ExtensionContext) {
             }
 
             try {
-              const repository =
-                workspaceSCM.getRepositoryFromResourceGroup(resourceGroup);
-              if (!repository) {
-                throw new Error("Repository not found");
-              }
               await repository.squash({ fromRev: "@", toRev: "@-", message });
               vscode.window.showInformationMessage(
                 "Changes successfully squashed.",
@@ -538,10 +579,19 @@ export async function activate(context: vscode.ExtensionContext) {
             }
             const status = await repository.status(true);
 
+            const parentChange = status.parentChanges.find(
+              (change) => change.changeId === resourceGroup.id,
+            );
+            if (parentChange === undefined) {
+              throw new Error(
+                "Parent change we're squashing from was not found in status",
+              );
+            }
+
             let message: string | undefined;
             if (
               status.workingCopy.description !== "" &&
-              status.parentChanges[0].description !== ""
+              parentChange.description !== ""
             ) {
               message = await vscode.window.showInputBox({
                 prompt: "Provide a description",
@@ -556,11 +606,6 @@ export async function activate(context: vscode.ExtensionContext) {
             }
 
             try {
-              const repository =
-                workspaceSCM.getRepositoryFromResourceGroup(resourceGroup);
-              if (!repository) {
-                throw new Error("Repository not found");
-              }
               await repository.squash({
                 fromRev: resourceGroup.id,
                 toRev: "@",
