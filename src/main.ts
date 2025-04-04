@@ -19,9 +19,6 @@ import winston from "winston";
 import { initConfigArgs } from "./repository";
 
 export async function activate(context: vscode.ExtensionContext) {
-  await initJJVersion();
-  await initConfigArgs(context.extensionUri);
-
   const outputChannel = vscode.window.createOutputChannel("Jujutsu Kaizen", {
     log: true,
   });
@@ -38,6 +35,9 @@ export async function activate(context: vscode.ExtensionContext) {
   });
 
   logger.info("Extension activated");
+
+  await initJJVersion();
+  await initConfigArgs(context.extensionUri);
 
   const decorationProvider = new JJDecorationProvider((decorationProvider) => {
     context.subscriptions.push(
