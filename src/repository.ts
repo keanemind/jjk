@@ -42,31 +42,31 @@ export function initExtensionDir(extensionUri: vscode.Uri) {
   } = {
     freebsd: {
       arm: "fakeeditor_linux_arm",
-      arm64: "fakeeditor_linux_arm64",
-      x64: "fakeeditor_linux_amd64",
+      arm64: "fakeeditor_linux_aarch64",
+      x64: "fakeeditor_linux_x86_64",
     },
     netbsd: {
       arm: "fakeeditor_linux_arm",
-      arm64: "fakeeditor_linux_arm64",
-      x64: "fakeeditor_linux_amd64",
+      arm64: "fakeeditor_linux_aarch64",
+      x64: "fakeeditor_linux_x86_64",
     },
     openbsd: {
       arm: "fakeeditor_linux_arm",
-      arm64: "fakeeditor_linux_arm64",
-      x64: "fakeeditor_linux_amd64",
+      arm64: "fakeeditor_linux_aarch64",
+      x64: "fakeeditor_linux_x86_64",
     },
     linux: {
       arm: "fakeeditor_linux_arm",
-      arm64: "fakeeditor_linux_arm64",
-      x64: "fakeeditor_linux_amd64",
+      arm64: "fakeeditor_linux_aarch64",
+      x64: "fakeeditor_linux_x86_64",
     },
     win32: {
-      arm64: "fakeeditor_windows_arm64.exe",
-      x64: "fakeeditor_windows_amd64.exe",
+      arm64: "fakeeditor_windows_aarch64.exe",
+      x64: "fakeeditor_windows_x86_64.exe",
     },
     darwin: {
-      arm64: "fakeeditor_darwin_arm64",
-      x64: "fakeeditor_darwin_amd64",
+      arm64: "fakeeditor_macos_aarch64",
+      x64: "fakeeditor_macos_x86_64",
     },
   };
 
@@ -76,7 +76,8 @@ export function initExtensionDir(extensionUri: vscode.Uri) {
     fakeEditorPath = path.join(
       extensionDir,
       "fakeeditor",
-      "out",
+      "zig-out",
+      "bin",
       fakeEditorExecutableName,
     );
   }

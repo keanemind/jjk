@@ -15,8 +15,22 @@ pub fn build(b: *std.Build) void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
+    // Determine the output name based on target info
+    var exe_name: []const u8 = "fakeeditor";
+    if (target.query.os_tag) |os| {
+        const os_name = @tagName(os);
+        if (target.query.cpu_arch) |arch| {
+            const arch_name = @tagName(arch);
+            
+            // Create name in format: fakeeditor_{os}_{arch}
+            exe_name = b.fmt("fakeeditor_{s}_{s}", .{
+                os_name, arch_name,
+            });
+        }
+    }
+
     const exe = b.addExecutable(.{
-        .name = "fakeeditor",
+        .name = exe_name,
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
