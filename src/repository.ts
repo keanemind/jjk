@@ -1051,7 +1051,7 @@ function parseJJStatus(
 
   const changeRegex = /^(A|M|D|R) (.+)$/;
   const commitRegex =
-    /^(Working copy |Parent commit): (\S+) (\S+)(?: (\S+) \|)?(?: (.*))?$/;
+    /^(Working copy|Parent commit)\s*(\(@-?\))?\s*:\s+(\S+)\s+(\S+)(?:\s+(\S+)\s+\|)?(?:\s+(.*))?$/;
   const renameRegex = /^\{(.+) => (.+)\}$/;
 
   for (const line of lines) {
@@ -1086,7 +1086,8 @@ function parseJJStatus(
 
     const commitMatch = commitRegex.exec(line);
     if (commitMatch) {
-      const [_, type, id, hash, branch, description] = commitMatch;
+      const [_firstMatch, type, _at, id, hash, branch, description] =
+        commitMatch;
 
       const trimmedDescription = description.trim();
       const finalDescription = trimmedDescription.endsWith(
@@ -1104,7 +1105,7 @@ function parseJJStatus(
         isConflict: false,
       };
 
-      if (type === "Working copy ") {
+      if (type === "Working copy") {
         workingCopy = commitDetails;
       } else if (type === "Parent commit") {
         parentCommits.push(commitDetails);
