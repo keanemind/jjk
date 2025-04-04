@@ -53,91 +53,114 @@
       {
         "command": "jj.describe",
         "title": "Update change description",
+        "category": "Jujutsu",
         "icon": "$(edit)"
       },
       {
         "command": "jj.new",
         "title": "Create new change",
+        "category": "Jujutsu",
         "icon": "$(plus)"
       },
       {
         "command": "jj.squashToParentResourceGroup",
         "title": "Move changes to parent",
+        "category": "Jujutsu",
         "icon": "$(arrow-down)"
       },
       {
         "command": "jj.squashToWorkingCopyResourceGroup",
         "title": "Move changes to working copy",
+        "category": "Jujutsu",
         "icon": "$(arrow-up)"
       },
       {
         "command": "jj.squashToParentResourceState",
         "title": "Move changes to parent",
+        "category": "Jujutsu",
         "icon": "$(arrow-down)"
       },
       {
         "command": "jj.squashToWorkingCopyResourceState",
         "title": "Move changes to working copy",
+        "category": "Jujutsu",
         "icon": "$(arrow-up)"
       },
       {
         "command": "jj.editResourceGroup",
         "title": "Edit this change",
+        "category": "Jujutsu",
         "icon": "$(sign-in)"
       },
       {
         "command": "jj.restoreResourceState",
         "title": "Discard changes",
+        "category": "Jujutsu",
         "icon": "$(discard)"
       },
       {
         "command": "jj.restoreResourceGroup",
         "title": "Discard changes",
+        "category": "Jujutsu",
         "icon": "$(discard)"
       },
       {
         "command": "jj.gitFetch",
-        "title": "Fetch from remote"
+        "title": "Fetch from remote",
+        "category": "Jujutsu"
       },
       {
         "command": "jj.refreshOperationLog",
         "title": "Refresh operation log",
+        "category": "Jujutsu",
         "icon": "$(refresh)"
       },
       {
         "command": "jj.selectOperationLogRepo",
         "title": "Select repository",
+        "category": "Jujutsu",
         "icon": "$(repo)"
       },
       {
         "command": "jj.operationUndo",
         "title": "Undo operation",
+        "category": "Jujutsu",
         "icon": "$(discard)"
       },
       {
         "command": "jj.operationRestore",
         "title": "Restore repo to the state at this operation",
+        "category": "Jujutsu",
         "icon": "$(history)"
       },
       {
         "command": "jj.refreshGraphWebview",
         "title": "Refresh source control graph",
+        "category": "Jujutsu",
         "icon": "$(refresh)"
       },
       {
         "command": "jj.mergeGraphWebview",
         "title": "Create merge change with selected as parents",
+        "category": "Jujutsu",
         "icon": "$(git-merge)"
       },
       {
         "command": "jj.selectGraphWebviewRepo",
         "title": "Select repository",
+        "category": "Jujutsu",
         "icon": "$(repo)"
       },
       {
         "command": "jj.placeholderForFolders",
         "title": "​",
+        "category": "Jujutsu",
         "enablement": "false"
+      },
+      {
+        "command": "jj.squashSelectedRanges",
+        "title": "Squash selected changes...",
+        "category": "Jujutsu"
       }
     ],
     "menus": {
