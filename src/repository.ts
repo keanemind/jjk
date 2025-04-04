@@ -57,11 +57,12 @@ export async function initConfigArgs(extensionUri: vscode.Uri) {
 }
 
 function spawnJJ(args: string[], options: Parameters<typeof spawn>[2]) {
-  logger.info(`spawn: jj ${args.join(" ")}`, {
+  const allArgs = [...args, ...configArgs];
+  logger.info(`spawn: jj ${allArgs.join(" ")}`, {
     spawnOptions: options,
   });
 
-  return spawn("jj", [...args, ...configArgs], options);
+  return spawn("jj", allArgs, options);
 }
 
 function handleCommand(childProcess: ChildProcess) {
