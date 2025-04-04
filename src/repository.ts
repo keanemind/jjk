@@ -58,7 +58,7 @@ export async function initConfigArgs(extensionUri: vscode.Uri) {
 
 function spawnJJ(args: string[], options: Parameters<typeof spawn>[2]) {
   const allArgs = [...args, ...configArgs];
-  logger.info(`spawn: jj ${allArgs.join(" ")}`, {
+  logger.debug(`spawn: jj ${allArgs.join(" ")}`, {
     spawnOptions: options,
   });
 
