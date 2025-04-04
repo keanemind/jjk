@@ -7,7 +7,7 @@ import { logger } from "./logger";
 import type { ChildProcess } from "child_process";
 import fs from "fs";
 
-let jjVersion = "jj 0.27.0";
+let jjVersion = "jj 0.28.0";
 let configArgs: string[] = []; // Single global array for config arguments
 
 export async function initJJVersion() {
@@ -24,7 +24,7 @@ export async function initJJVersion() {
       jjVersion = version;
     }
   } catch {
-    // Default to 0.27.0
+    // Assume the version
   }
   logger.info(jjVersion);
 }
