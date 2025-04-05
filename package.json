@@ -140,6 +140,16 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "jj.openExpandedGraphWebview",
+        "title": "Open the expanded source control graph view",
+        "icon": "$(history)"
+      },
+      {
+        "command": "jj.fileHistory",
+        "title": "View file history",
+        "icon": "$(history)"
+      },
+      {
         "command": "jj.mergeGraphWebview",
         "title": "Create merge change with selected as parents",
         "category": "Jujutsu",
@@ -159,6 +169,12 @@
       }
     ],
     "menus": {
+      "explorer/context": [
+        {
+          "command": "jj.fileHistory",
+          "when": "resourceScheme == file"
+        }
+      ],
       "view/title": [
         {
           "command": "jj.refreshOperationLog",
@@ -172,6 +188,11 @@
         },
         {
           "command": "jj.refreshGraphWebview",
+          "when": "view == jjGraphWebview",
+          "group": "navigation"
+        },
+        {
+          "command": "jj.openExpandedGraphWebview",
           "when": "view == jjGraphWebview",
           "group": "navigation"
         },
