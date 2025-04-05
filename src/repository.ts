@@ -257,8 +257,11 @@ class RepositorySourceControlManager {
   async refresh(status: RepositoryStatus) {
     if (!this.refreshPromise) {
       this.refreshPromise = this.refreshUnsafe(status);
-      await this.refreshPromise;
-      this.refreshPromise = undefined;
+      try {
+        await this.refreshPromise;
+      } finally {
+        this.refreshPromise = undefined;
+      }
     } else {
       await this.refreshPromise;
     }
