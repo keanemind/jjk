@@ -45,6 +45,9 @@ export class JJDecorationProvider implements FileDecorationProvider {
     fileStatusesByChange: Map<string, FileStatus[]>,
     trackedFiles: Set<string>,
   ) {
+    if (process.platform === "win32") {
+      trackedFiles = convertSetToLowercase(trackedFiles);
+    }
     const nextDecorations = new Map<string, FileDecoration>();
     for (const [changeId, fileStatuses] of fileStatusesByChange) {
       for (const fileStatus of fileStatuses) {
@@ -120,7 +123,9 @@ export class JJDecorationProvider implements FileDecorationProvider {
     const rev = getRevOpt(uri) ?? "@";
     const key = getKey(uri.fsPath, rev);
     if (rev === "@" && !this.decorations.has(key)) {
-      if (!this.trackedFiles.has(uri.fsPath)) {
+      const fsPath =
+        process.platform === "win32" ? uri.fsPath.toLowerCase() : uri.fsPath;
+      if (!this.trackedFiles.has(fsPath)) {
         return {
           color: new ThemeColor("jjDecoration.ignoredResourceForeground"),
         };
@@ -131,9 +136,24 @@ export class JJDecorationProvider implements FileDecorationProvider {
 }
 
 function getKey(fsPath: string, rev: string) {
+  fsPath = process.platform === "win32" ? fsPath.toLowerCase() : fsPath;
   return JSON.stringify({ fsPath, rev });
 }
 
 function parseKey(key: string) {
   return JSON.parse(key) as { fsPath: string; rev: string };
+}
+
+function convertSetToLowercase<T>(originalSet: Set<T>): Set<T> {
+  const lowercaseSet = new Set<T>();
+
+  for (const item of originalSet) {
+    if (typeof item === "string") {
+      lowercaseSet.add(item.toLowerCase() as unknown as T);
+    } else {
+      lowercaseSet.add(item);
+    }
+  }
+
+  return lowercaseSet;
 }
