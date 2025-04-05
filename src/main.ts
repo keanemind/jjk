@@ -372,18 +372,33 @@ export async function activate(context: vscode.ExtensionContext) {
               }
 
               const status = await repository.status(true);
+
+              let destinationParentChange = status.parentChanges[0];
               if (status.parentChanges.length > 1) {
-                vscode.window.showErrorMessage(
-                  `Squash failed. Revision has multiple parents.`,
+                const parentOptions = status.parentChanges.map((parent) => ({
+                  label: parent.changeId,
+                  description: parent.description || "(no description)",
+                  parent,
+                }));
+                const selection = await vscode.window.showQuickPick(
+                  parentOptions,
+                  {
+                    placeHolder: "Select parent to squash into",
+                  },
                 );
-                return;
+                if (!selection) {
+                  return;
+                }
+                destinationParentChange = selection.parent;
+              } else if (status.parentChanges.length === 0) {
+                throw new Error("No parent changes found");
               }
 
               let message: string | undefined;
               if (
                 status.fileStatuses.length === 1 && // this is the only file in the source change
                 status.workingCopy.description !== "" &&
-                status.parentChanges[0].description !== ""
+                destinationParentChange.description !== ""
               ) {
                 message = await vscode.window.showInputBox({
                   prompt: "Provide a description",
@@ -393,13 +408,13 @@ export async function activate(context: vscode.ExtensionContext) {
                 if (message === undefined) {
                   return;
                 } else if (message === "") {
-                  message = status.parentChanges[0].description;
+                  message = destinationParentChange.description;
                 }
               }
 
               await repository.squash({
                 fromRev: "@",
-                toRev: "@-",
+                toRev: destinationParentChange.changeId,
                 message,
                 filepaths: [resourceState.resourceUri.fsPath],
               });
@@ -529,17 +544,32 @@ export async function activate(context: vscode.ExtensionContext) {
               throw new Error("Repository not found");
             }
             const status = await repository.status(true);
+
+            let destinationParentChange = status.parentChanges[0];
             if (status.parentChanges.length > 1) {
-              vscode.window.showErrorMessage(
-                `Squash failed. Revision has multiple parents.`,
+              const parentOptions = status.parentChanges.map((parent) => ({
+                label: parent.changeId,
+                description: parent.description || "(no description)",
+                parent,
+              }));
+              const selection = await vscode.window.showQuickPick(
+                parentOptions,
+                {
+                  placeHolder: "Select parent to squash into",
+                },
               );
-              return;
+              if (!selection) {
+                return;
+              }
+              destinationParentChange = selection.parent;
+            } else if (status.parentChanges.length === 0) {
+              throw new Error("No parent changes found");
             }
 
             let message: string | undefined;
             if (
               status.workingCopy.description !== "" &&
-              status.parentChanges[0].description !== ""
+              destinationParentChange.description !== ""
             ) {
               message = await vscode.window.showInputBox({
                 prompt: "Provide a description",
@@ -549,12 +579,16 @@ export async function activate(context: vscode.ExtensionContext) {
               if (message === undefined) {
                 return;
               } else if (message === "") {
-                message = status.parentChanges[0].description;
+                message = destinationParentChange.description;
               }
             }
 
             try {
-              await repository.squash({ fromRev: "@", toRev: "@-", message });
+              await repository.squash({
+                fromRev: "@",
+                toRev: destinationParentChange.changeId,
+                message,
+              });
               vscode.window.showInformationMessage(
                 "Changes successfully squashed.",
               );
