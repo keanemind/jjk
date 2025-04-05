@@ -479,13 +479,13 @@ export class JJRepository {
 
     const output = (
       await handleCommand(
-        spawnJJ(["status"], {
+        spawnJJ(["status", "--color=always"], {
           timeout: 5000,
           cwd: this.repositoryRoot,
         }),
       )
     ).toString();
-    const status = parseJJStatus(this.repositoryRoot, output);
+    const status = await parseJJStatus(this.repositoryRoot, output);
 
     this.statusCache = status;
     return status;
@@ -1037,10 +1037,10 @@ export type Operation = {
   snapshot: boolean;
 };
 
-function parseJJStatus(
+async function parseJJStatus(
   repositoryRoot: string,
   output: string,
-): RepositoryStatus {
+): Promise<RepositoryStatus> {
   const lines = output.split("\n");
   const fileStatuses: FileStatus[] = [];
   let workingCopy: Change = {
@@ -1058,11 +1058,17 @@ function parseJJStatus(
   const renameRegex = /^\{(.+) => (.+)\}$/;
 
   for (const line of lines) {
-    if (line.startsWith("Working copy changes:") || line.trim() === "") {
+    if (
+      line.startsWith("Working copy changes:") ||
+      line.startsWith("The working copy is clean") ||
+      line.trim() === ""
+    ) {
       continue;
     }
 
-    const changeMatch = changeRegex.exec(line);
+    const ansiStrippedLine = await stripAnsiCodes(line);
+
+    const changeMatch = changeRegex.exec(ansiStrippedLine);
     if (changeMatch) {
       const [_, type, file] = changeMatch;
 
@@ -1089,28 +1095,40 @@ function parseJJStatus(
 
     const commitMatch = commitRegex.exec(line);
     if (commitMatch) {
-      const [_firstMatch, type, _at, id, hash, branch, description] =
-        commitMatch;
+      const [
+        _firstMatch,
+        type,
+        _at,
+        changeId,
+        commitId,
+        branch,
+        descriptionSection,
+      ] = commitMatch as unknown as [string, ...(string | undefined)[]];
 
-      const trimmedDescription = description.trim();
-      const finalDescription = trimmedDescription.endsWith(
-        "(no description set)",
+      if (!type || !changeId || !commitId || !descriptionSection) {
+        throw new Error(`Unexpected commit line: ${line}`);
+      }
+
+      const cleanedDescription = (
+        await extractColoredRegions(descriptionSection.trim())
       )
-        ? ""
-        : trimmedDescription;
+        .filter((region) => !region.colored)
+        .map((region) => region.text)
+        .join("")
+        .trim();
 
       const commitDetails: Change = {
-        changeId: id,
-        commitId: hash,
-        branch: branch,
-        description: finalDescription,
+        changeId: await stripAnsiCodes(changeId),
+        commitId: await stripAnsiCodes(commitId),
+        branch: branch ? await stripAnsiCodes(branch) : undefined,
+        description: cleanedDescription,
         isEmpty: false,
         isConflict: false,
       };
 
-      if (type === "Working copy") {
+      if ((await stripAnsiCodes(type)) === "Working copy") {
         workingCopy = commitDetails;
-      } else if (type === "Parent commit") {
+      } else if ((await stripAnsiCodes(type)) === "Parent commit") {
         parentCommits.push(commitDetails);
       }
     }
@@ -1121,4 +1139,61 @@ function parseJJStatus(
     workingCopy,
     parentChanges: parentCommits,
   };
+}
+
+async function extractColoredRegions(input: string) {
+  const { default: ansiRegex } = await import("ansi-regex");
+  const regex = ansiRegex();
+  let isColored = false;
+  const result: { text: string; colored: boolean }[] = [];
+
+  let lastIndex = 0;
+
+  for (const match of input.matchAll(regex)) {
+    const matchStart = match.index;
+    const matchEnd = match.index + match[0].length;
+
+    if (matchStart > lastIndex) {
+      result.push({
+        text: input.slice(lastIndex, matchStart),
+        colored: isColored,
+      });
+    }
+
+    const code = match[0];
+    // Update color state
+    if (code === "\x1b[0m" || code === "\x1b[39m") {
+      isColored = false;
+    } else if (
+      // standard foreground colors (30–37)
+      /\x1b\[3[0-7]m/.test(code) || // eslint-disable-line no-control-regex
+      // bright foreground (90–97)
+      /\x1b\[9[0-7]m/.test(code) || // eslint-disable-line no-control-regex
+      // 256-color foreground
+      /\x1b\[38;5;\d+m/.test(code) || // eslint-disable-line no-control-regex
+      // 256-color background
+      /\x1b\[48;5;\d+m/.test(code) || // eslint-disable-line no-control-regex
+      // truecolor fg
+      /\x1b\[38;2;\d+;\d+;\d+m/.test(code) || // eslint-disable-line no-control-regex
+      // truecolor bg
+      /\x1b\[48;2;\d+;\d+;\d+m/.test(code) // eslint-disable-line no-control-regex
+    ) {
+      isColored = true;
+    }
+
+    lastIndex = matchEnd;
+  }
+
+  // Remaining text after the last match
+  if (lastIndex < input.length) {
+    result.push({ text: input.slice(lastIndex), colored: isColored });
+  }
+
+  return result;
+}
+
+async function stripAnsiCodes(input: string) {
+  const { default: ansiRegex } = await import("ansi-regex");
+  const regex = ansiRegex();
+  return input.replace(regex, "");
 }
