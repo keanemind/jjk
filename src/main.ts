@@ -983,6 +983,7 @@ export async function activate(context: vscode.ExtensionContext) {
             toJJUri(activeTab.input.original),
             textEditor,
           );
+          await updateResources();
         } else if (
           textEditor.document.uri.scheme === "file" &&
           ["@", undefined].includes(getRevOpt(textEditor.document.uri))
@@ -998,6 +999,7 @@ export async function activate(context: vscode.ExtensionContext) {
             ),
             textEditor,
           );
+          await updateResources();
         }
       }),
     );
