@@ -140,10 +140,10 @@
         "icon": "$(refresh)"
       },
       {
-        "command": "jj.mergeGraphWebview",
-        "title": "Create merge change with selected as parents",
+        "command": "jj.newGraphWebview",
+        "title": "Create new change with selected as parents",
         "category": "Jujutsu",
-        "icon": "$(git-merge)"
+        "icon": "$(plus)"
       },
       {
         "command": "jj.selectGraphWebviewRepo",
@@ -176,8 +176,8 @@
           "group": "navigation"
         },
         {
-          "command": "jj.mergeGraphWebview",
-          "when": "view == jjGraphWebview && jjGraphView.multipleNodesSelected",
+          "command": "jj.newGraphWebview",
+          "when": "view == jjGraphWebview && jjGraphView.nodesSelected",
           "group": "navigation"
         },
         {

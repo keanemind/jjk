@@ -714,9 +714,9 @@ export async function activate(context: vscode.ExtensionContext) {
     );
 
     context.subscriptions.push(
-      vscode.commands.registerCommand("jj.mergeGraphWebview", async () => {
+      vscode.commands.registerCommand("jj.newGraphWebview", async () => {
         const selectedNodes = Array.from(graphWebview.selectedNodes);
-        if (selectedNodes.length < 2) {
+        if (selectedNodes.length < 1) {
           return;
         }
         const revs = selectedNodes;

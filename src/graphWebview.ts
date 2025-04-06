@@ -107,8 +107,8 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
           this.selectedNodes = new Set(message.selectedNodes);
           vscode.commands.executeCommand(
             "setContext",
-            "jjGraphView.multipleNodesSelected",
-            message.selectedNodes.length > 1,
+            "jjGraphView.nodesSelected",
+            message.selectedNodes.length,
           );
           break;
       }
