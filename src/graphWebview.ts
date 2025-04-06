@@ -308,59 +308,57 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
   }
 }
 
+type JJLogNode = {
+  id: string;
+  commit_id: string;
+  description: string;
+  is_working_copy: boolean;
+  is_empty: boolean;
+  email: string;
+  timestamp: string;
+  parents: string[];
+};
+
 export function parseJJLog(output: string): ChangeNode[] {
-  const lines = output.split("\n");
-  const changeNodes: ChangeNode[] = [];
+  const nodes = output.trim().split("\n").map((x) => {
+    const start = x.indexOf("{");
+    const end = x.lastIndexOf("}");
+    if (start === -1 || end === -1) {
+      return;
+    }
+    return JSON.parse(x.slice(start, end + 1)) as JJLogNode;
+  }).filter((x): x is JJLogNode => x !== undefined);
 
-  for (let i = 0; i < lines.length; i += 2) {
-    const oddLine = lines[i];
-    let evenLine = lines[i + 1] || "";
+  return nodes.map((node) => {
+    let formattedLine = "";
+    const changeId = node.id.slice(0, 8);
+    const commitId = node.commit_id.slice(0, 8);
 
-    let changeId = "";
-    if (i % 2 === 0) {
-      // Check if the line is odd-numbered (0-based index, so 0, 2, 4... are odd lines)
-      const match = oddLine.match(/\b([a-zA-Z0-9]+)\b/); // Match the first group of alphanumeric characters
-      if (match) {
-        changeId = match[1];
-      }
+    if (node.is_empty) {
+      formattedLine = "(empty) ";
+    }
+    
+    if (node.description === "") {
+      formattedLine += "(no description set) ";
+    } else {
+      formattedLine += node.description;
     }
 
-    // Match the first alphanumeric character or opening parenthesis and everything after it
-    const match = evenLine.match(/([a-zA-Z0-9(].*)/);
-    const description = match ? match[1] : "";
+    formattedLine += ` • ${changeId}`;
+    formattedLine += ` • ${commitId}`;
 
-    // Remove the description from the even line
-    if (description) {
-      evenLine = evenLine.replace(description, "");
+    let branchType = "◆";
+    if (node.is_working_copy) {
+      branchType = "@";
     }
 
-    const emailMatch = oddLine.match(
-      /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/,
+    return new ChangeNode(
+      formattedLine,
+      `${node.email} ${node.timestamp}`,
+      changeId,
+      changeId,
+      node.parents,
+      branchType,
     );
-    const timestampMatch = oddLine.match(
-      /\b\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\b/,
-    );
-    const symbolsMatch = oddLine.match(/^[^a-zA-Z0-9(]+/);
-    const commitIdMatch = oddLine.match(/([a-zA-Z0-9]{8})$/);
-
-    // Add this: Find first occurrence of @, ○, or ◆
-    const branchTypeMatch = symbolsMatch
-      ? symbolsMatch[0].match(/[@○◆]/)
-      : null;
-    const branchType = branchTypeMatch ? branchTypeMatch[0] : undefined;
-    const formattedLine = `${description}${changeId === "zzzzzzzz" ? "root()" : ""} • ${changeId} • ${commitIdMatch ? commitIdMatch[0] : ""}`;
-
-    // Create a ChangeNode for the odd line with the appended description
-    changeNodes.push(
-      new ChangeNode(
-        formattedLine,
-        `${emailMatch ? emailMatch[0] : ""} ${timestampMatch ? timestampMatch[0] : ""}`,
-        changeId,
-        changeId,
-        undefined,
-        branchType,
-      ),
-    );
-  }
-  return changeNodes;
+  });
 }

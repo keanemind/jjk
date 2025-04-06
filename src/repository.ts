@@ -876,7 +876,14 @@ export class JJRepository {
 
   async log(
     rev: string = "::",
-    template: string = "builtin_log_compact",
+    template: string = `"{ \\"id\\": " ++ stringify(change_id).escape_json() \
+      ++ ", \\"commit_id\\": " ++ stringify(commit_id).escape_json() \
+      ++ ", \\"description\\": " ++ description.first_line().escape_json() \
+      ++ ", \\"is_working_copy\\": " ++ if(current_working_copy, "true", "false") \
+      ++ ", \\"is_empty\\": " ++ if(empty, "true", "false") \
+      ++ ", \\"email\\": " ++ stringify(author.email()).escape_json() \
+      ++ ", \\"timestamp\\": " ++ author.timestamp().format("%F %T").escape_json() \
+      ++ ", \\"parents\\": [" ++ parents.map(|c| stringify(c.change_id()).escape_json()).join(",") ++ "] }\n"`,
     limit: number = 50,
     noGraph: boolean = false,
   ) {
