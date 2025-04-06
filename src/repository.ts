@@ -1,15 +1,13 @@
 import path from "path";
 import * as vscode from "vscode";
 import spawn from "cross-spawn";
+import fs from "fs/promises";
 import { getRev, toJJUri, withRev } from "./uri";
 import type { JJDecorationProvider } from "./decorationProvider";
 import { logger } from "./logger";
 import type { ChildProcess } from "child_process";
-import fs from "fs";
 
-let jjVersion = "jj 0.28.0";
-let configArgs: string[] = []; // Single global array for config arguments
-
+export let jjVersion = "jj 0.28.0";
 export async function initJJVersion() {
   try {
     const version = (
@@ -29,15 +27,65 @@ export async function initJJVersion() {
   logger.info(jjVersion);
 }
 
-export async function initConfigArgs(extensionUri: vscode.Uri) {
-  // Determine if we're in development or production mode
-  const configDir = extensionUri.fsPath.includes("extensions") ? "dist" : "src";
-
-  const configPath = vscode.Uri.joinPath(
+export let extensionDir = "";
+let fakeEditorPath = "";
+export function initExtensionDir(extensionUri: vscode.Uri) {
+  extensionDir = vscode.Uri.joinPath(
     extensionUri,
-    configDir,
-    "config.toml",
+    extensionUri.fsPath.includes("extensions") ? "dist" : "src",
   ).fsPath;
+
+  const fakeEditorExecutables: {
+    [platform in typeof process.platform]?: {
+      [arch in typeof process.arch]?: string;
+    };
+  } = {
+    freebsd: {
+      arm: "fakeeditor_linux_arm",
+      arm64: "fakeeditor_linux_aarch64",
+      x64: "fakeeditor_linux_x86_64",
+    },
+    netbsd: {
+      arm: "fakeeditor_linux_arm",
+      arm64: "fakeeditor_linux_aarch64",
+      x64: "fakeeditor_linux_x86_64",
+    },
+    openbsd: {
+      arm: "fakeeditor_linux_arm",
+      arm64: "fakeeditor_linux_aarch64",
+      x64: "fakeeditor_linux_x86_64",
+    },
+    linux: {
+      arm: "fakeeditor_linux_arm",
+      arm64: "fakeeditor_linux_aarch64",
+      x64: "fakeeditor_linux_x86_64",
+    },
+    win32: {
+      arm64: "fakeeditor_windows_aarch64.exe",
+      x64: "fakeeditor_windows_x86_64.exe",
+    },
+    darwin: {
+      arm64: "fakeeditor_macos_aarch64",
+      x64: "fakeeditor_macos_x86_64",
+    },
+  };
+
+  const fakeEditorExecutableName =
+    fakeEditorExecutables[process.platform]?.[process.arch];
+  if (fakeEditorExecutableName) {
+    fakeEditorPath = path.join(
+      extensionDir,
+      "fakeeditor",
+      "zig-out",
+      "bin",
+      fakeEditorExecutableName,
+    );
+  }
+}
+
+let configArgs: string[] = []; // Single global array for config arguments
+export async function initConfigArgs(extensionDir: string, jjVersion: string) {
+  const configPath = path.join(extensionDir, "config.toml");
 
   // Determine the config option and value based on jj version
   const configOption =
@@ -45,7 +93,7 @@ export async function initConfigArgs(extensionUri: vscode.Uri) {
 
   if (configOption === "--config-toml") {
     try {
-      const configValue = await fs.promises.readFile(configPath, "utf8");
+      const configValue = await fs.readFile(configPath, "utf8");
       configArgs = [configOption, configValue];
     } catch (e) {
       logger.error(`Failed to read config file at ${configPath}`);
@@ -748,6 +796,82 @@ export class JJRepository {
         ),
       )
     ).toString();
+  }
+
+  squashContent({
+    fromRev,
+    toRev,
+    filepath,
+    content,
+  }: {
+    fromRev: string;
+    toRev: string;
+    filepath: string;
+    content: string;
+  }): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const childProcess = spawnJJ(
+        [
+          "squash",
+          "--from",
+          fromRev,
+          "--into",
+          toRev,
+          "--interactive",
+          "--config-toml",
+          `ui.diff-editor = "${fakeEditorPath}"`,
+          "--use-destination-message",
+        ],
+        {
+          timeout: 10_000,
+          cwd: this.repositoryRoot,
+        },
+      );
+
+      childProcess.stdout!.on("data", (data: Buffer) => {
+        const output = data.toString();
+
+        const lines = output.trim().split("\n");
+        if (lines.length !== 4) {
+          reject(new Error(`Unexpected output from fakeEditor: ${output}`));
+          return;
+        }
+        const fakeEditorPID = lines[0];
+        const rightFolderPath = lines[3];
+
+        // Convert filepath to relative path and join with rightFolderPath
+        const relativeFilePath = path.relative(this.repositoryRoot, filepath);
+        const fileToEdit = path.join(rightFolderPath, relativeFilePath);
+
+        // Overwrite the file with the content
+        void fs.writeFile(fileToEdit, content).finally(() => {
+          process.kill(parseInt(fakeEditorPID));
+        });
+      });
+
+      let errOutput = "";
+      childProcess.stderr!.on("data", (data: Buffer) => {
+        errOutput += data.toString();
+      });
+
+      childProcess.on("close", (code, signal) => {
+        if (code) {
+          reject(
+            new Error(
+              `Command failed with exit code ${code}.\nstderr: ${errOutput}`,
+            ),
+          );
+        } else if (signal) {
+          reject(
+            new Error(
+              `Command failed with signal ${signal}.\nstderr: ${errOutput}`,
+            ),
+          );
+        } else {
+          resolve();
+        }
+      });
+    });
   }
 
   async log(

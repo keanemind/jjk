@@ -2,8 +2,14 @@ import * as vscode from "vscode";
 import which from "which";
 
 import "./repository";
-import { initJJVersion, WorkspaceSourceControlManager } from "./repository";
-import type { JJRepository, ChangeWithDetails } from "./repository";
+import {
+  extensionDir,
+  initExtensionDir,
+  initJJVersion,
+  jjVersion,
+  WorkspaceSourceControlManager,
+} from "./repository";
+import type { JJRepository, ChangeWithDetails, Show } from "./repository";
 import { JJDecorationProvider } from "./decorationProvider";
 import { JJFileSystemProvider } from "./fileSystemProvider";
 import {
@@ -12,11 +18,16 @@ import {
   OperationTreeItem,
 } from "./operationLogTreeView";
 import { JJGraphWebview, RefreshArgs } from "./graphWebview";
-import { getRev } from "./uri";
+import { getRev, getRevOpt, toJJUri, withRev } from "./uri";
 import { logger } from "./logger";
 import { LogOutputChannelTransport } from "./vendor/winston-transport-vscode/logOutputChannelTransport";
 import winston from "winston";
 import { initConfigArgs } from "./repository";
+import { linesDiffComputers } from "./vendor/vscode/editor/common/diff/linesDiffComputers";
+import {
+  ILinesDiffComputer,
+  LinesDiff,
+} from "./vendor/vscode/editor/common/diff/linesDiffComputer";
 
 export async function activate(context: vscode.ExtensionContext) {
   const outputChannel = vscode.window.createOutputChannel("Jujutsu Kaizen", {
@@ -37,7 +48,8 @@ export async function activate(context: vscode.ExtensionContext) {
   logger.info("Extension activated");
 
   await initJJVersion();
-  await initConfigArgs(context.extensionUri);
+  initExtensionDir(context.extensionUri);
+  await initConfigArgs(extensionDir, jjVersion);
 
   const decorationProvider = new JJDecorationProvider((decorationProvider) => {
     context.subscriptions.push(
@@ -843,6 +855,189 @@ export async function activate(context: vscode.ExtensionContext) {
       }),
     );
 
+    context.subscriptions.push(
+      vscode.commands.registerCommand("jj.squashSelectedRanges", async () => {
+        // this is based on the Git extension's git.stageSelectedRanges function
+        // https://github.com/microsoft/vscode/blob/bd05fbbcb0dbc153f85dd118b5729bde34b91f2f/extensions/git/src/commands.ts#L1646
+
+        const textEditor = vscode.window.activeTextEditor;
+        if (!textEditor) {
+          return;
+        }
+
+        const repository = workspaceSCM.getRepositoryFromUri(
+          textEditor.document.uri,
+        );
+        if (!repository) {
+          return;
+        }
+
+        const status = await repository.status(true);
+
+        const items: ({ changeId: string } & vscode.QuickPickItem)[] = [];
+
+        for (const parent of status.parentChanges) {
+          items.push({
+            label: `$(arrow-up) Parent: ${parent.changeId.substring(0, 8)}`,
+            description: parent.description || "(no description)",
+            alwaysShow: true,
+            changeId: parent.changeId,
+          });
+        }
+
+        try {
+          const childChanges = await repository.log(
+            "all:@+",
+            'change_id ++ "\n"',
+            undefined,
+            true,
+          );
+
+          items.push(
+            ...(await Promise.all(
+              childChanges
+                .trim()
+                .split("\n")
+                .map(async (changeId) => {
+                  const show = await repository.show(changeId);
+                  return {
+                    label: `$(arrow-down) Child: ${changeId.substring(0, 8)}`,
+                    description: show.change.description || "(no description)",
+                    alwaysShow: true,
+                    changeId,
+                  };
+                }),
+            )),
+          );
+        } catch (_) {
+          // No child changes or error, continue with just parents
+        }
+
+        const selected = await vscode.window.showQuickPick(items, {
+          placeHolder: "Select destination change for squashing selected lines",
+          ignoreFocusOut: true,
+        });
+
+        if (!selected) {
+          return;
+        }
+
+        const destinationRev = selected.changeId;
+
+        async function computeAndSquashSelectedDiff(
+          repository: JJRepository,
+          diffComputer: ILinesDiffComputer,
+          originalUri: vscode.Uri,
+          textEditor: vscode.TextEditor,
+        ) {
+          const originalDocument =
+            await vscode.workspace.openTextDocument(originalUri);
+          const originalLines = originalDocument.getText().split("\n");
+          const editorLines = textEditor.document.getText().split("\n");
+          const diff = diffComputer.computeDiff(originalLines, editorLines, {
+            ignoreTrimWhitespace: false,
+            maxComputationTimeMs: 5000,
+            computeMoves: false,
+          });
+
+          const lineChanges = toLineChanges(diff);
+          const selectedLines = toLineRanges(
+            textEditor.selections,
+            textEditor.document,
+          );
+          const selectedChanges = lineChanges
+            .map((change) =>
+              selectedLines.reduce<LineChange | null>(
+                (result, range) =>
+                  result ||
+                  intersectDiffWithRange(textEditor.document, change, range),
+                null,
+              ),
+            )
+            .filter((d) => !!d);
+
+          if (!selectedChanges.length) {
+            vscode.window.showInformationMessage(
+              "The selection range does not contain any changes.",
+            );
+            return;
+          }
+
+          const result = applyLineChanges(
+            originalDocument,
+            textEditor.document,
+            selectedChanges,
+          );
+
+          await repository.squashContent({
+            fromRev: "@",
+            toRev: destinationRev,
+            content: result,
+            filepath: originalUri.fsPath,
+          });
+        }
+
+        let workingCopyParent: Show;
+        try {
+          workingCopyParent = await repository.show("@-");
+        } catch (e) {
+          if (
+            e instanceof Error &&
+            e.message.includes("more than one revision")
+          ) {
+            vscode.window.showErrorMessage(
+              "Squash failed. Revision has multiple parents.",
+            );
+          }
+          return;
+        }
+
+        const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab;
+        // detecting a diff editor: https://github.com/microsoft/vscode/issues/15513
+        const isDiff =
+          activeTab &&
+          activeTab.input instanceof vscode.TabInputTextDiff &&
+          (activeTab.input.modified?.toString() ===
+            textEditor.document.uri.toString() ||
+            activeTab.input.original?.toString() ===
+              textEditor.document.uri.toString());
+
+        if (
+          isDiff &&
+          activeTab.input.modified.scheme === "file" &&
+          ["@", undefined].includes(getRevOpt(activeTab.input.modified)) &&
+          [
+            workingCopyParent.change.changeId,
+            workingCopyParent.change.commitId,
+          ].includes(getRevOpt(activeTab.input.original) ?? "not matching")
+        ) {
+          await computeAndSquashSelectedDiff(
+            repository,
+            linesDiffComputers.getDefault(),
+            toJJUri(activeTab.input.original),
+            textEditor,
+          );
+          await updateResources();
+        } else if (
+          textEditor.document.uri.scheme === "file" &&
+          ["@", undefined].includes(getRevOpt(textEditor.document.uri))
+        ) {
+          await computeAndSquashSelectedDiff(
+            repository,
+            linesDiffComputers.getLegacy(),
+            toJJUri(
+              withRev(
+                textEditor.document.uri,
+                workingCopyParent.change.commitId,
+              ),
+            ),
+            textEditor,
+          );
+          await updateResources();
+        }
+      }),
+    );
+
     isInitialized = true;
   }
 
@@ -1060,4 +1255,220 @@ async function fileExists(uri: vscode.Uri): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+function toLineChanges(diffInformation: LinesDiff): LineChange[] {
+  return diffInformation.changes.map((x) => {
+    let originalStartLineNumber: number;
+    let originalEndLineNumber: number;
+    let modifiedStartLineNumber: number;
+    let modifiedEndLineNumber: number;
+
+    if (x.original.startLineNumber === x.original.endLineNumberExclusive) {
+      // Insertion
+      originalStartLineNumber = x.original.startLineNumber - 1;
+      originalEndLineNumber = 0;
+    } else {
+      originalStartLineNumber = x.original.startLineNumber;
+      originalEndLineNumber = x.original.endLineNumberExclusive - 1;
+    }
+
+    if (x.modified.startLineNumber === x.modified.endLineNumberExclusive) {
+      // Deletion
+      modifiedStartLineNumber = x.modified.startLineNumber - 1;
+      modifiedEndLineNumber = 0;
+    } else {
+      modifiedStartLineNumber = x.modified.startLineNumber;
+      modifiedEndLineNumber = x.modified.endLineNumberExclusive - 1;
+    }
+
+    return {
+      originalStartLineNumber,
+      originalEndLineNumber,
+      modifiedStartLineNumber,
+      modifiedEndLineNumber,
+    };
+  });
+}
+
+function toLineRanges(
+  selections: readonly vscode.Selection[],
+  textDocument: vscode.TextDocument,
+): vscode.Range[] {
+  const lineRanges = selections.map((s) => {
+    const startLine = textDocument.lineAt(s.start.line);
+    const endLine = textDocument.lineAt(s.end.line);
+    return new vscode.Range(startLine.range.start, endLine.range.end);
+  });
+
+  lineRanges.sort((a, b) => a.start.line - b.start.line);
+
+  const result = lineRanges.reduce((result, l) => {
+    if (result.length === 0) {
+      result.push(l);
+      return result;
+    }
+
+    const [last, ...rest] = result;
+    const intersection = l.intersection(last);
+
+    if (intersection) {
+      return [intersection, ...rest];
+    }
+
+    if (l.start.line === last.end.line + 1) {
+      const merge = new vscode.Range(last.start, l.end);
+      return [merge, ...rest];
+    }
+
+    return [l, ...result];
+  }, [] as vscode.Range[]);
+
+  result.reverse();
+
+  return result;
+}
+
+interface LineChange {
+  readonly originalStartLineNumber: number;
+  readonly originalEndLineNumber: number;
+  readonly modifiedStartLineNumber: number;
+  readonly modifiedEndLineNumber: number;
+}
+
+function intersectDiffWithRange(
+  textDocument: vscode.TextDocument,
+  diff: LineChange,
+  range: vscode.Range,
+): LineChange | null {
+  const modifiedRange = getModifiedRange(textDocument, diff);
+  const intersection = range.intersection(modifiedRange);
+
+  if (!intersection) {
+    return null;
+  }
+
+  if (diff.modifiedEndLineNumber === 0) {
+    return diff;
+  } else {
+    const modifiedStartLineNumber = intersection.start.line + 1;
+    const modifiedEndLineNumber = intersection.end.line + 1;
+
+    // heuristic: same number of lines on both sides, let's assume line by line
+    if (
+      diff.originalEndLineNumber - diff.originalStartLineNumber ===
+      diff.modifiedEndLineNumber - diff.modifiedStartLineNumber
+    ) {
+      const delta = modifiedStartLineNumber - diff.modifiedStartLineNumber;
+      const length = modifiedEndLineNumber - modifiedStartLineNumber;
+
+      return {
+        originalStartLineNumber: diff.originalStartLineNumber + delta,
+        originalEndLineNumber: diff.originalStartLineNumber + delta + length,
+        modifiedStartLineNumber,
+        modifiedEndLineNumber,
+      };
+    } else {
+      return {
+        originalStartLineNumber: diff.originalStartLineNumber,
+        originalEndLineNumber: diff.originalEndLineNumber,
+        modifiedStartLineNumber,
+        modifiedEndLineNumber,
+      };
+    }
+  }
+}
+
+function getModifiedRange(
+  textDocument: vscode.TextDocument,
+  diff: LineChange,
+): vscode.Range {
+  if (diff.modifiedEndLineNumber === 0) {
+    if (diff.modifiedStartLineNumber === 0) {
+      return new vscode.Range(
+        textDocument.lineAt(diff.modifiedStartLineNumber).range.end,
+        textDocument.lineAt(diff.modifiedStartLineNumber).range.start,
+      );
+    } else if (textDocument.lineCount === diff.modifiedStartLineNumber) {
+      return new vscode.Range(
+        textDocument.lineAt(diff.modifiedStartLineNumber - 1).range.end,
+        textDocument.lineAt(diff.modifiedStartLineNumber - 1).range.end,
+      );
+    } else {
+      return new vscode.Range(
+        textDocument.lineAt(diff.modifiedStartLineNumber - 1).range.end,
+        textDocument.lineAt(diff.modifiedStartLineNumber).range.start,
+      );
+    }
+  } else {
+    return new vscode.Range(
+      textDocument.lineAt(diff.modifiedStartLineNumber - 1).range.start,
+      textDocument.lineAt(diff.modifiedEndLineNumber - 1).range.end,
+    );
+  }
+}
+
+function applyLineChanges(
+  original: vscode.TextDocument,
+  modified: vscode.TextDocument,
+  diffs: LineChange[],
+): string {
+  const result: string[] = [];
+  let currentLine = 0;
+
+  for (const diff of diffs) {
+    const isInsertion = diff.originalEndLineNumber === 0;
+    const isDeletion = diff.modifiedEndLineNumber === 0;
+
+    let endLine = isInsertion
+      ? diff.originalStartLineNumber
+      : diff.originalStartLineNumber - 1;
+    let endCharacter = 0;
+
+    // if this is a deletion at the very end of the document,then we need to account
+    // for a newline at the end of the last line which may have been deleted
+    // https://github.com/microsoft/vscode/issues/59670
+    if (isDeletion && diff.originalEndLineNumber === original.lineCount) {
+      endLine -= 1;
+      endCharacter = original.lineAt(endLine).range.end.character;
+    }
+
+    result.push(
+      original.getText(new vscode.Range(currentLine, 0, endLine, endCharacter)),
+    );
+
+    if (!isDeletion) {
+      let fromLine = diff.modifiedStartLineNumber - 1;
+      let fromCharacter = 0;
+
+      // if this is an insertion at the very end of the document,
+      // then we must start the next range after the last character of the
+      // previous line, in order to take the correct eol
+      if (isInsertion && diff.originalStartLineNumber === original.lineCount) {
+        fromLine -= 1;
+        fromCharacter = modified.lineAt(fromLine).range.end.character;
+      }
+
+      result.push(
+        modified.getText(
+          new vscode.Range(
+            fromLine,
+            fromCharacter,
+            diff.modifiedEndLineNumber,
+            0,
+          ),
+        ),
+      );
+    }
+
+    currentLine = isInsertion
+      ? diff.originalStartLineNumber
+      : diff.originalEndLineNumber;
+  }
+
+  result.push(
+    original.getText(new vscode.Range(currentLine, 0, original.lineCount, 0)),
+  );
+
+  return result.join("");
 }
