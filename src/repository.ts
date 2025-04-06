@@ -275,13 +275,18 @@ class RepositorySourceControlManager {
       ["@", status.fileStatuses],
     ]);
 
-    this.workingCopyResourceGroup.label = `Working Copy (${
-      status.workingCopy.changeId
-    }) ${
-      status.workingCopy.description
-        ? `• ${status.workingCopy.description}`
-        : "(no description set)"
-    }`;
+    function getLabel(prefix: string, change: Change) {
+      return `${prefix} [${change.changeId}]${
+        change.description ? ` • ${change.description}` : ""
+      }${change.isEmpty ? " (empty)" : ""}${
+        change.isConflict ? " (conflict)" : ""
+      }${change.description ? "" : " (no description)"}`;
+    }
+
+    this.workingCopyResourceGroup.label = getLabel(
+      "Working Copy",
+      status.workingCopy,
+    );
     this.workingCopyResourceGroup.resourceStates = status.fileStatuses.map(
       (fileStatus) => {
         return {
@@ -317,11 +322,7 @@ class RepositorySourceControlManager {
       if (!parentChange) {
         group.dispose();
       } else {
-        group.label = `Parent Commit (${parentChange.changeId}) ${
-          parentChange.description
-            ? `• ${parentChange.description}`
-            : "(no description set)"
-        }`;
+        group.label = getLabel("Parent Commit", parentChange);
         updatedGroups.push(group);
       }
     }
@@ -352,9 +353,7 @@ class RepositorySourceControlManager {
       if (!parentGroup) {
         parentChangeResourceGroup = this.sourceControl.createResourceGroup(
           parentChange.changeId,
-          parentChange.description
-            ? `Parent Commit (${parentChange.changeId}) • ${parentChange.description}`
-            : `Parent Commit (${parentChange.changeId}) (no description set)`,
+          getLabel("Parent Commit", parentChange),
         );
 
         this.parentResourceGroups.push(parentChangeResourceGroup);
@@ -1109,13 +1108,20 @@ async function parseJJStatus(
         throw new Error(`Unexpected commit line: ${line}`);
       }
 
-      const cleanedDescription = (
-        await extractColoredRegions(descriptionSection.trim())
-      )
+      const descriptionRegions = await extractColoredRegions(
+        descriptionSection.trim(),
+      );
+      const cleanedDescription = descriptionRegions
         .filter((region) => !region.colored)
         .map((region) => region.text)
         .join("")
         .trim();
+      const jjDescriptors = descriptionRegions
+        .filter((region) => region.colored)
+        .map((region) => region.text)
+        .join("");
+      const isEmpty = jjDescriptors.includes("(empty)");
+      const isConflict = jjDescriptors.includes("(conflict)");
 
       const commitDetails: Change = {
         changeId: await stripAnsiCodes(changeId),
@@ -1124,8 +1130,8 @@ async function parseJJStatus(
           ? (await stripAnsiCodes(bookmarks)).split(/\s+/)
           : undefined,
         description: cleanedDescription,
-        isEmpty: false,
-        isConflict: false,
+        isEmpty,
+        isConflict,
       };
 
       if ((await stripAnsiCodes(type)) === "Working copy") {
