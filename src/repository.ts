@@ -1003,7 +1003,7 @@ export type FileStatus = {
 export interface Change {
   changeId: string;
   commitId: string;
-  branch?: string;
+  bookmarks?: string[];
   description: string;
   isEmpty: boolean;
   isConflict: boolean;
@@ -1054,7 +1054,7 @@ async function parseJJStatus(
 
   const changeRegex = /^(A|M|D|R) (.+)$/;
   const commitRegex =
-    /^(Working copy|Parent commit)\s*(\(@-?\))?\s*:\s+(\S+)\s+(\S+)(?:\s+(\S+)\s+\|)?(?:\s+(.*))?$/;
+    /^(Working copy|Parent commit)\s*(\(@-?\))?\s*:\s+(\S+)\s+(\S+)(?:\s+(.+?)\s+\|)?(?:\s+(.*))?$/;
   const renameRegex = /^\{(.+) => (.+)\}$/;
 
   for (const line of lines) {
@@ -1101,7 +1101,7 @@ async function parseJJStatus(
         _at,
         changeId,
         commitId,
-        branch,
+        bookmarks,
         descriptionSection,
       ] = commitMatch as unknown as [string, ...(string | undefined)[]];
 
@@ -1120,7 +1120,9 @@ async function parseJJStatus(
       const commitDetails: Change = {
         changeId: await stripAnsiCodes(changeId),
         commitId: await stripAnsiCodes(commitId),
-        branch: branch ? await stripAnsiCodes(branch) : undefined,
+        bookmarks: bookmarks
+          ? (await stripAnsiCodes(bookmarks)).split(/\s+/)
+          : undefined,
         description: cleanedDescription,
         isEmpty: false,
         isConflict: false,
