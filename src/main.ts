@@ -307,15 +307,21 @@ export async function activate(context: vscode.ExtensionContext) {
       vscode.commands.registerCommand(
         "jj.new",
         async (sourceControl: vscode.SourceControl) => {
-          const repository =
-            workspaceSCM.getRepositoryFromSourceControl(sourceControl);
-          if (!repository) {
-            throw new Error("Repository not found");
+          try {
+            const repository =
+              workspaceSCM.getRepositoryFromSourceControl(sourceControl);
+            if (!repository) {
+              throw new Error("Repository not found");
+            }
+            const message = sourceControl.inputBox.value.trim() || undefined;
+            await repository.new(message);
+            sourceControl.inputBox.value = "";
+            await updateResources();
+          } catch (error) {
+            vscode.window.showErrorMessage(
+              `Failed to create change${error instanceof Error ? `: ${error.message}` : ""}`,
+            );
           }
-          const message = sourceControl.inputBox.value.trim() || undefined;
-          await repository.new(message);
-          sourceControl.inputBox.value = "";
-          await updateResources();
         },
       ),
     );
@@ -329,13 +335,19 @@ export async function activate(context: vscode.ExtensionContext) {
             preview: false,
             viewColumn: vscode.ViewColumn.Active,
           };
-          await vscode.commands.executeCommand(
-            "vscode.open",
-            vscode.Uri.file(resourceState.resourceUri.fsPath),
-            {
-              ...opts,
-            },
-          );
+          try {
+            await vscode.commands.executeCommand(
+              "vscode.open",
+              vscode.Uri.file(resourceState.resourceUri.fsPath),
+              {
+                ...opts,
+              },
+            );
+          } catch (error) {
+            vscode.window.showErrorMessage(
+              `Failed to open file${error instanceof Error ? `: ${error.message}` : ""}`,
+            );
+          }
         },
       ),
     );
@@ -430,9 +442,6 @@ export async function activate(context: vscode.ExtensionContext) {
                 message,
                 filepaths: [resourceState.resourceUri.fsPath],
               });
-              vscode.window.showInformationMessage(
-                "Changes successfully squashed.",
-              );
               await updateResources();
             } catch (error) {
               vscode.window.showErrorMessage(
@@ -494,9 +503,6 @@ export async function activate(context: vscode.ExtensionContext) {
                 message,
                 filepaths: [resourceState.resourceUri.fsPath],
               });
-              vscode.window.showInformationMessage(
-                "Changes successfully squashed.",
-              );
               await updateResources();
             } catch (error) {
               vscode.window.showErrorMessage(
@@ -532,9 +538,6 @@ export async function activate(context: vscode.ExtensionContext) {
 
           try {
             await repository.describe(resourceGroup.id, message);
-            vscode.window.showInformationMessage(
-              "Description updated successfully.",
-            );
             await updateResources();
           } catch (error) {
             vscode.window.showErrorMessage(
@@ -601,9 +604,6 @@ export async function activate(context: vscode.ExtensionContext) {
                 toRev: destinationParentChange.changeId,
                 message,
               });
-              vscode.window.showInformationMessage(
-                "Changes successfully squashed.",
-              );
               await updateResources();
             } catch (error) {
               vscode.window.showErrorMessage(
@@ -659,9 +659,6 @@ export async function activate(context: vscode.ExtensionContext) {
                 toRev: "@",
                 message,
               });
-              vscode.window.showInformationMessage(
-                "Changes successfully squashed.",
-              );
               await updateResources();
             } catch (error) {
               vscode.window.showErrorMessage(
@@ -721,7 +718,13 @@ export async function activate(context: vscode.ExtensionContext) {
 
     context.subscriptions.push(
       vscode.commands.registerCommand("jj.refreshGraphWebview", async () => {
-        await graphWebview.refresh(true, true);
+        try {
+          await graphWebview.refresh(true, true);
+        } catch (error) {
+          vscode.window.showErrorMessage(
+            `Failed to refresh graph${error instanceof Error ? `: ${error.message}` : ""}`,
+          );
+        }
       }),
     );
 
@@ -747,54 +750,78 @@ export async function activate(context: vscode.ExtensionContext) {
 
     context.subscriptions.push(
       vscode.commands.registerCommand("jj.selectGraphWebviewRepo", async () => {
-        const repoNames = workspaceSCM.repoSCMs.map(
-          (repo) => repo.repositoryRoot,
-        );
-        const selectedRepoName = await vscode.window.showQuickPick(repoNames, {
-          placeHolder: "Select a repository",
-        });
-
-        const selectedRepo = workspaceSCM.repoSCMs.find(
-          (repo) => repo.repositoryRoot === selectedRepoName,
-        );
-
-        if (selectedRepo) {
-          graphWebview.setSelectedRepository(selectedRepo.repository);
-          context.workspaceState.update(
-            "selectedRepository",
-            selectedRepo.repositoryRoot,
+        try {
+          const repoNames = workspaceSCM.repoSCMs.map(
+            (repo) => repo.repositoryRoot,
           );
-          await updateResources();
+          const selectedRepoName = await vscode.window.showQuickPick(
+            repoNames,
+            {
+              placeHolder: "Select a repository",
+            },
+          );
+
+          const selectedRepo = workspaceSCM.repoSCMs.find(
+            (repo) => repo.repositoryRoot === selectedRepoName,
+          );
+
+          if (selectedRepo) {
+            graphWebview.setSelectedRepository(selectedRepo.repository);
+            context.workspaceState.update(
+              "selectedRepository",
+              selectedRepo.repositoryRoot,
+            );
+            await updateResources();
+          }
+        } catch (error) {
+          vscode.window.showErrorMessage(
+            `Failed to select repository${error instanceof Error ? `: ${error.message}` : ""}`,
+          );
         }
       }),
     );
 
     context.subscriptions.push(
       vscode.commands.registerCommand("jj.refreshOperationLog", async () => {
-        await operationLogTreeDataProvider.refresh();
+        try {
+          await operationLogTreeDataProvider.refresh();
+        } catch (error) {
+          vscode.window.showErrorMessage(
+            `Failed to refresh operation log${error instanceof Error ? `: ${error.message}` : ""}`,
+          );
+        }
       }),
     );
 
     context.subscriptions.push(
       vscode.commands.registerCommand("jj.selectOperationLogRepo", async () => {
-        const repoNames = workspaceSCM.repoSCMs.map(
-          (repo) => repo.repositoryRoot,
-        );
-        const selectedRepoName = await vscode.window.showQuickPick(repoNames, {
-          placeHolder: "Select a repository",
-        });
-
-        const selectedRepo = workspaceSCM.repoSCMs.find(
-          (repo) => repo.repositoryRoot === selectedRepoName,
-        );
-
-        if (selectedRepo) {
-          await operationLogManager!.setSelectedRepo(selectedRepo.repository);
-          context.workspaceState.update(
-            "selectedRepository",
-            selectedRepo.repositoryRoot,
+        try {
+          const repoNames = workspaceSCM.repoSCMs.map(
+            (repo) => repo.repositoryRoot,
           );
-          await updateResources();
+          const selectedRepoName = await vscode.window.showQuickPick(
+            repoNames,
+            {
+              placeHolder: "Select a repository",
+            },
+          );
+
+          const selectedRepo = workspaceSCM.repoSCMs.find(
+            (repo) => repo.repositoryRoot === selectedRepoName,
+          );
+
+          if (selectedRepo) {
+            await operationLogManager!.setSelectedRepo(selectedRepo.repository);
+            context.workspaceState.update(
+              "selectedRepository",
+              selectedRepo.repositoryRoot,
+            );
+            await updateResources();
+          }
+        } catch (error) {
+          vscode.window.showErrorMessage(
+            `Failed to select repository${error instanceof Error ? `: ${error.message}` : ""}`,
+          );
         }
       }),
     );
@@ -803,17 +830,23 @@ export async function activate(context: vscode.ExtensionContext) {
       vscode.commands.registerCommand(
         "jj.operationUndo",
         async (item: unknown) => {
-          if (!(item instanceof OperationTreeItem)) {
-            throw new Error("OperationTreeItem expected");
+          try {
+            if (!(item instanceof OperationTreeItem)) {
+              throw new Error("OperationTreeItem expected");
+            }
+            const repository = workspaceSCM.getRepositoryFromUri(
+              vscode.Uri.file(item.repositoryRoot),
+            );
+            if (!repository) {
+              throw new Error("Repository not found");
+            }
+            await repository.operationUndo(item.operation.id);
+            await updateResources();
+          } catch (error) {
+            vscode.window.showErrorMessage(
+              `Failed to undo operation${error instanceof Error ? `: ${error.message}` : ""}`,
+            );
           }
-          const repository = workspaceSCM.getRepositoryFromUri(
-            vscode.Uri.file(item.repositoryRoot),
-          );
-          if (!repository) {
-            throw new Error("Repository not found");
-          }
-          await repository.operationUndo(item.operation.id);
-          await updateResources();
         },
       ),
     );
@@ -822,17 +855,23 @@ export async function activate(context: vscode.ExtensionContext) {
       vscode.commands.registerCommand(
         "jj.operationRestore",
         async (item: unknown) => {
-          if (!(item instanceof OperationTreeItem)) {
-            throw new Error("OperationTreeItem expected");
+          try {
+            if (!(item instanceof OperationTreeItem)) {
+              throw new Error("OperationTreeItem expected");
+            }
+            const repository = workspaceSCM.getRepositoryFromUri(
+              vscode.Uri.file(item.repositoryRoot),
+            );
+            if (!repository) {
+              throw new Error("Repository not found");
+            }
+            await repository.operationRestore(item.operation.id);
+            await updateResources();
+          } catch (error) {
+            vscode.window.showErrorMessage(
+              `Failed to restore operation${error instanceof Error ? `: ${error.message}` : ""}`,
+            );
           }
-          const repository = workspaceSCM.getRepositoryFromUri(
-            vscode.Uri.file(item.repositoryRoot),
-          );
-          if (!repository) {
-            throw new Error("Repository not found");
-          }
-          await repository.operationRestore(item.operation.id);
-          await updateResources();
         },
       ),
     );
@@ -846,6 +885,10 @@ export async function activate(context: vscode.ExtensionContext) {
             await workspaceSCM
               .getRepositoryFromUri(lastOpenedFileUri)
               ?.gitFetch();
+          } catch (error) {
+            vscode.window.showErrorMessage(
+              `Failed to fetch from remote${error instanceof Error ? `: ${error.message}` : ""}`,
+            );
           } finally {
             statusBarHandleDidChangeActiveTextEditor(
               vscode.window.activeTextEditor,
@@ -859,181 +902,188 @@ export async function activate(context: vscode.ExtensionContext) {
       vscode.commands.registerCommand("jj.squashSelectedRanges", async () => {
         // this is based on the Git extension's git.stageSelectedRanges function
         // https://github.com/microsoft/vscode/blob/bd05fbbcb0dbc153f85dd118b5729bde34b91f2f/extensions/git/src/commands.ts#L1646
-
-        const textEditor = vscode.window.activeTextEditor;
-        if (!textEditor) {
-          return;
-        }
-
-        const repository = workspaceSCM.getRepositoryFromUri(
-          textEditor.document.uri,
-        );
-        if (!repository) {
-          return;
-        }
-
-        const status = await repository.status(true);
-
-        const items: ({ changeId: string } & vscode.QuickPickItem)[] = [];
-
-        for (const parent of status.parentChanges) {
-          items.push({
-            label: `$(arrow-up) Parent: ${parent.changeId.substring(0, 8)}`,
-            description: parent.description || "(no description)",
-            alwaysShow: true,
-            changeId: parent.changeId,
-          });
-        }
-
         try {
-          const childChanges = await repository.log(
-            "all:@+",
-            'change_id ++ "\n"',
-            undefined,
-            true,
-          );
-
-          items.push(
-            ...(await Promise.all(
-              childChanges
-                .trim()
-                .split("\n")
-                .map(async (changeId) => {
-                  const show = await repository.show(changeId);
-                  return {
-                    label: `$(arrow-down) Child: ${changeId.substring(0, 8)}`,
-                    description: show.change.description || "(no description)",
-                    alwaysShow: true,
-                    changeId,
-                  };
-                }),
-            )),
-          );
-        } catch (_) {
-          // No child changes or error, continue with just parents
-        }
-
-        const selected = await vscode.window.showQuickPick(items, {
-          placeHolder: "Select destination change for squashing selected lines",
-          ignoreFocusOut: true,
-        });
-
-        if (!selected) {
-          return;
-        }
-
-        const destinationRev = selected.changeId;
-
-        async function computeAndSquashSelectedDiff(
-          repository: JJRepository,
-          diffComputer: ILinesDiffComputer,
-          originalUri: vscode.Uri,
-          textEditor: vscode.TextEditor,
-        ) {
-          const originalDocument =
-            await vscode.workspace.openTextDocument(originalUri);
-          const originalLines = originalDocument.getText().split("\n");
-          const editorLines = textEditor.document.getText().split("\n");
-          const diff = diffComputer.computeDiff(originalLines, editorLines, {
-            ignoreTrimWhitespace: false,
-            maxComputationTimeMs: 5000,
-            computeMoves: false,
-          });
-
-          const lineChanges = toLineChanges(diff);
-          const selectedLines = toLineRanges(
-            textEditor.selections,
-            textEditor.document,
-          );
-          const selectedChanges = lineChanges
-            .map((change) =>
-              selectedLines.reduce<LineChange | null>(
-                (result, range) =>
-                  result ||
-                  intersectDiffWithRange(textEditor.document, change, range),
-                null,
-              ),
-            )
-            .filter((d) => !!d);
-
-          if (!selectedChanges.length) {
-            vscode.window.showInformationMessage(
-              "The selection range does not contain any changes.",
-            );
+          const textEditor = vscode.window.activeTextEditor;
+          if (!textEditor) {
             return;
           }
 
-          const result = applyLineChanges(
-            originalDocument,
-            textEditor.document,
-            selectedChanges,
+          const repository = workspaceSCM.getRepositoryFromUri(
+            textEditor.document.uri,
           );
-
-          await repository.squashContent({
-            fromRev: "@",
-            toRev: destinationRev,
-            content: result,
-            filepath: originalUri.fsPath,
-          });
-        }
-
-        let workingCopyParent: Show;
-        try {
-          workingCopyParent = await repository.show("@-");
-        } catch (e) {
-          if (
-            e instanceof Error &&
-            e.message.includes("more than one revision")
-          ) {
-            vscode.window.showErrorMessage(
-              "Squash failed. Revision has multiple parents.",
-            );
+          if (!repository) {
+            return;
           }
-          return;
-        }
 
-        const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab;
-        // detecting a diff editor: https://github.com/microsoft/vscode/issues/15513
-        const isDiff =
-          activeTab &&
-          activeTab.input instanceof vscode.TabInputTextDiff &&
-          (activeTab.input.modified?.toString() ===
-            textEditor.document.uri.toString() ||
-            activeTab.input.original?.toString() ===
-              textEditor.document.uri.toString());
+          const status = await repository.status(true);
 
-        if (
-          isDiff &&
-          activeTab.input.modified.scheme === "file" &&
-          ["@", undefined].includes(getRevOpt(activeTab.input.modified)) &&
-          [
-            workingCopyParent.change.changeId,
-            workingCopyParent.change.commitId,
-          ].includes(getRevOpt(activeTab.input.original) ?? "not matching")
-        ) {
-          await computeAndSquashSelectedDiff(
-            repository,
-            linesDiffComputers.getDefault(),
-            toJJUri(activeTab.input.original),
-            textEditor,
-          );
-          await updateResources();
-        } else if (
-          textEditor.document.uri.scheme === "file" &&
-          ["@", undefined].includes(getRevOpt(textEditor.document.uri))
-        ) {
-          await computeAndSquashSelectedDiff(
-            repository,
-            linesDiffComputers.getLegacy(),
-            toJJUri(
-              withRev(
-                textEditor.document.uri,
-                workingCopyParent.change.commitId,
+          const items: ({ changeId: string } & vscode.QuickPickItem)[] = [];
+
+          for (const parent of status.parentChanges) {
+            items.push({
+              label: `$(arrow-up) Parent: ${parent.changeId.substring(0, 8)}`,
+              description: parent.description || "(no description)",
+              alwaysShow: true,
+              changeId: parent.changeId,
+            });
+          }
+
+          try {
+            const childChanges = await repository.log(
+              "all:@+",
+              'change_id ++ "\n"',
+              undefined,
+              true,
+            );
+
+            items.push(
+              ...(await Promise.all(
+                childChanges
+                  .trim()
+                  .split("\n")
+                  .map(async (changeId) => {
+                    const show = await repository.show(changeId);
+                    return {
+                      label: `$(arrow-down) Child: ${changeId.substring(0, 8)}`,
+                      description:
+                        show.change.description || "(no description)",
+                      alwaysShow: true,
+                      changeId,
+                    };
+                  }),
+              )),
+            );
+          } catch (_) {
+            // No child changes or error, continue with just parents
+          }
+
+          const selected = await vscode.window.showQuickPick(items, {
+            placeHolder:
+              "Select destination change for squashing selected lines",
+            ignoreFocusOut: true,
+          });
+
+          if (!selected) {
+            return;
+          }
+
+          const destinationRev = selected.changeId;
+
+          async function computeAndSquashSelectedDiff(
+            repository: JJRepository,
+            diffComputer: ILinesDiffComputer,
+            originalUri: vscode.Uri,
+            textEditor: vscode.TextEditor,
+          ) {
+            const originalDocument =
+              await vscode.workspace.openTextDocument(originalUri);
+            const originalLines = originalDocument.getText().split("\n");
+            const editorLines = textEditor.document.getText().split("\n");
+            const diff = diffComputer.computeDiff(originalLines, editorLines, {
+              ignoreTrimWhitespace: false,
+              maxComputationTimeMs: 5000,
+              computeMoves: false,
+            });
+
+            const lineChanges = toLineChanges(diff);
+            const selectedLines = toLineRanges(
+              textEditor.selections,
+              textEditor.document,
+            );
+            const selectedChanges = lineChanges
+              .map((change) =>
+                selectedLines.reduce<LineChange | null>(
+                  (result, range) =>
+                    result ||
+                    intersectDiffWithRange(textEditor.document, change, range),
+                  null,
+                ),
+              )
+              .filter((d) => !!d);
+
+            if (!selectedChanges.length) {
+              vscode.window.showErrorMessage(
+                "The selection range does not contain any changes.",
+              );
+              return;
+            }
+
+            const result = applyLineChanges(
+              originalDocument,
+              textEditor.document,
+              selectedChanges,
+            );
+
+            await repository.squashContent({
+              fromRev: "@",
+              toRev: destinationRev,
+              content: result,
+              filepath: originalUri.fsPath,
+            });
+          }
+
+          let workingCopyParent: Show;
+          try {
+            workingCopyParent = await repository.show("@-");
+          } catch (e) {
+            if (
+              e instanceof Error &&
+              e.message.includes("more than one revision")
+            ) {
+              vscode.window.showErrorMessage(
+                "Squash failed. Revision has multiple parents.",
+              );
+            }
+            return;
+          }
+
+          const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab;
+          // detecting a diff editor: https://github.com/microsoft/vscode/issues/15513
+          const isDiff =
+            activeTab &&
+            activeTab.input instanceof vscode.TabInputTextDiff &&
+            (activeTab.input.modified?.toString() ===
+              textEditor.document.uri.toString() ||
+              activeTab.input.original?.toString() ===
+                textEditor.document.uri.toString());
+
+          if (
+            isDiff &&
+            activeTab.input.modified.scheme === "file" &&
+            ["@", undefined].includes(getRevOpt(activeTab.input.modified)) &&
+            [
+              workingCopyParent.change.changeId,
+              workingCopyParent.change.commitId,
+            ].includes(getRevOpt(activeTab.input.original) ?? "not matching")
+          ) {
+            await computeAndSquashSelectedDiff(
+              repository,
+              linesDiffComputers.getDefault(),
+              toJJUri(activeTab.input.original),
+              textEditor,
+            );
+            await updateResources();
+          } else if (
+            textEditor.document.uri.scheme === "file" &&
+            ["@", undefined].includes(getRevOpt(textEditor.document.uri))
+          ) {
+            await computeAndSquashSelectedDiff(
+              repository,
+              linesDiffComputers.getLegacy(),
+              toJJUri(
+                withRev(
+                  textEditor.document.uri,
+                  workingCopyParent.change.commitId,
+                ),
               ),
-            ),
-            textEditor,
+              textEditor,
+            );
+            await updateResources();
+          }
+        } catch (error) {
+          vscode.window.showErrorMessage(
+            `Failed to squash selection${error instanceof Error ? `: ${error.message}` : ""}`,
           );
-          await updateResources();
         }
       }),
     );

@@ -4,6 +4,7 @@ node_modules/
 dist/
 out/
 .vscode-test/
+.vscode/settings.json
 *.vsix
 src/**/*.js
 src/**/*.js.map
