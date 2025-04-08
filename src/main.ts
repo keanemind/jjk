@@ -74,6 +74,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   let operationLogManager: OperationLogManager | undefined;
   let graphWebview: JJGraphWebview;
+  let tempGraphWebviews: JJGraphWebview[] = [];
 
   vscode.workspace.onDidChangeWorkspaceFolders(
     async () => {
@@ -725,6 +726,54 @@ export async function activate(context: vscode.ExtensionContext) {
       }),
     );
 
+    const openExpandedGraphWebview = async (revset: string) => {
+      const myGraphWebview = new JJGraphWebview(
+        context.extensionUri,
+        selectedRepo,
+        context,
+        revset,
+        'expanded',
+        false,
+      );
+
+      tempGraphWebviews.push(myGraphWebview);
+
+      const panel = vscode.window.createWebviewPanel(
+        'JJExpandedGraphWebview',
+        'JJ Graph',
+        vscode.ViewColumn.One,
+        { enableScripts: true }
+      );
+
+      panel.onDidDispose(() => {
+        tempGraphWebviews = tempGraphWebviews.filter((tempGraphWebview) => tempGraphWebview !== myGraphWebview);
+      });
+
+      await myGraphWebview.resolveWebview(panel.webview);
+    };
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand('jj.fileHistory', async (uri?: vscode.Uri) => {
+        if (!uri) {
+          await openExpandedGraphWebview("::");
+          return;
+        }
+        const root = workspaceSCM.getRepositoryFromUri(uri)?.repositoryRoot;
+        if (!root) {
+          await openExpandedGraphWebview(`files(root:"${uri.path}")`);
+          return;
+        }
+        const path = uri.path.substring(root.length + 1);
+        await openExpandedGraphWebview(`files(root:"${path}")`);
+      }),
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand("jj.openExpandedGraphWebview", async () => {
+        await openExpandedGraphWebview("::");
+      }),
+    );
+
     context.subscriptions.push(
       vscode.commands.registerCommand("jj.newGraphWebview", async () => {
         const selectedNodes = Array.from(graphWebview.selectedNodes);
@@ -1056,6 +1105,9 @@ export async function activate(context: vscode.ExtensionContext) {
       graphWebview.setSelectedRepository(selectedRepo);
 
       await graphWebview.refresh(finalArgs.preserveScroll);
+      for (const tempGraphWebview of tempGraphWebviews) {
+        await tempGraphWebview.refresh(finalArgs.preserveScroll);
+      }
 
       if (operationLogManager) {
         void operationLogManager.setSelectedRepo(selectedRepo);
