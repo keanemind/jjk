@@ -405,6 +405,26 @@
           "highContrastLight": "editorCodeLens.foreground"
         }
       }
+    ],
+    "languages": [
+      {
+        "id": "jj-commit",
+        "aliases": [
+          "JJ Commit Message",
+          "jj-commit"
+        ],
+        "extensions": [
+          ".jjdescription"
+        ],
+        "configuration": "./languages/jj-commit.language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "jj-commit",
+        "scopeName": "text.jj-commit",
+        "path": "./syntaxes/jj-commit.tmLanguage.json"
+      }
     ]
   },
   "scripts": {
