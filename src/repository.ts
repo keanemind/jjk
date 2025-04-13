@@ -2,7 +2,7 @@ import path from "path";
 import * as vscode from "vscode";
 import spawn from "cross-spawn";
 import fs from "fs/promises";
-import { getRev, toJJUri } from "./uri";
+import { getRevOpt, toJJUri } from "./uri";
 import type { JJDecorationProvider } from "./decorationProvider";
 import { logger } from "./logger";
 import type { ChildProcess } from "child_process";
@@ -284,20 +284,21 @@ class RepositorySourceControlManager {
     };
 
     this.sourceControl.quickDiffProvider = {
-      provideOriginalResource: async (uri) => {
-        // Convert to a specific commitId so our fileSystemProvider can cache properly
-        if (uri.scheme === "file") {
-          const status = await this.repository.getStatus(true);
-          if (status.parentChanges.length === 1) {
-            return toJJUri(uri, { rev: status.parentChanges[0].commitId });
-          }
-        } else if (uri.scheme === "jj") {
-          const rev = getRev(uri);
-          const showResults = await this.repository.showAll([`${rev}-`]);
-          if (showResults.length === 1) {
-            return toJJUri(uri, { rev: showResults[0].change.commitId });
-          }
+      provideOriginalResource: (uri) => {
+        if (!["file", "jj"].includes(uri.scheme)) {
+          return undefined;
         }
+        const revParam = getRevOpt(uri);
+        if (uri.scheme === "jj" && revParam === undefined) {
+          return undefined;
+        }
+
+        const rev = revParam ?? "@";
+        const filePath = uri.fsPath;
+        const originalUri = toJJUri(vscode.Uri.file(filePath), {
+          diffOriginalRev: rev,
+        });
+        return originalUri;
       },
     };
   }
@@ -343,17 +344,14 @@ class RepositorySourceControlManager {
             strikeThrough: fileStatus.type === "D",
             tooltip: path.basename(fileStatus.file),
           },
-          command:
-            status.parentChanges.length === 1
-              ? getResourceStateCommand(
-                  fileStatus,
-                  toJJUri(vscode.Uri.file(fileStatus.path), {
-                    rev: status.parentChanges[0].changeId,
-                  }),
-                  vscode.Uri.file(fileStatus.path),
-                  "(Working Copy)",
-                )
-              : undefined,
+          command: getResourceStateCommand(
+            fileStatus,
+            toJJUri(vscode.Uri.file(`${fileStatus.path}`), {
+              diffOriginalRev: status.workingCopy.changeId,
+            }),
+            vscode.Uri.file(fileStatus.path),
+            "(Working Copy)",
+          ),
         };
       },
     );
@@ -408,23 +406,6 @@ class RepositorySourceControlManager {
 
       const showResult = await this.repository.show(parentChange.changeId);
 
-      let grandparentShowResult: Show | undefined;
-      try {
-        grandparentShowResult = await this.repository.show(
-          `${parentChange.changeId}-`,
-        );
-      } catch (e) {
-        if (
-          e instanceof Error &&
-          (e.message.includes("resolved to more than one revision") ||
-            e.message.includes("No output"))
-        ) {
-          // Leave grandparentShowResult as undefined
-        } else {
-          throw e;
-        }
-      }
-
       parentChangeResourceGroup.resourceStates = showResult.fileStatuses.map(
         (parentStatus) => {
           return {
@@ -435,18 +416,16 @@ class RepositorySourceControlManager {
               strikeThrough: parentStatus.type === "D",
               tooltip: path.basename(parentStatus.file),
             },
-            command: grandparentShowResult
-              ? getResourceStateCommand(
-                  parentStatus,
-                  toJJUri(vscode.Uri.file(parentStatus.path), {
-                    rev: grandparentShowResult.change.changeId,
-                  }),
-                  toJJUri(vscode.Uri.file(parentStatus.path), {
-                    rev: parentChange.changeId,
-                  }),
-                  "(Parent Change)",
-                )
-              : undefined,
+            command: getResourceStateCommand(
+              parentStatus,
+              toJJUri(vscode.Uri.file(parentStatus.path), {
+                diffOriginalRev: parentChange.changeId,
+              }),
+              toJJUri(vscode.Uri.file(parentStatus.path), {
+                rev: parentChange.changeId,
+              }),
+              "(Parent Change)",
+            ),
           };
         },
       );
@@ -1101,6 +1080,90 @@ export class JJRepository {
         }),
       )
     ).toString();
+  }
+
+  async getDiffOriginal(
+    rev: string,
+    filepath: string,
+  ): Promise<Buffer | undefined> {
+    const output = await new Promise<string>((resolve, reject) => {
+      const childProcess = spawnJJ(
+        ["diff", "--summary", "--tool", fakeEditorPath, "-r", rev, filepath],
+        {
+          timeout: 5000,
+          cwd: this.repositoryRoot,
+        },
+      );
+
+      let output = "";
+      const errOutput: Buffer[] = [];
+      childProcess.stdout!.on("data", (data: Buffer) => {
+        output += data.toString();
+
+        // There should be two data events. The first will contain the summary,
+        // the second will be the output of fakeEditor.
+        if (output.includes(fakeEditorPath)) {
+          resolve(output);
+        }
+      });
+      childProcess.stderr!.on("data", (data: Buffer) => {
+        errOutput.push(data);
+      });
+      childProcess.on("error", (error: Error) => {
+        reject(new Error(`Spawning command failed: ${error.message}`));
+      });
+      childProcess.on("close", (code, signal) => {
+        if (code) {
+          reject(
+            new Error(
+              `Command failed with exit code ${code}.\nstdout: ${output}\nstderr: ${Buffer.concat(errOutput).toString()}`,
+            ),
+          );
+        } else if (signal) {
+          reject(
+            new Error(
+              `Command failed with signal ${signal}.\nstdout: ${output}\nstderr: ${Buffer.concat(errOutput).toString()}`,
+            ),
+          );
+        } else {
+          resolve(output);
+        }
+      });
+    });
+
+    const lines = output.trim().split("\n");
+    const pidLineIdx =
+      lines.findIndex((line) => {
+        return line.includes(fakeEditorPath);
+      }) - 1;
+    if (pidLineIdx < 0) {
+      throw new Error("PID line not found.");
+    }
+
+    const summaryLines = lines.slice(0, pidLineIdx);
+    const fakeEditorPID = lines[pidLineIdx];
+    const leftFolderPath = lines[pidLineIdx + 2];
+
+    if (summaryLines.length !== 1) {
+      throw new Error(
+        `Unexpected number of summary lines (${summaryLines.length}): ${summaryLines.join("\n")}`,
+      );
+    }
+
+    const summaryLine = summaryLines[0].trim();
+    // Check if the file was modified (as opposed to added or deleted)
+    if (/^M\s+/.test(summaryLine)) {
+      const filePath = summaryLine.slice(2).trim();
+      const fullPath = path.join(leftFolderPath, filePath);
+
+      try {
+        return await fs.readFile(fullPath);
+      } finally {
+        process.kill(parseInt(fakeEditorPID));
+      }
+    } else {
+      return undefined;
+    }
   }
 }
 

@@ -19,15 +19,15 @@ export function toJJUri(uri: Uri, params: JJUriParams): Uri {
   });
 }
 
-export function getRev(uri: Uri) {
+export function getParams(uri: Uri) {
   if (uri.query === "") {
     throw new Error("URI has no query");
   }
-  const parsed = RevUriParams(JSON.parse(uri.query));
+  const parsed = JJUriParams(JSON.parse(uri.query));
   if (parsed instanceof type.errors) {
     throw new Error("URI query is not JJUriParams");
   }
-  return parsed.rev;
+  return parsed;
 }
 
 export function getRevOpt(uri: Uri) {

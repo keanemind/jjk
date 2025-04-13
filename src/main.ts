@@ -18,7 +18,7 @@ import {
   OperationTreeItem,
 } from "./operationLogTreeView";
 import { JJGraphWebview, RefreshArgs } from "./graphWebview";
-import { getRev, getRevOpt, toJJUri } from "./uri";
+import { getParams, getRevOpt, toJJUri } from "./uri";
 import { logger } from "./logger";
 import { LogOutputChannelTransport } from "./vendor/winston-transport-vscode/logOutputChannelTransport";
 import winston from "winston";
@@ -243,6 +243,20 @@ export async function activate(context: vscode.ExtensionContext) {
       }
     };
     const updateAnnotateInfo = async (uri: vscode.Uri) => {
+      if (!["file", "jj"].includes(uri.scheme)) {
+        annotateInfo = undefined;
+        return;
+      }
+      let rev = "@";
+      if (uri.scheme === "jj") {
+        const params = getParams(uri);
+        if ("diffOriginalRev" in params) {
+          rev = `${params.diffOriginalRev}-`; // note that this may refer to multiple revs, which we handle below
+        } else {
+          rev = params.rev;
+        }
+      }
+
       const repository = workspaceSCM.getRepositoryFromUri(uri);
       if (!repository) {
         return;
@@ -256,12 +270,20 @@ export async function activate(context: vscode.ExtensionContext) {
         return;
       }
 
-      const changeIdsByLine = await repository.annotate(
-        uri.fsPath,
-        uri.scheme === "jj" ? getRev(uri) : "@",
-      );
-      if (activeEditorUri === uri && changeIdsByLine.length > 0) {
-        annotateInfo = { changeIdsByLine, uri };
+      try {
+        const changeIdsByLine = await repository.annotate(uri.fsPath, rev);
+        if (activeEditorUri === uri && changeIdsByLine.length > 0) {
+          annotateInfo = { changeIdsByLine, uri };
+        }
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message.includes("more than one revision")
+        ) {
+          annotateInfo = undefined;
+        } else {
+          throw error;
+        }
       }
     };
     const handleDidChangeActiveTextEditor = async (

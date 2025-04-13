@@ -9,7 +9,7 @@ import {
   FileStat,
   FileType,
 } from "vscode";
-import { getRev } from "./uri";
+import { getParams } from "./uri";
 import { WorkspaceSourceControlManager } from "./repository";
 
 export class JJFileSystemProvider implements FileSystemProvider {
@@ -28,24 +28,12 @@ export class JJFileSystemProvider implements FileSystemProvider {
   }
 
   async stat(uri: Uri): Promise<FileStat> {
-    const rev = getRev(uri);
-
-    const repository = this.repositories.getRepositoryFromUri(uri);
-    if (!repository) {
-      throw FileSystemError.FileNotFound();
-    }
-
-    let size = 0;
-    try {
-      const data = await repository.readFile(rev, uri.fsPath);
-      size = data.length;
-    } catch (e) {
-      if (e instanceof Error && e.message.includes("No such path")) {
-        throw FileSystemError.FileNotFound();
-      }
-      throw e;
-    }
-    return { type: FileType.File, size: size, mtime: this.mtime, ctime: 0 };
+    return {
+      type: FileType.File,
+      size: (await this.readFile(uri)).length,
+      mtime: this.mtime,
+      ctime: 0,
+    };
   }
 
   readDirectory(): Thenable<[string, FileType][]> {
@@ -57,21 +45,32 @@ export class JJFileSystemProvider implements FileSystemProvider {
   }
 
   async readFile(uri: Uri): Promise<Uint8Array> {
-    const rev = getRev(uri);
+    const params = getParams(uri);
 
     const repository = this.repositories.getRepositoryFromUri(uri);
     if (!repository) {
       throw FileSystemError.FileNotFound();
     }
 
-    try {
-      const data = await repository.readFile(rev, uri.fsPath);
-      return data;
-    } catch (e) {
-      if (e instanceof Error && e.message.includes("No such path")) {
+    if ("diffOriginalRev" in params) {
+      const originalContent = await repository.getDiffOriginal(
+        params.diffOriginalRev,
+        uri.fsPath,
+      );
+      if (!originalContent) {
         throw FileSystemError.FileNotFound();
       }
-      throw e;
+      return originalContent;
+    } else {
+      try {
+        const data = await repository.readFile(params.rev, uri.fsPath);
+        return data;
+      } catch (e) {
+        if (e instanceof Error && e.message.includes("No such path")) {
+          throw FileSystemError.FileNotFound();
+        }
+        throw e;
+      }
     }
   }
 
