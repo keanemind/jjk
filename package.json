@@ -159,7 +159,8 @@
       },
       {
         "command": "jj.squashSelectedRanges",
-        "title": "Squash selected changes..."
+        "title": "Squash selected changes...",
+        "category": "Jujutsu"
       }
     ],
     "menus": {
