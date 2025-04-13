@@ -5,7 +5,7 @@ import globals from "globals";
 
 export default tseslint.config(
   {
-    ignores: ["dist/"],
+    ignores: ["dist/", "src/vendor"],
   },
   eslint.configs.recommended,
   {
@@ -31,8 +31,6 @@ export default tseslint.config(
         tsconfigRootDir: import.meta.dirname,
       },
     },
-
-    ignores: ["src/vendor"],
 
     rules: {
       "@typescript-eslint/naming-convention": [
