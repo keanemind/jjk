@@ -7,7 +7,7 @@ import {
   ThemeColor,
 } from "vscode";
 import { FileStatus, FileStatusType } from "./repository";
-import { getRevOpt, withRev } from "./uri";
+import { getRevOpt, toJJUri } from "./uri";
 
 const colorOfType = (type: FileStatusType) => {
   switch (type) {
@@ -97,7 +97,7 @@ export class JJDecorationProvider implements FileDecorationProvider {
     const changedUris = [
       ...[...changedDecorationKeys.keys()].map((key) => {
         const { fsPath, rev } = parseKey(key);
-        return withRev(Uri.file(fsPath), rev);
+        return toJJUri(Uri.file(fsPath), { rev });
       }),
       ...[...changedDecorationKeys.keys()]
         .filter((key) => {
