@@ -6,7 +6,7 @@ const c = @cImport({
 });
 
 fn signalHandler(_: c_int) callconv(.C) void {
-    c.exit(0);
+    std.process.exit(0);
 }
 
 pub fn main() !void {
@@ -31,8 +31,10 @@ pub fn main() !void {
     _ = c.signal(c.SIGINT, signalHandler);
     _ = c.signal(c.SIGTERM, signalHandler);
 
-    // Keep the program running until a signal is received
-    while (true) {
+    // Keep the program running until a signal is received or 5 seconds pass
+    var seconds: u32 = 0;
+    while (seconds < 5) : (seconds += 1) {
         std.time.sleep(1 * std.time.ns_per_s);
     }
+    std.process.exit(0);
 }
