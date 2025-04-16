@@ -18,7 +18,7 @@ import {
   OperationTreeItem,
 } from "./operationLogTreeView";
 import { JJGraphWebview, RefreshArgs } from "./graphWebview";
-import { getRev, getRevOpt, toJJUri, withRev } from "./uri";
+import { getRev, getRevOpt, toJJUri } from "./uri";
 import { logger } from "./logger";
 import { LogOutputChannelTransport } from "./vendor/winston-transport-vscode/logOutputChannelTransport";
 import winston from "winston";
@@ -1049,7 +1049,6 @@ export async function activate(context: vscode.ExtensionContext) {
           if (
             isDiff &&
             activeTab.input.modified.scheme === "file" &&
-            ["@", undefined].includes(getRevOpt(activeTab.input.modified)) &&
             [
               workingCopyParent.change.changeId,
               workingCopyParent.change.commitId,
@@ -1058,23 +1057,17 @@ export async function activate(context: vscode.ExtensionContext) {
             await computeAndSquashSelectedDiff(
               repository,
               linesDiffComputers.getDefault(),
-              toJJUri(activeTab.input.original),
+              activeTab.input.original,
               textEditor,
             );
             await updateResources();
-          } else if (
-            textEditor.document.uri.scheme === "file" &&
-            ["@", undefined].includes(getRevOpt(textEditor.document.uri))
-          ) {
+          } else if (textEditor.document.uri.scheme === "file") {
             await computeAndSquashSelectedDiff(
               repository,
               linesDiffComputers.getLegacy(),
-              toJJUri(
-                withRev(
-                  textEditor.document.uri,
-                  workingCopyParent.change.commitId,
-                ),
-              ),
+              toJJUri(textEditor.document.uri, {
+                rev: workingCopyParent.change.commitId,
+              }),
               textEditor,
             );
             await updateResources();

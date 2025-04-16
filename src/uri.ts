@@ -13,19 +13,13 @@ function isJJUriParams(params: unknown): params is JJUriParams {
   );
 }
 
-export function withRev(uri: Uri, rev: string): Uri {
-  return uri.with({
-    query: JSON.stringify({ rev } satisfies JJUriParams),
-  });
-}
-
 /**
- * Use this for any URI that will go to JJFileSystemProvider. This just sets the scheme to "jj".
- * Note that URIs that go to JJFileSystemProvider must have a rev in the query; see `withRev`.
+ * Use this for any URI that will go to JJFileSystemProvider.
  */
-export function toJJUri(uri: Uri): Uri {
+export function toJJUri(uri: Uri, params: JJUriParams): Uri {
   return uri.with({
     scheme: "jj",
+    query: JSON.stringify(params),
   });
 }
 
