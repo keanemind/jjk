@@ -1,17 +1,13 @@
 import { Uri } from "vscode";
+import { type } from "arktype";
 
-export interface JJUriParams {
-  rev: string;
-}
+const RevUriParams = type({ rev: "string" });
+const DiffOriginalRevUriParams = type({
+  diffOriginalRev: "string",
+});
+const JJUriParams = type(RevUriParams, "|", DiffOriginalRevUriParams);
 
-function isJJUriParams(params: unknown): params is JJUriParams {
-  return (
-    typeof params === "object" &&
-    params !== null &&
-    Object.hasOwnProperty.call(params, "rev") &&
-    typeof (params as { rev: unknown }).rev === "string"
-  );
-}
+export type JJUriParams = typeof JJUriParams.infer;
 
 /**
  * Use this for any URI that will go to JJFileSystemProvider.
@@ -27,8 +23,8 @@ export function getRev(uri: Uri) {
   if (uri.query === "") {
     throw new Error("URI has no query");
   }
-  const parsed = JSON.parse(uri.query) as unknown;
-  if (!isJJUriParams(parsed)) {
+  const parsed = RevUriParams(JSON.parse(uri.query));
+  if (parsed instanceof type.errors) {
     throw new Error("URI query is not JJUriParams");
   }
   return parsed.rev;
@@ -38,8 +34,8 @@ export function getRevOpt(uri: Uri) {
   if (uri.query === "") {
     return;
   }
-  const parsed = JSON.parse(uri.query) as unknown;
-  if (!isJJUriParams(parsed)) {
+  const parsed = RevUriParams(JSON.parse(uri.query));
+  if (parsed instanceof type.errors) {
     return;
   }
   return parsed.rev;
