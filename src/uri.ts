@@ -29,14 +29,3 @@ export function getParams(uri: Uri) {
   }
   return parsed;
 }
-
-export function getRevOpt(uri: Uri) {
-  if (uri.query === "") {
-    return;
-  }
-  const parsed = RevUriParams(JSON.parse(uri.query));
-  if (parsed instanceof type.errors) {
-    return;
-  }
-  return parsed.rev;
-}

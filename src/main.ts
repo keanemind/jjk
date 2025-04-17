@@ -9,7 +9,7 @@ import {
   jjVersion,
   WorkspaceSourceControlManager,
 } from "./repository";
-import type { JJRepository, ChangeWithDetails, Show } from "./repository";
+import type { JJRepository, ChangeWithDetails } from "./repository";
 import { JJDecorationProvider } from "./decorationProvider";
 import { JJFileSystemProvider } from "./fileSystemProvider";
 import {
@@ -18,7 +18,7 @@ import {
   OperationTreeItem,
 } from "./operationLogTreeView";
 import { JJGraphWebview, RefreshArgs } from "./graphWebview";
-import { getParams, getRevOpt, toJJUri } from "./uri";
+import { getParams, toJJUri } from "./uri";
 import { logger } from "./logger";
 import { LogOutputChannelTransport } from "./vendor/winston-transport-vscode/logOutputChannelTransport";
 import winston from "winston";
@@ -28,6 +28,7 @@ import {
   ILinesDiffComputer,
   LinesDiff,
 } from "./vendor/vscode/editor/common/diff/linesDiffComputer";
+import { match } from "arktype";
 
 export async function activate(context: vscode.ExtensionContext) {
   const outputChannel = vscode.window.createOutputChannel("Jujutsu Kaizen", {
@@ -1043,21 +1044,6 @@ export async function activate(context: vscode.ExtensionContext) {
             });
           }
 
-          let workingCopyParent: Show;
-          try {
-            workingCopyParent = await repository.show("@-");
-          } catch (e) {
-            if (
-              e instanceof Error &&
-              e.message.includes("more than one revision")
-            ) {
-              vscode.window.showErrorMessage(
-                "Squash failed. Revision has multiple parents.",
-              );
-            }
-            return;
-          }
-
           const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab;
           // detecting a diff editor: https://github.com/microsoft/vscode/issues/15513
           const isDiff =
@@ -1071,10 +1057,16 @@ export async function activate(context: vscode.ExtensionContext) {
           if (
             isDiff &&
             activeTab.input.modified.scheme === "file" &&
-            [
-              workingCopyParent.change.changeId,
-              workingCopyParent.change.commitId,
-            ].includes(getRevOpt(activeTab.input.original) ?? "not matching")
+            activeTab.input.original.scheme === "jj" &&
+            match({})
+              .case({ diffOriginalRev: "string" }, ({ diffOriginalRev }) =>
+                [
+                  "@",
+                  status.workingCopy.changeId,
+                  status.workingCopy.commitId,
+                ].includes(diffOriginalRev),
+              )
+              .default(() => false)(getParams(activeTab.input.original))
           ) {
             await computeAndSquashSelectedDiff(
               repository,
@@ -1088,7 +1080,7 @@ export async function activate(context: vscode.ExtensionContext) {
               repository,
               linesDiffComputers.getLegacy(),
               toJJUri(textEditor.document.uri, {
-                rev: workingCopyParent.change.commitId,
+                diffOriginalRev: status.workingCopy.commitId,
               }),
               textEditor,
             );

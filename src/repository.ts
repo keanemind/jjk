@@ -2,7 +2,7 @@ import path from "path";
 import * as vscode from "vscode";
 import spawn from "cross-spawn";
 import fs from "fs/promises";
-import { getRevOpt, toJJUri } from "./uri";
+import { getParams, toJJUri } from "./uri";
 import type { JJDecorationProvider } from "./decorationProvider";
 import { logger } from "./logger";
 import type { ChildProcess } from "child_process";
@@ -288,12 +288,16 @@ class RepositorySourceControlManager {
         if (!["file", "jj"].includes(uri.scheme)) {
           return undefined;
         }
-        const revParam = getRevOpt(uri);
-        if (uri.scheme === "jj" && revParam === undefined) {
-          return undefined;
-        }
 
-        const rev = revParam ?? "@";
+        let rev = "@";
+        if (uri.scheme === "jj") {
+          const params = getParams(uri);
+          if ("diffOriginalRev" in params) {
+            // It doesn't make sense to show a quick diff for the left side of a diff. Diffception?
+            return undefined;
+          }
+          rev = params.rev;
+        }
         const filePath = uri.fsPath;
         const originalUri = toJJUri(vscode.Uri.file(filePath), {
           diffOriginalRev: rev,
