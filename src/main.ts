@@ -9,7 +9,7 @@ import {
   jjVersion,
   WorkspaceSourceControlManager,
 } from "./repository";
-import type { JJRepository, ChangeWithDetails, Show } from "./repository";
+import type { JJRepository, ChangeWithDetails } from "./repository";
 import { JJDecorationProvider } from "./decorationProvider";
 import { JJFileSystemProvider } from "./fileSystemProvider";
 import {
@@ -18,7 +18,7 @@ import {
   OperationTreeItem,
 } from "./operationLogTreeView";
 import { JJGraphWebview, RefreshArgs } from "./graphWebview";
-import { getRev, getRevOpt, toJJUri } from "./uri";
+import { getParams, toJJUri } from "./uri";
 import { logger } from "./logger";
 import { LogOutputChannelTransport } from "./vendor/winston-transport-vscode/logOutputChannelTransport";
 import winston from "winston";
@@ -28,6 +28,7 @@ import {
   ILinesDiffComputer,
   LinesDiff,
 } from "./vendor/vscode/editor/common/diff/linesDiffComputer";
+import { match } from "arktype";
 
 export async function activate(context: vscode.ExtensionContext) {
   const outputChannel = vscode.window.createOutputChannel("Jujutsu Kaizen", {
@@ -243,6 +244,20 @@ export async function activate(context: vscode.ExtensionContext) {
       }
     };
     const updateAnnotateInfo = async (uri: vscode.Uri) => {
+      if (!["file", "jj"].includes(uri.scheme)) {
+        annotateInfo = undefined;
+        return;
+      }
+      let rev = "@";
+      if (uri.scheme === "jj") {
+        const params = getParams(uri);
+        if ("diffOriginalRev" in params) {
+          rev = `${params.diffOriginalRev}-`; // note that this may refer to multiple revs, which we handle below
+        } else {
+          rev = params.rev;
+        }
+      }
+
       const repository = workspaceSCM.getRepositoryFromUri(uri);
       if (!repository) {
         return;
@@ -256,12 +271,20 @@ export async function activate(context: vscode.ExtensionContext) {
         return;
       }
 
-      const changeIdsByLine = await repository.annotate(
-        uri.fsPath,
-        uri.scheme === "jj" ? getRev(uri) : "@",
-      );
-      if (activeEditorUri === uri && changeIdsByLine.length > 0) {
-        annotateInfo = { changeIdsByLine, uri };
+      try {
+        const changeIdsByLine = await repository.annotate(uri.fsPath, rev);
+        if (activeEditorUri === uri && changeIdsByLine.length > 0) {
+          annotateInfo = { changeIdsByLine, uri };
+        }
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message.includes("more than one revision")
+        ) {
+          annotateInfo = undefined;
+        } else {
+          throw error;
+        }
       }
     };
     const handleDidChangeActiveTextEditor = async (
@@ -1021,21 +1044,6 @@ export async function activate(context: vscode.ExtensionContext) {
             });
           }
 
-          let workingCopyParent: Show;
-          try {
-            workingCopyParent = await repository.show("@-");
-          } catch (e) {
-            if (
-              e instanceof Error &&
-              e.message.includes("more than one revision")
-            ) {
-              vscode.window.showErrorMessage(
-                "Squash failed. Revision has multiple parents.",
-              );
-            }
-            return;
-          }
-
           const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab;
           // detecting a diff editor: https://github.com/microsoft/vscode/issues/15513
           const isDiff =
@@ -1049,10 +1057,16 @@ export async function activate(context: vscode.ExtensionContext) {
           if (
             isDiff &&
             activeTab.input.modified.scheme === "file" &&
-            [
-              workingCopyParent.change.changeId,
-              workingCopyParent.change.commitId,
-            ].includes(getRevOpt(activeTab.input.original) ?? "not matching")
+            activeTab.input.original.scheme === "jj" &&
+            match({})
+              .case({ diffOriginalRev: "string" }, ({ diffOriginalRev }) =>
+                [
+                  "@",
+                  status.workingCopy.changeId,
+                  status.workingCopy.commitId,
+                ].includes(diffOriginalRev),
+              )
+              .default(() => false)(getParams(activeTab.input.original))
           ) {
             await computeAndSquashSelectedDiff(
               repository,
@@ -1066,7 +1080,7 @@ export async function activate(context: vscode.ExtensionContext) {
               repository,
               linesDiffComputers.getLegacy(),
               toJJUri(textEditor.document.uri, {
-                rev: workingCopyParent.change.commitId,
+                diffOriginalRev: status.workingCopy.commitId,
               }),
               textEditor,
             );

@@ -7,7 +7,7 @@ import {
   ThemeColor,
 } from "vscode";
 import { FileStatus, FileStatusType } from "./repository";
-import { getRevOpt, toJJUri } from "./uri";
+import { getParams, toJJUri } from "./uri";
 
 const colorOfType = (type: FileStatusType) => {
   switch (type) {
@@ -120,7 +120,16 @@ export class JJDecorationProvider implements FileDecorationProvider {
         "provideFileDecoration was called before data was available",
       );
     }
-    const rev = getRevOpt(uri) ?? "@";
+    let rev = "@";
+    if (uri.scheme === "jj") {
+      const params = getParams(uri);
+      if ("diffOriginalRev" in params) {
+        // It doesn't make sense to show a decoration for the left side of a diff, even if that left side is a
+        // single rev, because we never show the left side of a diff by itself; it'll always be part of a diff view.
+        return undefined;
+      }
+      rev = params.rev;
+    }
     const key = getKey(uri.fsPath, rev);
     if (rev === "@" && !this.decorations.has(key)) {
       const fsPath =
