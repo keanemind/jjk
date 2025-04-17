@@ -1150,19 +1150,19 @@ export class JJRepository {
       );
     }
 
-    const summaryLine = summaryLines[0].trim();
-    // Check if the file was modified (as opposed to added or deleted)
-    if (/^M\s+/.test(summaryLine)) {
-      const filePath = summaryLine.slice(2).trim();
-      const fullPath = path.join(leftFolderPath, filePath);
+    try {
+      const summaryLine = summaryLines[0].trim();
+      // Check if the file was modified (as opposed to added or deleted)
+      if (/^M\s+/.test(summaryLine)) {
+        const filePath = summaryLine.slice(2).trim();
+        const fullPath = path.join(leftFolderPath, filePath);
 
-      try {
         return await fs.readFile(fullPath);
-      } finally {
-        process.kill(parseInt(fakeEditorPID));
+      } else {
+        return undefined;
       }
-    } else {
-      return undefined;
+    } finally {
+      process.kill(parseInt(fakeEditorPID));
     }
   }
 }
