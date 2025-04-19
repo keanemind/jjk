@@ -6,6 +6,8 @@ import { getParams, toJJUri } from "./uri";
 import type { JJDecorationProvider } from "./decorationProvider";
 import { logger } from "./logger";
 import type { ChildProcess } from "child_process";
+import { anyEvent, filterEvent } from "./utils";
+import { JJFileSystemProvider } from "./fileSystemProvider";
 
 export let jjVersion = "jj 0.28.0";
 export async function initJJVersion() {
@@ -146,7 +148,10 @@ function handleCommand(childProcess: ChildProcess) {
   });
 }
 
-async function createSCMsInWorkspace(decorationProvider: JJDecorationProvider) {
+async function createSCMsInWorkspace(
+  decorationProvider: JJDecorationProvider,
+  fileSystemProvider: JJFileSystemProvider,
+) {
   const repos: RepositorySourceControlManager[] = [];
   for (const workspaceFolder of vscode.workspace.workspaceFolders || []) {
     try {
@@ -160,7 +165,11 @@ async function createSCMsInWorkspace(decorationProvider: JJDecorationProvider) {
       ).toString();
       const repoRoot = output.trim();
       repos.push(
-        new RepositorySourceControlManager(repoRoot, decorationProvider),
+        new RepositorySourceControlManager(
+          repoRoot,
+          decorationProvider,
+          fileSystemProvider,
+        ),
       );
     } catch (e) {
       if (e instanceof Error && e.message.includes("no jj repo in")) {
@@ -176,14 +185,34 @@ async function createSCMsInWorkspace(decorationProvider: JJDecorationProvider) {
 
 export class WorkspaceSourceControlManager {
   repoSCMs: RepositorySourceControlManager[] = [];
+  subscriptions: {
+    dispose(): unknown;
+  }[] = [];
+  fileSystemProvider: JJFileSystemProvider;
 
-  constructor(private decorationProvider: JJDecorationProvider) {}
+  constructor(private decorationProvider: JJDecorationProvider) {
+    this.fileSystemProvider = new JJFileSystemProvider(this);
+    this.subscriptions.push(this.fileSystemProvider);
+    this.subscriptions.push(
+      vscode.workspace.registerFileSystemProvider(
+        "jj",
+        this.fileSystemProvider,
+        {
+          isReadonly: true,
+          isCaseSensitive: true,
+        },
+      ),
+    );
+  }
 
   async refresh() {
     for (const repo of this.repoSCMs) {
       repo.dispose();
     }
-    this.repoSCMs = await createSCMsInWorkspace(this.decorationProvider);
+    this.repoSCMs = await createSCMsInWorkspace(
+      this.decorationProvider,
+      this.fileSystemProvider,
+    );
   }
 
   getRepositoryFromUri(uri: vscode.Uri) {
@@ -237,6 +266,9 @@ export class WorkspaceSourceControlManager {
     for (const subscription of this.repoSCMs) {
       subscription.dispose();
     }
+    for (const subscription of this.subscriptions) {
+      subscription.dispose();
+    }
   }
 }
 
@@ -253,6 +285,7 @@ class RepositorySourceControlManager {
   constructor(
     public repositoryRoot: string,
     private decorationProvider: JJDecorationProvider,
+    private fileSystemProvider: JJFileSystemProvider,
   ) {
     this.repository = new JJRepository(repositoryRoot);
     this.subscriptions.push(
@@ -302,9 +335,54 @@ class RepositorySourceControlManager {
         const originalUri = toJJUri(vscode.Uri.file(filePath), {
           diffOriginalRev: rev,
         });
+
         return originalUri;
       },
     };
+
+    const watcherWorkingCopy = vscode.workspace.createFileSystemWatcher(
+      new vscode.RelativePattern(
+        path.join(this.repositoryRoot, ".jj/working_copy"),
+        "*",
+      ),
+    );
+    this.subscriptions.push(watcherWorkingCopy);
+    const workingCopyWatchEvent = filterEvent(
+      anyEvent(
+        watcherWorkingCopy.onDidCreate,
+        watcherWorkingCopy.onDidChange,
+        watcherWorkingCopy.onDidDelete,
+      ),
+      (uri) => uri.scheme === "file" && !/\/working_copy.lock/.test(uri.path),
+    );
+
+    const watcherOperations = vscode.workspace.createFileSystemWatcher(
+      new vscode.RelativePattern(
+        path.join(this.repositoryRoot, ".jj/repo/op_store/operations"),
+        "*",
+      ),
+    );
+    this.subscriptions.push(watcherOperations);
+    const operationsWatchEvent = anyEvent(
+      watcherOperations.onDidCreate,
+      watcherOperations.onDidChange,
+      watcherOperations.onDidDelete,
+    );
+
+    const repoChangedWatchEvent = anyEvent(
+      workingCopyWatchEvent,
+      operationsWatchEvent,
+    );
+    repoChangedWatchEvent(
+      (uri) => {
+        this.fileSystemProvider.onDidChangeRepository({
+          repositoryRoot: this.repositoryRoot,
+          uri,
+        });
+      },
+      undefined,
+      this.subscriptions,
+    );
   }
 
   async refresh(status: RepositoryStatus) {
@@ -351,7 +429,7 @@ class RepositorySourceControlManager {
           command: getResourceStateCommand(
             fileStatus,
             toJJUri(vscode.Uri.file(`${fileStatus.path}`), {
-              diffOriginalRev: status.workingCopy.changeId,
+              diffOriginalRev: "@",
             }),
             vscode.Uri.file(fileStatus.path),
             "(Working Copy)",
@@ -1104,6 +1182,9 @@ export class JJRepository {
     ).toString();
   }
 
+  /**
+   * @returns undefined if the file was not modified in `rev`
+   */
   async getDiffOriginal(
     rev: string,
     filepath: string,
@@ -1166,7 +1247,10 @@ export class JJRepository {
     const fakeEditorPID = lines[pidLineIdx];
     const leftFolderPath = lines[pidLineIdx + 2];
 
-    if (summaryLines.length !== 1) {
+    if (summaryLines.length === 0) {
+      // No changes to the file
+      return undefined;
+    } else if (summaryLines.length > 1) {
       throw new Error(
         `Unexpected number of summary lines (${summaryLines.length}): ${summaryLines.join("\n")}`,
       );
