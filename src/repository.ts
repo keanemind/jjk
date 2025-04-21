@@ -6,7 +6,7 @@ import { getParams, toJJUri } from "./uri";
 import type { JJDecorationProvider } from "./decorationProvider";
 import { logger } from "./logger";
 import type { ChildProcess } from "child_process";
-import { anyEvent, filterEvent } from "./utils";
+import { anyEvent } from "./utils";
 import { JJFileSystemProvider } from "./fileSystemProvider";
 
 export let jjVersion = "jj 0.28.0";
@@ -340,22 +340,6 @@ class RepositorySourceControlManager {
       },
     };
 
-    const watcherWorkingCopy = vscode.workspace.createFileSystemWatcher(
-      new vscode.RelativePattern(
-        path.join(this.repositoryRoot, ".jj/working_copy"),
-        "*",
-      ),
-    );
-    this.subscriptions.push(watcherWorkingCopy);
-    const workingCopyWatchEvent = filterEvent(
-      anyEvent(
-        watcherWorkingCopy.onDidCreate,
-        watcherWorkingCopy.onDidChange,
-        watcherWorkingCopy.onDidDelete,
-      ),
-      (uri) => uri.scheme === "file" && !/\/working_copy.lock/.test(uri.path),
-    );
-
     const watcherOperations = vscode.workspace.createFileSystemWatcher(
       new vscode.RelativePattern(
         path.join(this.repositoryRoot, ".jj/repo/op_store/operations"),
@@ -363,15 +347,10 @@ class RepositorySourceControlManager {
       ),
     );
     this.subscriptions.push(watcherOperations);
-    const operationsWatchEvent = anyEvent(
+    const repoChangedWatchEvent = anyEvent(
       watcherOperations.onDidCreate,
       watcherOperations.onDidChange,
       watcherOperations.onDidDelete,
-    );
-
-    const repoChangedWatchEvent = anyEvent(
-      workingCopyWatchEvent,
-      operationsWatchEvent,
     );
     repoChangedWatchEvent(
       (uri) => {
