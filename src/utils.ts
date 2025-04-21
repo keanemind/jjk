@@ -204,33 +204,3 @@ export function createThrottledAsyncFn<T, A extends unknown[]>(
 
   return throttledFn;
 }
-
-/**
- * Creates a debounced version of a function that delays invoking `fn`
- * until `delay` milliseconds have elapsed since the last time the
- * debounced function was invoked.
- *
- * @template A The argument types of the function.
- * @param fn The function to debounce.
- * @param delay The number of milliseconds to delay.
- * @returns A new debounced function.
- */
-export function createDebouncedFn<A extends unknown[]>(
-  fn: (...args: A) => void,
-  delay: number,
-): (...args: A) => void {
-  let timerId: ReturnType<typeof setTimeout> | null = null;
-
-  const debouncedFn = (...args: A): void => {
-    if (timerId !== null) {
-      clearTimeout(timerId);
-    }
-
-    timerId = setTimeout(() => {
-      timerId = null; // Clear the timerId *before* calling fn
-      fn(...args); // Call the original function with the latest arguments
-    }, delay);
-  };
-
-  return debouncedFn;
-}

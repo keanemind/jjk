@@ -15,7 +15,6 @@ import {
 import { getParams } from "./uri";
 import type { WorkspaceSourceControlManager } from "./repository";
 import {
-  createDebouncedFn,
   createThrottledAsyncFn,
   eventToPromise,
   filterEvent,
@@ -54,14 +53,6 @@ export class JJFileSystemProvider implements FileSystemProvider {
     repositoryRoot: string;
   }): void {
     this.changedRepositoryRoots.add(repositoryRoot);
-    this.eventuallyFireChangeEvents();
-  }
-
-  eventuallyFireChangeEvents = createDebouncedFn(
-    this._eventuallyFireChangeEvents.bind(this),
-    1100,
-  );
-  private _eventuallyFireChangeEvents(): void {
     void this.fireChangeEvents();
   }
 
