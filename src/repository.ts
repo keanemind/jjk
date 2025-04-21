@@ -771,6 +771,15 @@ export class JJRepository {
     ).toString();
   }
 
+  /**
+   * Squashes a portion of the changes in a file from one revision into another.
+   *
+   * @param options.fromRev - The revision to squash changes from.
+   * @param options.toRev - The revision to squash changes into.
+   * @param options.filepath - The path of the file whose changes will be moved.
+   * @param options.content - The contents of the file at filepath with some of the changes in fromRev applied to it;
+   *                          those changes will be moved to the destination revision.
+   */
   squashContent({
     fromRev,
     toRev,
@@ -810,16 +819,25 @@ export class JJRepository {
           return;
         }
         const fakeEditorPID = lines[0];
+        const leftFolderPath = lines[2];
         const rightFolderPath = lines[3];
 
         // Convert filepath to relative path and join with rightFolderPath
         const relativeFilePath = path.relative(this.repositoryRoot, filepath);
         const fileToEdit = path.join(rightFolderPath, relativeFilePath);
 
-        // Overwrite the file with the content
-        void fs.writeFile(fileToEdit, content).finally(() => {
-          process.kill(parseInt(fakeEditorPID));
-        });
+        // Copy everything, then remove the specific file we're about to write to avoid its read-only permissions
+        // copied from the left folder, then write the new content.
+        void fs
+          .cp(leftFolderPath, rightFolderPath, { recursive: true })
+          .then(() => fs.rm(fileToEdit, { force: true }))
+          .then(() => fs.writeFile(fileToEdit, content))
+          .catch((error) => {
+            reject(error); // eslint-disable-line @typescript-eslint/prefer-promise-reject-errors
+          })
+          .finally(() => {
+            process.kill(parseInt(fakeEditorPID));
+          });
       });
 
       let errOutput = "";
