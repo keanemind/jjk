@@ -872,7 +872,7 @@ export class JJRepository {
 
         const lines = output.trim().split("\n");
         if (lines.length !== 4) {
-          reject(new Error(`Unexpected output from fakeEditor: ${output}`));
+          reject(new Error(`Unexpected output from fakeeditor: ${output}`));
           return;
         }
         const fakeEditorPID = lines[0];
@@ -1220,6 +1220,9 @@ export class JJRepository {
       }) - 1;
     if (pidLineIdx < 0) {
       throw new Error("PID line not found.");
+    }
+    if (pidLineIdx + 2 >= lines.length) {
+      throw new Error(`Unexpected output from fakeeditor: ${output}`);
     }
 
     const summaryLines = lines.slice(0, pidLineIdx);
