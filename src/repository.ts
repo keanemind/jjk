@@ -883,11 +883,14 @@ export class JJRepository {
         const relativeFilePath = path.relative(this.repositoryRoot, filepath);
         const fileToEdit = path.join(rightFolderPath, relativeFilePath);
 
-        // Copy everything, then remove the specific file we're about to write to avoid its read-only permissions
-        // copied from the left folder, then write the new content.
+        // Ensure right folder is an exact copy of left, then handle the specific file
         void fs
-          .cp(leftFolderPath, rightFolderPath, { recursive: true })
-          .then(() => fs.rm(fileToEdit, { force: true }))
+          .rm(rightFolderPath, { recursive: true, force: true })
+          .then(() => fs.mkdir(rightFolderPath, { recursive: true }))
+          .then(() =>
+            fs.cp(leftFolderPath, rightFolderPath, { recursive: true }),
+          )
+          .then(() => fs.rm(fileToEdit, { force: true })) // remove the specific file we're about to write to avoid its read-only permissions copied from the left folder
           .then(() => fs.writeFile(fileToEdit, content))
           .catch((error) => {
             reject(error); // eslint-disable-line @typescript-eslint/prefer-promise-reject-errors
