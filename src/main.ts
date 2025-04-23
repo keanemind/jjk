@@ -11,7 +11,6 @@ import {
 } from "./repository";
 import type { JJRepository, ChangeWithDetails } from "./repository";
 import { JJDecorationProvider } from "./decorationProvider";
-import { JJFileSystemProvider } from "./fileSystemProvider";
 import {
   OperationLogManager,
   OperationLogTreeDataProvider,
@@ -108,15 +107,6 @@ export async function activate(context: vscode.ExtensionContext) {
       context.extensionUri,
       selectedRepo,
       context,
-    );
-
-    const fileSystemProvider = new JJFileSystemProvider(workspaceSCM);
-    context.subscriptions.push(fileSystemProvider);
-    context.subscriptions.push(
-      vscode.workspace.registerFileSystemProvider("jj", fileSystemProvider, {
-        isReadonly: true,
-        isCaseSensitive: true,
-      }),
     );
 
     const operationLogTreeDataProvider = new OperationLogTreeDataProvider(
