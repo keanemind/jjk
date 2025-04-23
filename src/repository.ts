@@ -485,7 +485,7 @@ class RepositorySourceControlManager {
               toJJUri(vscode.Uri.file(parentStatus.path), {
                 rev: parentChange.changeId,
               }),
-              "(Parent Change)",
+              `(${parentChange.changeId})`,
             ),
           };
         },
