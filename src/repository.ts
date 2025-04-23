@@ -879,6 +879,16 @@ export class JJRepository {
         const leftFolderPath = lines[2];
         const rightFolderPath = lines[3];
 
+        if (
+          !leftFolderPath ||
+          !leftFolderPath.endsWith("left") ||
+          !rightFolderPath ||
+          !rightFolderPath.endsWith("right")
+        ) {
+          reject(new Error(`Unexpected output from fakeeditor: ${output}`));
+          return;
+        }
+
         // Convert filepath to relative path and join with rightFolderPath
         const relativeFilePath = path.relative(this.repositoryRoot, filepath);
         const fileToEdit = path.join(rightFolderPath, relativeFilePath);
