@@ -1,26 +1,19 @@
 {
-	"compilerOptions": {
-		"module": "Preserve",
-		"target": "ES2022",
-		"lib": [
-			"ES2022"
-		],
-		"sourceMap": true,
-		"rootDir": "src",
-		"strict": true,   /* enable all strict type-checking options */
-		"outDir": "./dist",
-		/* Additional Checks */
-		// "noImplicitReturns": true, /* Report error when not all code paths in function return a value. */
-		// "noFallthroughCasesInSwitch": true, /* Report errors for fallthrough cases in switch statement. */
-		// "noUnusedParameters": true,  /* Report errors on unused parameters. */
-		"moduleResolution": "bundler"
-	},
-	"include": [
-		"src/**/*"
-	],
-	"exclude": [
-		"node_modules",
-		"dist",
-		".vscode-test"
-	]
+  "compilerOptions": {
+    "module": "Preserve",
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "sourceMap": true,
+    "rootDir": "src",
+    "strict": true /* enable all strict type-checking options */,
+    "outDir": "./dist",
+    /* Additional Checks */
+    // "noImplicitReturns": true, /* Report error when not all code paths in function return a value. */
+    // "noFallthroughCasesInSwitch": true, /* Report errors for fallthrough cases in switch statement. */
+    // "noUnusedParameters": true,  /* Report errors on unused parameters. */
+    "moduleResolution": "bundler",
+    "skipLibCheck": true /* Needed to avoid error in lru-cache v10 https://github.com/isaacs/node-lru-cache/issues/354 */
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", ".vscode-test"]
 }
