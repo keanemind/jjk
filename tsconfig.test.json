@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "Node16", // Compile tests to CommonJS for Node.js execution
+    "moduleResolution": "node16", // Use Node.js resolution for CommonJS tests
+    "outDir": "out", // Output directory for compiled tests
+    "rootDir": "src", // Ensure rootDir is consistent or adjusted if needed
+    "sourceMap": true // Keep source maps for debugging tests
+    // No need to repeat target, lib, strict, etc. as they are inherited
+  },
+  "include": [
+    "src/test/**/*.ts" // Only include test files
+  ],
+  "exclude": [
+    "node_modules",
+    "dist", // Exclude the main build output
+    ".vscode-test"
+  ]
+}
