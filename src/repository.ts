@@ -272,6 +272,28 @@ export class WorkspaceSourceControlManager {
   }
 }
 
+export function provideOriginalResource(uri: vscode.Uri) {
+  if (!["file", "jj"].includes(uri.scheme)) {
+    return undefined;
+  }
+
+  let rev = "@";
+  if (uri.scheme === "jj") {
+    const params = getParams(uri);
+    if ("diffOriginalRev" in params) {
+      // It doesn't make sense to show a quick diff for the left side of a diff. Diffception?
+      return undefined;
+    }
+    rev = params.rev;
+  }
+  const filePath = uri.fsPath;
+  const originalUri = toJJUri(vscode.Uri.file(filePath), {
+    diffOriginalRev: rev,
+  });
+
+  return originalUri;
+}
+
 class RepositorySourceControlManager {
   subscriptions: {
     dispose(): unknown;
@@ -317,27 +339,7 @@ class RepositorySourceControlManager {
     };
 
     this.sourceControl.quickDiffProvider = {
-      provideOriginalResource: (uri) => {
-        if (!["file", "jj"].includes(uri.scheme)) {
-          return undefined;
-        }
-
-        let rev = "@";
-        if (uri.scheme === "jj") {
-          const params = getParams(uri);
-          if ("diffOriginalRev" in params) {
-            // It doesn't make sense to show a quick diff for the left side of a diff. Diffception?
-            return undefined;
-          }
-          rev = params.rev;
-        }
-        const filePath = uri.fsPath;
-        const originalUri = toJJUri(vscode.Uri.file(filePath), {
-          diffOriginalRev: rev,
-        });
-
-        return originalUri;
-      },
+      provideOriginalResource,
     };
 
     const watcherOperations = vscode.workspace.createFileSystemWatcher(
