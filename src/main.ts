@@ -29,6 +29,7 @@ import {
   LinesDiff,
 } from "./vendor/vscode/editor/common/diff/linesDiffComputer";
 import { match } from "arktype";
+import { getActiveTextEditorDiff } from "./utils";
 
 export async function activate(context: vscode.ExtensionContext) {
   const outputChannel = vscode.window.createOutputChannel("Jujutsu Kaizen", {
@@ -1080,20 +1081,12 @@ export async function activate(context: vscode.ExtensionContext) {
             });
           }
 
-          const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab;
-          // detecting a diff editor: https://github.com/microsoft/vscode/issues/15513
-          const isDiff =
-            activeTab &&
-            activeTab.input instanceof vscode.TabInputTextDiff &&
-            (activeTab.input.modified?.toString() ===
-              textEditor.document.uri.toString() ||
-              activeTab.input.original?.toString() ===
-                textEditor.document.uri.toString());
+          const diffInput = getActiveTextEditorDiff();
 
           if (
-            isDiff &&
-            activeTab.input.modified.scheme === "file" &&
-            activeTab.input.original.scheme === "jj" &&
+            diffInput &&
+            diffInput.modified.scheme === "file" &&
+            diffInput.original.scheme === "jj" &&
             match({})
               .case({ diffOriginalRev: "string" }, ({ diffOriginalRev }) =>
                 [
@@ -1102,12 +1095,12 @@ export async function activate(context: vscode.ExtensionContext) {
                   status.workingCopy.commitId,
                 ].includes(diffOriginalRev),
               )
-              .default(() => false)(getParams(activeTab.input.original))
+              .default(() => false)(getParams(diffInput.original))
           ) {
             await computeAndSquashSelectedDiff(
               repository,
               linesDiffComputers.getDefault(),
-              activeTab.input.original,
+              diffInput.original,
               textEditor,
             );
             await updateResources();
@@ -1199,14 +1192,27 @@ export async function activate(context: vscode.ExtensionContext) {
               selectedParentChange = selection.changeId;
             }
 
-            await vscode.commands.executeCommand(
-              "vscode.open",
-              toJJUri(uri, {
-                rev: selectedParentChange,
-              }),
-              {},
-              `${path.basename(uri.fsPath)} (${selectedParentChange.substring(0, 8)})`,
-            );
+            if (getActiveTextEditorDiff()) {
+              await vscode.commands.executeCommand(
+                "vscode.diff",
+                toJJUri(uri, {
+                  diffOriginalRev: selectedParentChange,
+                }),
+                toJJUri(uri, {
+                  rev: selectedParentChange,
+                }),
+                `${path.basename(uri.fsPath)} (${selectedParentChange.substring(0, 8)})`,
+              );
+            } else {
+              await vscode.commands.executeCommand(
+                "vscode.open",
+                toJJUri(uri, {
+                  rev: selectedParentChange,
+                }),
+                {},
+                `${path.basename(uri.fsPath)} (${selectedParentChange.substring(0, 8)})`,
+              );
+            }
           } catch (error) {
             vscode.window.showErrorMessage(
               `Failed to open parent change${error instanceof Error ? `: ${error.message}` : ""}`,
@@ -1285,14 +1291,27 @@ export async function activate(context: vscode.ExtensionContext) {
               selectedChildChange = selection.changeId;
             }
 
-            await vscode.commands.executeCommand(
-              "vscode.open",
-              toJJUri(uri, {
-                rev: selectedChildChange,
-              }),
-              {},
-              `${path.basename(uri.fsPath)} (${selectedChildChange.substring(0, 8)})`,
-            );
+            if (getActiveTextEditorDiff()) {
+              await vscode.commands.executeCommand(
+                "vscode.diff",
+                toJJUri(uri, {
+                  diffOriginalRev: selectedChildChange,
+                }),
+                toJJUri(uri, {
+                  rev: selectedChildChange,
+                }),
+                `${path.basename(uri.fsPath)} (${selectedChildChange.substring(0, 8)})`,
+              );
+            } else {
+              await vscode.commands.executeCommand(
+                "vscode.open",
+                toJJUri(uri, {
+                  rev: selectedChildChange,
+                }),
+                {},
+                `${path.basename(uri.fsPath)} (${selectedChildChange.substring(0, 8)})`,
+              );
+            }
           } catch (error) {
             vscode.window.showErrorMessage(
               `Failed to open child change${error instanceof Error ? `: ${error.message}` : ""}`,

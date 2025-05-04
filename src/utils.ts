@@ -1,5 +1,5 @@
 import { sep } from "path";
-import { Event, Disposable } from "vscode";
+import { Event, Disposable, window, TabInputTextDiff } from "vscode";
 
 export const isMacintosh = process.platform === "darwin";
 export const isWindows = process.platform === "win32";
@@ -203,4 +203,30 @@ export function createThrottledAsyncFn<T, A extends unknown[]>(
   };
 
   return throttledFn;
+}
+
+export function getActiveTextEditorDiff(): TabInputTextDiff | undefined {
+  const activeTextEditor = window.activeTextEditor;
+  if (!activeTextEditor) {
+    return undefined;
+  }
+
+  const activeTab = window.tabGroups.activeTabGroup.activeTab;
+  if (!activeTab) {
+    return undefined;
+  }
+
+  // detecting a diff editor: https://github.com/microsoft/vscode/issues/15513
+  const isDiff =
+    activeTab.input instanceof TabInputTextDiff &&
+    (activeTab.input.modified?.toString() ===
+      activeTextEditor.document.uri.toString() ||
+      activeTab.input.original?.toString() ===
+        activeTextEditor.document.uri.toString());
+
+  if (!isDiff) {
+    return undefined;
+  }
+
+  return activeTab.input;
 }
