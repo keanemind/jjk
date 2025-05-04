@@ -1130,6 +1130,178 @@ export async function activate(context: vscode.ExtensionContext) {
       }),
     );
 
+    context.subscriptions.push(
+      vscode.commands.registerCommand(
+        "jj.openParentChange",
+        async (uri: vscode.Uri) => {
+          try {
+            if (!["file", "jj"].includes(uri.scheme)) {
+              return undefined;
+            }
+
+            let currentRev = "@";
+            if (uri.scheme === "jj") {
+              const params = getParams(uri);
+              if ("diffOriginalRev" in params) {
+                currentRev = params.diffOriginalRev;
+              } else {
+                currentRev = params.rev;
+              }
+            }
+
+            const repository = workspaceSCM.getRepositoryFromUri(uri);
+            if (!repository) {
+              throw new Error("Repository not found");
+            }
+
+            const parentChangesOutput = (
+              await repository.log(
+                `all:${currentRev}-`,
+                'change_id ++ "\n"',
+                undefined,
+                true,
+              )
+            ).trim();
+
+            if (parentChangesOutput === "") {
+              throw new Error("No parent changes found");
+            }
+
+            const parentChanges = parentChangesOutput.split("\n");
+
+            if (parentChanges.length === 0) {
+              throw new Error("No parent changes found");
+            }
+
+            let selectedParentChange: string;
+            if (parentChanges.length === 1) {
+              selectedParentChange = parentChanges[0];
+            } else {
+              const items = (await Promise.all(
+                parentChanges.map(async (changeId) => {
+                  const show = await repository.show(changeId);
+                  return {
+                    label: `$(arrow-down) Parent: ${changeId.substring(0, 8)}`,
+                    description: show.change.description || "(no description)",
+                    alwaysShow: true,
+                    changeId,
+                  };
+                }),
+              )) satisfies vscode.QuickPickItem[];
+
+              const selection = await vscode.window.showQuickPick(items, {
+                placeHolder: "Select parent change to open",
+              });
+              if (!selection) {
+                return;
+              }
+
+              selectedParentChange = selection.changeId;
+            }
+
+            await vscode.commands.executeCommand(
+              "vscode.open",
+              toJJUri(uri, {
+                rev: selectedParentChange,
+              }),
+              {},
+              `${path.basename(uri.fsPath)} (${selectedParentChange.substring(0, 8)})`,
+            );
+          } catch (error) {
+            vscode.window.showErrorMessage(
+              `Failed to open parent change${error instanceof Error ? `: ${error.message}` : ""}`,
+            );
+          }
+        },
+      ),
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand(
+        "jj.openChildChange",
+        async (uri: vscode.Uri) => {
+          try {
+            if (!["file", "jj"].includes(uri.scheme)) {
+              return undefined;
+            }
+
+            let currentRev = "@";
+            if (uri.scheme === "jj") {
+              const params = getParams(uri);
+              if ("diffOriginalRev" in params) {
+                currentRev = params.diffOriginalRev;
+              } else {
+                currentRev = params.rev;
+              }
+            }
+
+            const repository = workspaceSCM.getRepositoryFromUri(uri);
+            if (!repository) {
+              throw new Error("Repository not found");
+            }
+
+            const childChangesOutput = (
+              await repository.log(
+                `all:${currentRev}+`,
+                'change_id ++ "\n"',
+                undefined,
+                true,
+              )
+            ).trim();
+
+            if (childChangesOutput === "") {
+              throw new Error("No child changes found");
+            }
+
+            const childChanges = childChangesOutput.split("\n");
+
+            if (childChanges.length === 0) {
+              throw new Error("No child changes found");
+            }
+
+            let selectedChildChange: string;
+            if (childChanges.length === 1) {
+              selectedChildChange = childChanges[0];
+            } else {
+              const items = (await Promise.all(
+                childChanges.map(async (changeId) => {
+                  const show = await repository.show(changeId);
+                  return {
+                    label: `$(arrow-up) Child: ${changeId.substring(0, 8)}`,
+                    description: show.change.description || "(no description)",
+                    alwaysShow: true,
+                    changeId,
+                  };
+                }),
+              )) satisfies vscode.QuickPickItem[];
+
+              const selection = await vscode.window.showQuickPick(items, {
+                placeHolder: "Select child change to open",
+              });
+              if (!selection) {
+                return;
+              }
+
+              selectedChildChange = selection.changeId;
+            }
+
+            await vscode.commands.executeCommand(
+              "vscode.open",
+              toJJUri(uri, {
+                rev: selectedChildChange,
+              }),
+              {},
+              `${path.basename(uri.fsPath)} (${selectedChildChange.substring(0, 8)})`,
+            );
+          } catch (error) {
+            vscode.window.showErrorMessage(
+              `Failed to open child change${error instanceof Error ? `: ${error.message}` : ""}`,
+            );
+          }
+        },
+      ),
+    );
+
     isInitialized = true;
   }
 
