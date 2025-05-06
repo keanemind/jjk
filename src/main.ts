@@ -1,12 +1,13 @@
 import * as vscode from "vscode";
 import which from "which";
-
+import path from "path";
 import "./repository";
 import {
   extensionDir,
   initExtensionDir,
   initJJVersion,
   jjVersion,
+  provideOriginalResource,
   WorkspaceSourceControlManager,
 } from "./repository";
 import type { JJRepository, ChangeWithDetails } from "./repository";
@@ -341,7 +342,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     context.subscriptions.push(
       vscode.commands.registerCommand(
-        "jj.openFile",
+        "jj.openFileResourceState",
         async (resourceState: vscode.SourceControlResourceState) => {
           const opts: vscode.TextDocumentShowOptions = {
             preserveFocus: false,
@@ -359,6 +360,51 @@ export async function activate(context: vscode.ExtensionContext) {
           } catch (error) {
             vscode.window.showErrorMessage(
               `Failed to open file${error instanceof Error ? `: ${error.message}` : ""}`,
+            );
+          }
+        },
+      ),
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand(
+        "jj.openFileEditor",
+        async (uri: vscode.Uri) => {
+          try {
+            await vscode.commands.executeCommand("vscode.open", uri, {});
+          } catch (error) {
+            vscode.window.showErrorMessage(
+              `Failed to open file${error instanceof Error ? `: ${error.message}` : ""}`,
+            );
+          }
+        },
+      ),
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand(
+        "jj.openDiffEditor",
+        async (uri: vscode.Uri) => {
+          try {
+            const originalUri = provideOriginalResource(uri);
+            if (!originalUri) {
+              throw new Error("Original resource not found");
+            }
+            const params = getParams(originalUri);
+            if (!("diffOriginalRev" in params)) {
+              throw new Error(
+                "Original resource does not have a diffOriginalRev. This is a bug.",
+              );
+            }
+            await vscode.commands.executeCommand(
+              "vscode.diff",
+              originalUri,
+              uri,
+              `${path.basename(uri.fsPath)} (${params.diffOriginalRev.substring(0, 8)})`,
+            );
+          } catch (error) {
+            vscode.window.showErrorMessage(
+              `Failed to open diff${error instanceof Error ? `: ${error.message}` : ""}`,
             );
           }
         },

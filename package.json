@@ -45,10 +45,22 @@
         "enablement": "!operationInProgress"
       },
       {
-        "command": "jj.openFile",
+        "command": "jj.openFileResourceState",
         "title": "Open file",
         "category": "Jujutsu",
         "icon": "$(go-to-file)"
+      },
+      {
+        "command": "jj.openFileEditor",
+        "title": "Open file",
+        "category": "Jujutsu",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "jj.openDiffEditor",
+        "title": "Open diff",
+        "category": "Jujutsu",
+        "icon": "$(diff-multiple)"
       },
       {
         "command": "jj.describe",
@@ -168,6 +180,16 @@
         {
           "command": "jj.squashSelectedRanges",
           "when": "editorTextFocus && editorHasSelection && !editorReadonly"
+        },
+        {
+          "command": "jj.openFileEditor",
+          "when": "isInDiffEditor",
+          "group": "navigation"
+        },
+        {
+          "command": "jj.openDiffEditor",
+          "when": "!isInDiffEditor",
+          "group": "navigation"
         }
       ],
       "editor/context": [
@@ -256,7 +278,7 @@
       ],
       "scm/resourceState/context": [
         {
-          "command": "jj.openFile",
+          "command": "jj.openFileResourceState",
           "when": "scmProvider == jj && scmResourceGroup == @",
           "group": "inline"
         },
