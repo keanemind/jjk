@@ -173,6 +173,18 @@
         "command": "jj.squashSelectedRanges",
         "title": "Squash selected changes...",
         "category": "Jujutsu"
+      },
+      {
+        "command": "jj.openParentChange",
+        "title": "Open parent change",
+        "category": "Jujutsu",
+        "icon": "$(arrow-left)"
+      },
+      {
+        "command": "jj.openChildChange",
+        "title": "Open child change",
+        "category": "Jujutsu",
+        "icon": "$(arrow-right)"
       }
     ],
     "menus": {
@@ -189,7 +201,15 @@
         {
           "command": "jj.openDiffEditor",
           "when": "!isInDiffEditor",
-          "group": "navigation"
+          "group": "navigation@1"
+        },
+        {
+          "command": "jj.openParentChange",
+          "group": "navigation@2"
+        },
+        {
+          "command": "jj.openChildChange",
+          "group": "navigation@3"
         }
       ],
       "editor/context": [
