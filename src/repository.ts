@@ -700,32 +700,31 @@ export class JJRepository {
             break;
           case "diff.summary()": {
             const changeRegex = /^(A|M|D|R) (.+)$/;
-            const renameRegex = /\{(.+) => (.+)\}$/;
             for (const line of value.split("\n").filter(Boolean)) {
               const changeMatch = changeRegex.exec(line);
               if (changeMatch) {
                 const [_, type, file] = changeMatch;
 
                 if (type === "R") {
-                  if (renameRegex.test(file)) {
-                    const renameMatch = renameRegex.exec(file);
-                    if (renameMatch) {
-                      const [_, from, to] = renameMatch;
-                      ret.fileStatuses.push({
-                        type: "R",
-                        file: to,
-                        path: path.join(this.repositoryRoot, to),
-                        renamedFrom: from,
-                      });
-                    }
+                  const parsedPaths = parseRenamePaths(file);
+                  if (parsedPaths) {
+                    ret.fileStatuses.push({
+                      type: "R",
+                      file: parsedPaths.toPath,
+                      path: path.join(this.repositoryRoot, parsedPaths.toPath),
+                      renamedFrom: parsedPaths.fromPath,
+                    });
                   } else {
                     throw new Error(`Unexpected rename line: ${line}`);
                   }
                 } else {
+                  const normalizedFile = path
+                    .normalize(file)
+                    .replace(/\\/g, "/");
                   ret.fileStatuses.push({
                     type: type as "A" | "M" | "D",
-                    file,
-                    path: path.join(this.repositoryRoot, file),
+                    file: normalizedFile,
+                    path: path.join(this.repositoryRoot, normalizedFile),
                   });
                 }
               } else {
@@ -1332,7 +1331,6 @@ async function parseJJStatus(
   const changeRegex = /^(A|M|D|R) (.+)$/;
   const commitRegex =
     /^(Working copy|Parent commit)\s*(\(@-?\))?\s*:\s+(\S+)\s+(\S+)(?:\s+(.+?)\s+\|)?(?:\s+(.*))?$/;
-  const renameRegex = /^\{(.+) => (.+)\}$/;
 
   for (const line of lines) {
     if (
@@ -1349,22 +1347,24 @@ async function parseJJStatus(
     if (changeMatch) {
       const [_, type, file] = changeMatch;
 
-      if (type === "R" && renameRegex.test(file)) {
-        const renameMatch = renameRegex.exec(file);
-        if (renameMatch) {
-          const [_, from, to] = renameMatch;
+      if (type === "R") {
+        const parsedPaths = parseRenamePaths(file);
+        if (parsedPaths) {
           fileStatuses.push({
             type: "R",
-            file: to,
-            path: path.join(repositoryRoot, to),
-            renamedFrom: from,
+            file: parsedPaths.toPath,
+            path: path.join(repositoryRoot, parsedPaths.toPath),
+            renamedFrom: parsedPaths.fromPath,
           });
+        } else {
+          throw new Error(`Unexpected rename line: ${line}`);
         }
       } else {
+        const normalizedFile = path.normalize(file).replace(/\\/g, "/");
         fileStatuses.push({
-          type: type as "A" | "M" | "D" | "R",
-          file,
-          path: path.join(repositoryRoot, file),
+          type: type as "A" | "M" | "D",
+          file: normalizedFile,
+          path: path.join(repositoryRoot, normalizedFile),
         });
       }
       continue;
@@ -1482,4 +1482,21 @@ async function stripAnsiCodes(input: string) {
   const { default: ansiRegex } = await import("ansi-regex");
   const regex = ansiRegex();
   return input.replace(regex, "");
+}
+
+const renameRegex = /^(.*)\{\s*(.*?)\s*=>\s*(.*?)\s*\}(.*)$/;
+
+function parseRenamePaths(
+  file: string,
+): { fromPath: string; toPath: string } | null {
+  const renameMatch = renameRegex.exec(file);
+  if (renameMatch) {
+    const [_, prefix, fromPart, toPart, suffix] = renameMatch;
+    const rawFromPath = prefix + fromPart + suffix;
+    const rawToPath = prefix + toPart + suffix;
+    const fromPath = path.normalize(rawFromPath).replace(/\\/g, "/");
+    const toPath = path.normalize(rawToPath).replace(/\\/g, "/");
+    return { fromPath, toPath };
+  }
+  return null;
 }
