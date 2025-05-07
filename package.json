@@ -324,6 +324,80 @@
           "when": "scmProvider == jj",
           "group": "inline"
         }
+      ],
+      "commandPalette": [
+        {
+          "command": "jj.openFileResourceState",
+          "when": "false"
+        },
+        {
+          "command": "jj.openFileEditor",
+          "when": "false"
+        },
+        {
+          "command": "jj.openDiffEditor",
+          "when": "false"
+        },
+        {
+          "command": "jj.describe",
+          "when": "false"
+        },
+        {
+          "command": "jj.squashToParentResourceGroup",
+          "when": "false"
+        },
+        {
+          "command": "jj.squashToWorkingCopyResourceGroup",
+          "when": "false"
+        },
+        {
+          "command": "jj.squashToParentResourceState",
+          "when": "false"
+        },
+        {
+          "command": "jj.squashToWorkingCopyResourceState",
+          "when": "false"
+        },
+        {
+          "command": "jj.editResourceGroup",
+          "when": "false"
+        },
+        {
+          "command": "jj.restoreResourceState",
+          "when": "false"
+        },
+        {
+          "command": "jj.restoreResourceGroup",
+          "when": "false"
+        },
+        {
+          "command": "jj.selectOperationLogRepo",
+          "when": "false"
+        },
+        {
+          "command": "jj.operationUndo",
+          "when": "false"
+        },
+        {
+          "command": "jj.operationRestore",
+          "when": "false"
+        },
+        {
+          "command": "jj.selectGraphWebviewRepo",
+          "when": "false"
+        },
+        {
+          "command": "jj.placeholderForFolders",
+          "when": "false"
+        },
+        {
+          "command": "jj.openParentChange",
+          "when": "false"
+        },
+        {
+          "command": "jj.openChildChange",
+          "when": "false"
+        }
       ]
     },
     "configuration": {
