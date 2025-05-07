@@ -3,6 +3,7 @@
 > A Visual Studio Code extension for the [Jujutsu (jj) version control system](https://github.com/jj-vcs/jj).
 
 [![VS Code Extension](https://img.shields.io/visual-studio-marketplace/v/jjk.jjk)](https://marketplace.visualstudio.com/items?itemName=jjk.jjk)
+[![Discord](https://img.shields.io/discord/968932220549103686?color=5865F2&label=Discord&logo=discord&logoColor=white)](https://discord.gg/FV8qcSZS)
 
 ## 🚀 Features
 
