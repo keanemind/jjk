@@ -1538,7 +1538,7 @@ async function stripAnsiCodes(input: string) {
 
 const renameRegex = /^(.*)\{\s*(.*?)\s*=>\s*(.*?)\s*\}(.*)$/;
 
-function parseRenamePaths(
+export function parseRenamePaths(
   file: string,
 ): { fromPath: string; toPath: string } | null {
   const renameMatch = renameRegex.exec(file);
