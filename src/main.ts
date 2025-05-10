@@ -372,7 +372,26 @@ export async function activate(context: vscode.ExtensionContext) {
         "jj.openFileEditor",
         async (uri: vscode.Uri) => {
           try {
-            await vscode.commands.executeCommand("vscode.open", uri, {});
+            if (!["file", "jj"].includes(uri.scheme)) {
+              return undefined;
+            }
+
+            let rev = "@";
+            if (uri.scheme === "jj") {
+              const params = getParams(uri);
+              if ("diffOriginalRev" in params) {
+                rev = params.diffOriginalRev;
+              } else {
+                rev = params.rev;
+              }
+            }
+
+            await vscode.commands.executeCommand(
+              "vscode.open",
+              uri,
+              {},
+              `${path.basename(uri.fsPath)} (${rev.substring(0, 8)})`,
+            );
           } catch (error) {
             vscode.window.showErrorMessage(
               `Failed to open file${error instanceof Error ? `: ${error.message}` : ""}`,
