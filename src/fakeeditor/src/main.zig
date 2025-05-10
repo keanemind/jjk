@@ -5,7 +5,8 @@ const c = @cImport({
     @cInclude("stdlib.h");
 });
 
-fn signalHandler(_: c_int) callconv(.C) void {
+// Exit with 0 on SIGINT (success signal from extension)
+fn signalHandlerSIGINT(_: c_int) callconv(.C) void {
     std.process.exit(0);
 }
 
@@ -27,14 +28,13 @@ pub fn main() !void {
         try stdout.print("{s}\n", .{arg});
     }
 
-    // Set up C signal handlers to exit with code 0 on SIGINT or SIGTERM
-    _ = c.signal(c.SIGINT, signalHandler);
-    _ = c.signal(c.SIGTERM, signalHandler);
+    _ = c.signal(c.SIGINT, signalHandlerSIGINT);
 
     // Keep the program running until a signal is received or 5 seconds pass
     var seconds: u32 = 0;
     while (seconds < 5) : (seconds += 1) {
         std.time.sleep(1 * std.time.ns_per_s);
     }
-    std.process.exit(0);
+    // If loop finishes, it means no SIGINT/SIGTERM was received; exit with 1 (timeout)
+    std.process.exit(1);
 }

@@ -863,7 +863,7 @@ export class JJRepository {
           "--use-destination-message",
         ],
         {
-          timeout: 10_000,
+          timeout: 10_000, // Ensure this is longer than fakeeditor's internal timeout
           cwd: this.repositoryRoot,
         },
       );
@@ -872,20 +872,39 @@ export class JJRepository {
         const output = data.toString();
 
         const lines = output.trim().split("\n");
-        if (lines.length !== 4) {
-          reject(new Error(`Unexpected output from fakeeditor: ${output}`));
-          return;
-        }
         const fakeEditorPID = lines[0];
         const leftFolderPath = lines[2];
         const rightFolderPath = lines[3];
+        if (lines.length !== 4) {
+          if (fakeEditorPID) {
+            try {
+              process.kill(parseInt(fakeEditorPID), "SIGTERM");
+            } catch (killError) {
+              logger.error(
+                `Failed to kill fakeeditor (PID: ${fakeEditorPID}) after validation error: ${killError instanceof Error ? killError : ""}`,
+              );
+            }
+          }
+          reject(new Error(`Unexpected output from fakeeditor: ${output}`));
+          return;
+        }
 
         if (
+          !fakeEditorPID ||
           !leftFolderPath ||
           !leftFolderPath.endsWith("left") ||
           !rightFolderPath ||
           !rightFolderPath.endsWith("right")
         ) {
+          if (fakeEditorPID) {
+            try {
+              process.kill(parseInt(fakeEditorPID), "SIGTERM");
+            } catch (killError) {
+              logger.error(
+                `Failed to kill fakeeditor (PID: ${fakeEditorPID}) after validation error: ${killError instanceof Error ? killError : ""}`,
+              );
+            }
+          }
           reject(new Error(`Unexpected output from fakeeditor: ${output}`));
           return;
         }
@@ -903,11 +922,27 @@ export class JJRepository {
           )
           .then(() => fs.rm(fileToEdit, { force: true })) // remove the specific file we're about to write to avoid its read-only permissions copied from the left folder
           .then(() => fs.writeFile(fileToEdit, content))
-          .catch((error) => {
-            reject(error); // eslint-disable-line @typescript-eslint/prefer-promise-reject-errors
+          .then(() => {
+            try {
+              process.kill(parseInt(fakeEditorPID), "SIGINT");
+            } catch (killError) {
+              logger.error(
+                `Failed to send SIGINT to fakeeditor (PID: ${fakeEditorPID}): ${killError instanceof Error ? killError : ""}`,
+              );
+              // If SIGINT fails, fakeeditor will timeout and exit 1, leading to rejection in 'on close'.
+            }
           })
-          .finally(() => {
-            process.kill(parseInt(fakeEditorPID));
+          .catch((error) => {
+            if (fakeEditorPID) {
+              try {
+                process.kill(parseInt(fakeEditorPID), "SIGTERM");
+              } catch (killError) {
+                logger.error(
+                  `Failed to send SIGTERM to fakeeditor (PID: ${fakeEditorPID}) during error handling: ${killError instanceof Error ? killError : ""}`,
+                );
+              }
+            }
+            reject(error); // eslint-disable-line @typescript-eslint/prefer-promise-reject-errors
           });
       });
 
