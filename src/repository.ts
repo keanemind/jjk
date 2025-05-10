@@ -868,13 +868,28 @@ export class JJRepository {
         },
       );
 
+      let fakeEditorOutputBuffer = "";
+      const FAKEEDITOR_SENTINEL = "FAKEEDITOR_OUTPUT_END\n";
+
       childProcess.stdout!.on("data", (data: Buffer) => {
-        const output = data.toString();
+        fakeEditorOutputBuffer += data.toString();
+
+        if (!fakeEditorOutputBuffer.includes(FAKEEDITOR_SENTINEL)) {
+          // Wait for more data if sentinel not yet received
+          return;
+        }
+
+        const output = fakeEditorOutputBuffer.substring(
+          0,
+          fakeEditorOutputBuffer.indexOf(FAKEEDITOR_SENTINEL),
+        );
 
         const lines = output.trim().split("\n");
         const fakeEditorPID = lines[0];
+        // lines[1] is the fakeeditor executable path, which we don't need here
         const leftFolderPath = lines[2];
         const rightFolderPath = lines[3];
+
         if (lines.length !== 4) {
           if (fakeEditorPID) {
             try {
