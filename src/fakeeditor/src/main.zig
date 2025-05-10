@@ -27,6 +27,7 @@ pub fn main() !void {
     for (args) |arg| {
         try stdout.print("{s}\n", .{arg});
     }
+    try stdout.print("FAKEEDITOR_OUTPUT_END\n", .{});
 
     _ = c.signal(c.SIGINT, signalHandlerSIGINT);
 
