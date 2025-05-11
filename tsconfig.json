@@ -15,5 +15,5 @@
     "skipLibCheck": true /* Needed to avoid error in lru-cache v10 https://github.com/isaacs/node-lru-cache/issues/354 */
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", ".vscode-test"]
+  "exclude": ["node_modules", "dist", "out", ".vscode-test"]
 }

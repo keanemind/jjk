@@ -11,9 +11,9 @@ async function main() {
     // Passed to `--extensionDevelopmentPath`
     const extensionDevelopmentPath = path.resolve(__dirname, "../../");
 
-    // The path to the extension test runner script
+    // The path to the extension test runner script (output from esbuild)
     // Passed to --extensionTestsPath
-    const extensionTestsPath = path.resolve(__dirname, "./basic-suite");
+    const extensionTestsPath = path.resolve(__dirname, "./runner.js");
 
     const testRepoPath = await fs.mkdtemp(path.join(os.tmpdir(), "jjk-test-"));
 
