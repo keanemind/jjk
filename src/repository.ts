@@ -859,7 +859,7 @@ export class JJRepository {
           toRev,
           "--interactive",
           "--config-toml",
-          `ui.diff-editor = "${fakeEditorPath}"`,
+          `ui.diff-editor = "${fakeEditorPath.replaceAll("\\", "\\\\")}"`,
           "--use-destination-message",
         ],
         {
