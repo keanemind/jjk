@@ -144,4 +144,13 @@ suite("parseRenamePaths", () => {
     };
     assert.deepStrictEqual(parseRenamePaths(input), expected);
   });
+
+  test("should handle empty toPart within braces", () => {
+    const input = "src/{old => }/file.ts";
+    const expected = {
+      fromPath: "src/old/file.ts",
+      toPath: "src/file.ts",
+    };
+    assert.deepStrictEqual(parseRenamePaths(input), expected);
+  });
 });
