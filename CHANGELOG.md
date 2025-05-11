@@ -1,9 +1,3 @@
 # Change Log
 
-All notable changes to the "jjk" extension will be documented in this file.
-
-Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
-
-## [Unreleased]
-
-- Initial release
+Please see [https://github.com/keanemind/jjk/releases](https://github.com/keanemind/jjk/releases) for detailed release notes!
