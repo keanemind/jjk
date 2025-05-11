@@ -1234,7 +1234,15 @@ export class JJRepository {
   ): Promise<Buffer | undefined> {
     const output = await new Promise<string>((resolve, reject) => {
       const childProcess = spawnJJ(
-        ["diff", "--summary", "--tool", fakeEditorPath, "-r", rev, filepath],
+        [
+          "diff",
+          "--summary",
+          "--tool",
+          fakeEditorPath,
+          "-r",
+          rev,
+          path.relative(this.repositoryRoot, filepath),
+        ],
         {
           timeout: 5000,
           cwd: this.repositoryRoot,
