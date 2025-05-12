@@ -217,7 +217,7 @@ export class WorkspaceSourceControlManager {
 
   getRepositoryFromUri(uri: vscode.Uri) {
     return this.repoSCMs.find((repo) => {
-      return uri.fsPath.startsWith(vscode.Uri.file(repo.repositoryRoot).fsPath);
+      return !path.relative(repo.repositoryRoot, uri.fsPath).startsWith("..");
     })?.repository;
   }
 
