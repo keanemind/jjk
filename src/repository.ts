@@ -709,23 +709,25 @@ export class JJRepository {
             ret.change.isConflict = value === "true";
             break;
           case "diff.summary()": {
-            const changeRegex = /^(A|M|D|R) (.+)$/;
+            const changeRegex = /^(A|M|D|R|C) (.+)$/;
             for (const line of value.split("\n").filter(Boolean)) {
               const changeMatch = changeRegex.exec(line);
               if (changeMatch) {
                 const [_, type, file] = changeMatch;
 
-                if (type === "R") {
+                if (type === "R" || type === "C") {
                   const parsedPaths = parseRenamePaths(file);
                   if (parsedPaths) {
                     ret.fileStatuses.push({
-                      type: "R",
+                      type: type,
                       file: parsedPaths.toPath,
                       path: path.join(this.repositoryRoot, parsedPaths.toPath),
                       renamedFrom: parsedPaths.fromPath,
                     });
                   } else {
-                    throw new Error(`Unexpected rename line: ${line}`);
+                    throw new Error(
+                      `Unexpected ${type === "R" ? "rename" : "copy"} line: ${line}`,
+                    );
                   }
                 } else {
                   const normalizedFile = path
@@ -1341,7 +1343,7 @@ export class JJRepository {
   }
 }
 
-export type FileStatusType = "A" | "M" | "D" | "R";
+export type FileStatusType = "A" | "M" | "D" | "R" | "C";
 
 export type FileStatus = {
   type: FileStatusType;
@@ -1402,7 +1404,7 @@ async function parseJJStatus(
   };
   const parentCommits: Change[] = [];
 
-  const changeRegex = /^(A|M|D|R) (.+)$/;
+  const changeRegex = /^(A|M|D|R|C) (.+)$/;
   const commitRegex =
     /^(Working copy|Parent commit)\s*(\(@-?\))?\s*:\s+(\S+)\s+(\S+)(?:\s+(.+?)\s+\|)?(?:\s+(.*))?$/;
 
@@ -1421,17 +1423,19 @@ async function parseJJStatus(
     if (changeMatch) {
       const [_, type, file] = changeMatch;
 
-      if (type === "R") {
+      if (type === "R" || type === "C") {
         const parsedPaths = parseRenamePaths(file);
         if (parsedPaths) {
           fileStatuses.push({
-            type: "R",
+            type: type,
             file: parsedPaths.toPath,
             path: path.join(repositoryRoot, parsedPaths.toPath),
             renamedFrom: parsedPaths.fromPath,
           });
         } else {
-          throw new Error(`Unexpected rename line: ${line}`);
+          throw new Error(
+            `Unexpected ${type === "R" ? "rename" : "copy"} line: ${line}`,
+          );
         }
       } else {
         const normalizedFile = path.normalize(file).replace(/\\/g, "/");
