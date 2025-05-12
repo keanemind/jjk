@@ -743,12 +743,14 @@ export class JJRepository {
   }
 
   readFile(rev: string, filepath: string) {
-    const relativeFilepath = path.relative(this.repositoryRoot, filepath);
     return handleCommand(
-      spawnJJ(["file", "show", "--revision", rev, relativeFilepath], {
-        timeout: 5000,
-        cwd: this.repositoryRoot,
-      }),
+      spawnJJ(
+        ["file", "show", "--revision", rev, filepathToFileset(filepath)],
+        {
+          timeout: 5000,
+          cwd: this.repositoryRoot,
+        },
+      ),
     );
   }
 
@@ -815,9 +817,7 @@ export class JJRepository {
             toRev,
             ...(message ? ["-m", message] : []),
             ...(filepaths
-              ? filepaths.map((filepath) =>
-                  path.relative(this.repositoryRoot, filepath),
-                )
+              ? filepaths.map((filepath) => filepathToFileset(filepath))
               : []),
           ],
           {
@@ -1046,9 +1046,7 @@ export class JJRepository {
             "--changes-in",
             rev ? rev : "@",
             ...(filepaths
-              ? filepaths.map((filepath) =>
-                  path.relative(this.repositoryRoot, filepath),
-                )
+              ? filepaths.map((filepath) => filepathToFileset(filepath))
               : []),
           ],
           {
@@ -1093,19 +1091,10 @@ export class JJRepository {
   async annotate(filepath: string, rev: string): Promise<string[]> {
     const output = (
       await handleCommand(
-        spawnJJ(
-          [
-            "file",
-            "annotate",
-            "-r",
-            rev,
-            path.relative(this.repositoryRoot, filepath),
-          ],
-          {
-            timeout: 60_000,
-            cwd: this.repositoryRoot,
-          },
-        ),
+        spawnJJ(["file", "annotate", "-r", rev, filepathToFileset(filepath)], {
+          timeout: 60_000,
+          cwd: this.repositoryRoot,
+        }),
       )
     ).toString();
     if (output === "") {
@@ -1241,7 +1230,7 @@ export class JJRepository {
           fakeEditorPath,
           "-r",
           rev,
-          path.relative(this.repositoryRoot, filepath),
+          filepathToFileset(filepath),
         ],
         {
           timeout: 5000,
@@ -1559,4 +1548,8 @@ export function parseRenamePaths(
     return { fromPath, toPath };
   }
   return null;
+}
+
+function filepathToFileset(filepath: string): string {
+  return `file:"${filepath}"`;
 }
