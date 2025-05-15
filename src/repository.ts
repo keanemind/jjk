@@ -10,16 +10,19 @@ import { anyEvent } from "./utils";
 import { JJFileSystemProvider } from "./fileSystemProvider";
 import * as os from "os";
 import * as crypto from "crypto";
-import { unlinkSync } from "fs";
 import { exec } from "child_process";
 import { promisify } from "util";
+import type { Server } from "net";
+import net from "net";
 
 const execPromise = promisify(exec);
 
 /**
  * Creates a unique named pipe path in the OS temp directory.
- * On Windows, returns a path like \\.\pipe\jjk-{random}.
- * On Unix systems, returns a path like /tmp/jjk-{random} and creates the pipe.
+ * On Windows, returns a path like \\.\pipe\jjk-{random} but does not create the pipe
+ * (the pipe will be created by net.createServer() before fakeeditor connects).
+ * On Unix systems, returns a path like /tmp/jjk-{random} and creates the pipe
+ * with mkfifo before fakeeditor connects.
  *
  * @throws Error if pipe creation fails on Unix systems
  */
@@ -880,181 +883,138 @@ export class JJRepository {
     filepath: string;
     content: string;
   }): Promise<void> {
-    // Create a unique named pipe for signaling
-    const pipePath = await createTempNamedPipe();
+    const { fakeEditorCommand, succeedFakeeditor, cleanup } =
+      await prepareFakeeditor();
     return new Promise<void>((resolve, reject) => {
-      const launchFakeEditor = () => {
-        const childProcess = spawnJJ(
-          [
-            "squash",
-            "--from",
-            fromRev,
-            "--into",
-            toRev,
-            "--interactive",
-            "--config-toml",
-            `ui.diff-editor = "${fakeEditorPath.replaceAll("\\", "\\\\")} ${pipePath.replaceAll("\\", "\\\\")}"`,
-            "--use-destination-message",
-          ],
-          {
-            timeout: 10_000, // Ensure this is longer than fakeeditor's internal timeout
-            cwd: this.repositoryRoot,
-          },
-        );
+      const childProcess = spawnJJ(
+        [
+          "squash",
+          "--from",
+          fromRev,
+          "--into",
+          toRev,
+          "--interactive",
+          "--config-toml",
+          `ui.diff-editor = "${fakeEditorCommand}"`,
+          "--use-destination-message",
+        ],
+        {
+          timeout: 10_000, // Ensure this is longer than fakeeditor's internal timeout
+          cwd: this.repositoryRoot,
+        },
+      );
 
-        let fakeEditorOutputBuffer = "";
-        const FAKEEDITOR_SENTINEL = "FAKEEDITOR_OUTPUT_END\n";
+      let fakeEditorOutputBuffer = "";
+      const FAKEEDITOR_SENTINEL = "FAKEEDITOR_OUTPUT_END\n";
 
-        childProcess.stdout!.on("data", (data: Buffer) => {
-          fakeEditorOutputBuffer += data.toString();
+      childProcess.stdout!.on("data", (data: Buffer) => {
+        fakeEditorOutputBuffer += data.toString();
 
-          if (!fakeEditorOutputBuffer.includes(FAKEEDITOR_SENTINEL)) {
-            // Wait for more data if sentinel not yet received
-            return;
-          }
-
-          const output = fakeEditorOutputBuffer.substring(
-            0,
-            fakeEditorOutputBuffer.indexOf(FAKEEDITOR_SENTINEL),
-          );
-
-          const lines = output.trim().split("\n");
-          const fakeEditorPID = lines[0];
-          // lines[1] is the fakeeditor executable path, which we don't need here
-          const leftFolderPath = lines[2];
-          const rightFolderPath = lines[3];
-
-          if (lines.length !== 4) {
-            if (fakeEditorPID) {
-              try {
-                process.kill(parseInt(fakeEditorPID), "SIGTERM");
-              } catch (killError) {
-                logger.error(
-                  `Failed to kill fakeeditor (PID: ${fakeEditorPID}) after validation error: ${killError instanceof Error ? killError : ""}`,
-                );
-              }
-            }
-            cleanupPipe();
-            reject(new Error(`Unexpected output from fakeeditor: ${output}`));
-            return;
-          }
-
-          if (
-            !fakeEditorPID ||
-            !leftFolderPath ||
-            !leftFolderPath.endsWith("left") ||
-            !rightFolderPath ||
-            !rightFolderPath.endsWith("right")
-          ) {
-            if (fakeEditorPID) {
-              try {
-                process.kill(parseInt(fakeEditorPID), "SIGTERM");
-              } catch (killError) {
-                logger.error(
-                  `Failed to kill fakeeditor (PID: ${fakeEditorPID}) after validation error: ${killError instanceof Error ? killError : ""}`,
-                );
-              }
-            }
-            cleanupPipe();
-            reject(new Error(`Unexpected output from fakeeditor: ${output}`));
-            return;
-          }
-
-          // Convert filepath to relative path and join with rightFolderPath
-          const relativeFilePath = path.relative(this.repositoryRoot, filepath);
-          const fileToEdit = path.join(rightFolderPath, relativeFilePath);
-
-          // Ensure right folder is an exact copy of left, then handle the specific file
-          void fs
-            .rm(rightFolderPath, { recursive: true, force: true })
-            .then(() => fs.mkdir(rightFolderPath, { recursive: true }))
-            .then(() =>
-              fs.cp(leftFolderPath, rightFolderPath, { recursive: true }),
-            )
-            .then(() => fs.rm(fileToEdit, { force: true })) // remove the specific file we're about to write to avoid its read-only permissions copied from the left folder
-            .then(() => fs.writeFile(fileToEdit, content))
-            .then(() => {
-              // Write to the named pipe to signal success
-              return fs.writeFile(pipePath, "EXIT\n");
-            })
-            .catch((error) => {
-              if (fakeEditorPID) {
-                try {
-                  process.kill(parseInt(fakeEditorPID), "SIGTERM");
-                } catch (killError) {
-                  logger.error(
-                    `Failed to send SIGTERM to fakeeditor (PID: ${fakeEditorPID}) during error handling: ${killError instanceof Error ? killError : ""}`,
-                  );
-                }
-              }
-              cleanupPipe();
-              reject(error); // eslint-disable-line @typescript-eslint/prefer-promise-reject-errors
-            });
-        });
-
-        let errOutput = "";
-        childProcess.stderr!.on("data", (data: Buffer) => {
-          errOutput += data.toString();
-        });
-
-        const cleanupPipe = () => {
-          try {
-            // On Unix systems, we need to clean up the pipe
-            // On Windows, the pipe is automatically cleaned up when fakeeditor exits
-            if (process.platform !== "win32") {
-              unlinkSync(pipePath);
-            }
-          } catch (error) {
-            logger.warn(
-              `Failed to clean up named pipe ${pipePath}: ${error instanceof Error ? error.message : String(error)}`,
-            );
-          }
-        };
-
-        childProcess.on("close", (code, signal) => {
-          cleanupPipe();
-          if (code) {
-            reject(
-              new Error(
-                `Command failed with exit code ${code}.\nstderr: ${errOutput}`,
-              ),
-            );
-          } else if (signal) {
-            reject(
-              new Error(
-                `Command failed with signal ${signal}.\nstderr: ${errOutput}`,
-              ),
-            );
-          } else {
-            resolve();
-          }
-        });
-      };
-
-      // Create the pipe before launching fakeeditor
-      if (process.platform !== "win32") {
-        try {
-          // On Unix systems, we need to create the pipe ourselves
-          exec(`mkfifo "${pipePath}"`, (err: Error | null) => {
-            if (err) {
-              reject(new Error(`Failed to create named pipe: ${err.message}`));
-              return;
-            }
-
-            launchFakeEditor();
-          });
-        } catch (error) {
-          reject(
-            new Error(
-              `Failed to create named pipe: ${error instanceof Error ? error.message : String(error)}`,
-            ),
-          );
+        if (!fakeEditorOutputBuffer.includes(FAKEEDITOR_SENTINEL)) {
+          // Wait for more data if sentinel not yet received
           return;
         }
-      } else {
-        // On Windows, the pipe is created by fakeeditor
-        launchFakeEditor();
-      }
+
+        const output = fakeEditorOutputBuffer.substring(
+          0,
+          fakeEditorOutputBuffer.indexOf(FAKEEDITOR_SENTINEL),
+        );
+
+        const lines = output.trim().split("\n");
+        const fakeEditorPID = lines[0];
+        // lines[1] is the fakeeditor executable path
+        // lines[2] is the pipe path
+        const leftFolderPath = lines[3];
+        const rightFolderPath = lines[4];
+
+        if (lines.length !== 5) {
+          if (fakeEditorPID) {
+            try {
+              process.kill(parseInt(fakeEditorPID), "SIGTERM");
+            } catch (killError) {
+              logger.error(
+                `Failed to kill fakeeditor (PID: ${fakeEditorPID}) after validation error: ${killError instanceof Error ? killError : ""}`,
+              );
+            }
+          }
+          void cleanup();
+          reject(new Error(`Unexpected output from fakeeditor: ${output}`));
+          return;
+        }
+
+        if (
+          !fakeEditorPID ||
+          !leftFolderPath ||
+          !leftFolderPath.endsWith("left") ||
+          !rightFolderPath ||
+          !rightFolderPath.endsWith("right")
+        ) {
+          if (fakeEditorPID) {
+            try {
+              process.kill(parseInt(fakeEditorPID), "SIGTERM");
+            } catch (killError) {
+              logger.error(
+                `Failed to kill fakeeditor (PID: ${fakeEditorPID}) after validation error: ${killError instanceof Error ? killError : ""}`,
+              );
+            }
+          }
+          void cleanup();
+          reject(new Error(`Unexpected output from fakeeditor: ${output}`));
+          return;
+        }
+
+        // Convert filepath to relative path and join with rightFolderPath
+        const relativeFilePath = path.relative(this.repositoryRoot, filepath);
+        const fileToEdit = path.join(rightFolderPath, relativeFilePath);
+
+        // Ensure right folder is an exact copy of left, then handle the specific file
+        void fs
+          .rm(rightFolderPath, { recursive: true, force: true })
+          .then(() => fs.mkdir(rightFolderPath, { recursive: true }))
+          .then(() =>
+            fs.cp(leftFolderPath, rightFolderPath, { recursive: true }),
+          )
+          .then(() => fs.rm(fileToEdit, { force: true })) // remove the specific file we're about to write to avoid its read-only permissions copied from the left folder
+          .then(() => fs.writeFile(fileToEdit, content))
+          .then(succeedFakeeditor)
+          .catch((error) => {
+            if (fakeEditorPID) {
+              try {
+                process.kill(parseInt(fakeEditorPID), "SIGTERM");
+              } catch (killError) {
+                logger.error(
+                  `Failed to send SIGTERM to fakeeditor (PID: ${fakeEditorPID}) during error handling: ${killError instanceof Error ? killError : ""}`,
+                );
+              }
+            }
+            void cleanup();
+            reject(error); // eslint-disable-line @typescript-eslint/prefer-promise-reject-errors
+          });
+      });
+
+      let errOutput = "";
+      childProcess.stderr!.on("data", (data: Buffer) => {
+        errOutput += data.toString();
+      });
+
+      childProcess.on("close", (code, signal) => {
+        void cleanup();
+        if (code) {
+          reject(
+            new Error(
+              `Command failed with exit code ${code}.\nstderr: ${errOutput}`,
+            ),
+          );
+        } else if (signal) {
+          reject(
+            new Error(
+              `Command failed with signal ${signal}.\nstderr: ${errOutput}`,
+            ),
+          );
+        } else {
+          resolve();
+        }
+      });
     });
   }
 
@@ -1293,41 +1253,55 @@ export class JJRepository {
     rev: string,
     filepath: string,
   ): Promise<Buffer | undefined> {
+    const { fakeEditorCommand, cleanup } = await prepareFakeeditor();
+
     const output = await new Promise<string>((resolve, reject) => {
       const childProcess = spawnJJ(
         [
           "diff",
           "--summary",
           "--tool",
-          fakeEditorPath,
+          `${fakeEditorCommand}`,
           "-r",
           rev,
           filepathToFileset(filepath),
         ],
         {
-          timeout: 5000,
+          timeout: 10_000, // Ensure this is longer than fakeeditor's internal timeout
           cwd: this.repositoryRoot,
         },
       );
 
-      let output = "";
-      const errOutput: Buffer[] = [];
-      childProcess.stdout!.on("data", (data: Buffer) => {
-        output += data.toString();
+      let fakeEditorOutputBuffer = "";
+      const FAKEEDITOR_SENTINEL = "FAKEEDITOR_OUTPUT_END\n";
 
-        // There should be two data events. The first will contain the summary,
-        // the second will be the output of fakeEditor.
-        if (output.includes(fakeEditorPath)) {
-          resolve(output);
+      childProcess.stdout!.on("data", (data: Buffer) => {
+        fakeEditorOutputBuffer += data.toString();
+
+        if (!fakeEditorOutputBuffer.includes(FAKEEDITOR_SENTINEL)) {
+          // Wait for more data if sentinel not yet received
+          return;
         }
+
+        const completeOutput = fakeEditorOutputBuffer.substring(
+          0,
+          fakeEditorOutputBuffer.indexOf(FAKEEDITOR_SENTINEL),
+        );
+        resolve(completeOutput);
       });
+
+      const errOutput: Buffer[] = [];
       childProcess.stderr!.on("data", (data: Buffer) => {
         errOutput.push(data);
       });
+
       childProcess.on("error", (error: Error) => {
+        void cleanup();
         reject(new Error(`Spawning command failed: ${error.message}`));
       });
+
       childProcess.on("close", (code, signal) => {
+        void cleanup();
         if (code) {
           reject(
             new Error(
@@ -1340,8 +1314,6 @@ export class JJRepository {
               `Command failed with signal ${signal}.\nstdout: ${output}\nstderr: ${Buffer.concat(errOutput).toString()}`,
             ),
           );
-        } else {
-          resolve(output);
         }
       });
     });
@@ -1360,7 +1332,9 @@ export class JJRepository {
 
     const summaryLines = lines.slice(0, pidLineIdx);
     const fakeEditorPID = lines[pidLineIdx];
-    const leftFolderPath = lines[pidLineIdx + 2];
+    // lines[pidLineIdx + 1] is the fakeeditor executable path
+    // lines[pidLineIdx + 2] is the pipe path
+    const leftFolderPath = lines[pidLineIdx + 3];
 
     if (summaryLines.length === 0) {
       // No changes to the file
@@ -1624,4 +1598,53 @@ export function parseRenamePaths(
 
 function filepathToFileset(filepath: string): string {
   return `file:"${filepath}"`;
+}
+
+async function prepareFakeeditor(): Promise<{
+  fakeEditorCommand: string;
+  succeedFakeeditor: () => Promise<void>;
+  cleanup: () => Promise<void>;
+}> {
+  const pipePath = await createTempNamedPipe();
+  const fakeEditorCommand = `${fakeEditorPath} ${pipePath}`;
+  if (process.platform !== "win32") {
+    return {
+      fakeEditorCommand,
+      succeedFakeeditor: () => {
+        return fs.writeFile(pipePath, "EXIT\n");
+      },
+      cleanup: () => {
+        return fs.unlink(pipePath).catch(() => {});
+      },
+    };
+  } else {
+    await new Promise<void>((resolve, reject) => {
+      const server: Server = net.createServer();
+      server.listen(pipePath);
+      server.on("error", (err: Error) => {
+        reject(new Error(`Failed to create named pipe: ${err.message}`));
+      });
+      server.on("listening", () => {
+        resolve();
+      });
+      server.unref();
+    });
+    return {
+      fakeEditorCommand,
+      succeedFakeeditor: () => {
+        return new Promise<void>((resolve, reject) => {
+          const client = net.createConnection(pipePath, () => {
+            client.end("EXIT\n");
+            resolve();
+          });
+          client.on("error", (err: Error) => {
+            reject(new Error(`Failed to write to named pipe: ${err.message}`));
+          });
+        });
+      },
+      cleanup: async () => {
+        // On Windows, the pipe is automatically cleaned up when fakeeditor exits
+      },
+    };
+  }
 }
