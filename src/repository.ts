@@ -1551,5 +1551,5 @@ export function parseRenamePaths(
 }
 
 function filepathToFileset(filepath: string): string {
-  return `file:"${filepath}"`;
+  return `file:"${filepath.replaceAll(/\\/g, "\\\\")}"`;
 }
