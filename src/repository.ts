@@ -1651,26 +1651,35 @@ async function prepareFakeeditor(): Promise<{
     const server = await new Promise<Server>((resolve, reject) => {
       const server = net.createServer();
       server.listen(pipePath);
-      server.on("error", (err: Error) => {
+      server.on("error", (err) => {
         reject(new Error(`Failed to create named pipe: ${err.message}`));
       });
-      server.on("listening", () => {
-        resolve(server);
-      });
+      server.on("listening", () => resolve(server));
       server.unref();
     });
+
+    let clientSocket: net.Socket | null = null;
+    server.once("connection", (socket: net.Socket) => {
+      clientSocket = socket;
+    });
+
     return {
       envVars,
       succeedFakeeditor: () => {
-        return new Promise<void>((resolve, reject) => {
-          const client = net.createConnection(pipePath, () => {
-            client.end("EXIT\n");
-            resolve();
-          });
-          client.on("error", (err: Error) => {
-            reject(new Error(`Failed to write to named pipe: ${err.message}`));
-          });
-        });
+        if (clientSocket === null) {
+          return Promise.reject(
+            new Error("fakeeditor did not connect to pipe"),
+          );
+        }
+        try {
+          clientSocket.write("EXIT\n");
+          clientSocket.end();
+          return Promise.resolve();
+        } catch (err) {
+          return Promise.reject(
+            err instanceof Error ? err : new Error(String(err)),
+          );
+        }
       },
       cleanup: () => {
         // On Windows, the pipe is automatically cleaned up when fakeeditor exits
