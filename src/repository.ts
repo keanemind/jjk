@@ -17,32 +17,6 @@ import net from "net";
 
 const execPromise = promisify(exec);
 
-/**
- * Creates a unique named pipe path in the OS temp directory.
- * On Windows, returns a path like \\.\pipe\jjk-{random} but does not create the pipe
- * (the pipe will be created by net.createServer() before fakeeditor connects).
- * On Unix systems, returns a path like /tmp/jjk-{random} and creates the pipe
- * with mkfifo before fakeeditor connects.
- *
- * @throws Error if pipe creation fails on Unix systems
- */
-async function createTempNamedPipe(): Promise<string> {
-  const random = crypto.randomBytes(16).toString("hex");
-  if (process.platform === "win32") {
-    return `\\\\.\\pipe\\jjk-${random}`;
-  } else {
-    const pipePath = path.join(os.tmpdir(), `jjk-${random}`);
-    try {
-      await execPromise(`mkfifo "${pipePath}"`);
-      return pipePath;
-    } catch (err) {
-      throw new Error(
-        `Failed to create named pipe: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-  }
-}
-
 export let jjVersion = "jj 0.28.0";
 export async function initJJVersion() {
   try {
@@ -1610,12 +1584,13 @@ async function prepareFakeeditor(): Promise<{
   cleanup: () => Promise<void>;
   envVars: { [key: string]: string };
 }> {
-  const pipePath = await createTempNamedPipe();
-  const envVars = { JJ_FAKEEDITOR_PIPE_PATH: pipePath };
+  const random = crypto.randomBytes(16).toString("hex");
 
   if (process.platform !== "win32") {
+    const pipePath = path.join(os.tmpdir(), `jjk-${random}`);
+    await execPromise(`mkfifo "${pipePath}"`);
     return {
-      envVars,
+      envVars: { JJ_FAKEEDITOR_PIPE_PATH: pipePath },
       succeedFakeeditor: async () => {
         let fileHandle;
         try {
@@ -1644,10 +1619,12 @@ async function prepareFakeeditor(): Promise<{
         }
       },
       cleanup: () => {
-        return fs.unlink(pipePath).catch(() => {});
+        return fs.unlink(pipePath);
       },
     };
   } else {
+    const pipePath = `\\\\.\\pipe\\jjk-${random}`;
+
     const server = await new Promise<Server>((resolve, reject) => {
       const server = net.createServer();
       server.listen(pipePath);
@@ -1664,7 +1641,7 @@ async function prepareFakeeditor(): Promise<{
     });
 
     return {
-      envVars,
+      envVars: { JJ_FAKEEDITOR_PIPE_PATH: pipePath },
       succeedFakeeditor: () => {
         if (clientSocket === null) {
           return Promise.reject(
@@ -1686,7 +1663,7 @@ async function prepareFakeeditor(): Promise<{
         return new Promise<void>((resolve, reject) => {
           server.close((e) => {
             if (e) {
-              reject(new Error(`Failed to close named pipe: ${e.message}`));
+              reject(e);
             } else {
               resolve();
             }

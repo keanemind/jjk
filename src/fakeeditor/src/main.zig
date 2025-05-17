@@ -9,11 +9,6 @@ const c = @cImport({
     }
 });
 
-// Keep SIGTERM handler for failure cases
-fn signalHandlerSIGTERM(_: c_int) callconv(.C) void {
-    std.process.exit(1);
-}
-
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
     const allocator = std.heap.page_allocator;
@@ -44,9 +39,6 @@ pub fn main() !void {
     defer allocator.free(env_pipe_path_owned);
 
     try stdout.print("FAKEEDITOR_OUTPUT_END\n", .{});
-
-    // Set up SIGTERM handler for failure cases
-    _ = c.signal(c.SIGTERM, signalHandlerSIGTERM);
 
     if (builtin.os.tag == .windows) {
         var overlapped: c.OVERLAPPED = std.mem.zeroes(c.OVERLAPPED);
