@@ -29,17 +29,20 @@ pub fn main() !void {
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
 
-    if (args.len < 2) {
-        std.debug.print("Error: Named pipe path argument is required\n", .{});
-        std.process.exit(1);
-    }
-
-    // First argument after executable is pipe path
-    const pipePath = args[1];
-
     for (args) |arg| {
         try stdout.print("{s}\n", .{arg});
     }
+
+    var pipePath: []const u8 = undefined; // This will hold the pipe path slice to be used
+
+    const envVarName = "JJ_FAKEEDITOR_PIPE_PATH";
+    const env_pipe_path_owned = std.process.getEnvVarOwned(allocator, envVarName) catch |err| {
+        std.debug.print("Error getting environment variable '{s}': {any}\n", .{ envVarName, err });
+        std.process.exit(1);
+    };
+    pipePath = env_pipe_path_owned;
+    defer allocator.free(env_pipe_path_owned);
+
     try stdout.print("FAKEEDITOR_OUTPUT_END\n", .{});
 
     // Set up SIGTERM handler for failure cases

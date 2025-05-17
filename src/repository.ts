@@ -883,8 +883,7 @@ export class JJRepository {
     filepath: string;
     content: string;
   }): Promise<void> {
-    const { fakeEditorCommand, succeedFakeeditor, cleanup } =
-      await prepareFakeeditor();
+    const { succeedFakeeditor, cleanup, envVars } = await prepareFakeeditor();
     return new Promise<void>((resolve, reject) => {
       const childProcess = spawnJJ(
         [
@@ -894,13 +893,14 @@ export class JJRepository {
           "--into",
           toRev,
           "--interactive",
-          "--config-toml",
-          `ui.diff-editor = "${fakeEditorCommand}"`,
+          "--tool",
+          `${fakeEditorPath}`,
           "--use-destination-message",
         ],
         {
           timeout: 10_000, // Ensure this is longer than fakeeditor's internal timeout
           cwd: this.repositoryRoot,
+          env: { ...process.env, ...envVars },
         },
       );
 
@@ -923,11 +923,10 @@ export class JJRepository {
         const lines = output.trim().split("\n");
         const fakeEditorPID = lines[0];
         // lines[1] is the fakeeditor executable path
-        // lines[2] is the pipe path
-        const leftFolderPath = lines[3];
-        const rightFolderPath = lines[4];
+        const leftFolderPath = lines[2];
+        const rightFolderPath = lines[3];
 
-        if (lines.length !== 5) {
+        if (lines.length !== 4) {
           if (fakeEditorPID) {
             try {
               process.kill(parseInt(fakeEditorPID), "SIGTERM");
@@ -1253,7 +1252,7 @@ export class JJRepository {
     rev: string,
     filepath: string,
   ): Promise<Buffer | undefined> {
-    const { fakeEditorCommand, cleanup } = await prepareFakeeditor();
+    const { cleanup, envVars } = await prepareFakeeditor();
 
     const output = await new Promise<string>((resolve, reject) => {
       const childProcess = spawnJJ(
@@ -1261,7 +1260,7 @@ export class JJRepository {
           "diff",
           "--summary",
           "--tool",
-          `${fakeEditorCommand}`,
+          `${fakeEditorPath}`,
           "-r",
           rev,
           filepathToFileset(filepath),
@@ -1269,6 +1268,7 @@ export class JJRepository {
         {
           timeout: 10_000, // Ensure this is longer than fakeeditor's internal timeout
           cwd: this.repositoryRoot,
+          env: { ...process.env, ...envVars },
         },
       );
 
@@ -1333,8 +1333,7 @@ export class JJRepository {
     const summaryLines = lines.slice(0, pidLineIdx);
     const fakeEditorPID = lines[pidLineIdx];
     // lines[pidLineIdx + 1] is the fakeeditor executable path
-    // lines[pidLineIdx + 2] is the pipe path
-    const leftFolderPath = lines[pidLineIdx + 3];
+    const leftFolderPath = lines[pidLineIdx + 2];
 
     if (summaryLines.length === 0) {
       // No changes to the file
@@ -1352,12 +1351,18 @@ export class JJRepository {
         const filePath = summaryLine.slice(2).trim();
         const fullPath = path.join(leftFolderPath, filePath);
 
-        return await fs.readFile(fullPath);
+        return fs.readFile(fullPath);
       } else {
         return undefined;
       }
     } finally {
-      process.kill(parseInt(fakeEditorPID));
+      try {
+        process.kill(parseInt(fakeEditorPID), "SIGTERM");
+      } catch (killError) {
+        logger.error(
+          `Failed to kill fakeeditor (PID: ${fakeEditorPID}) after success: ${killError instanceof Error ? killError : ""}`,
+        );
+      }
     }
   }
 }
@@ -1601,36 +1606,61 @@ function filepathToFileset(filepath: string): string {
 }
 
 async function prepareFakeeditor(): Promise<{
-  fakeEditorCommand: string;
   succeedFakeeditor: () => Promise<void>;
   cleanup: () => Promise<void>;
+  envVars: { [key: string]: string };
 }> {
   const pipePath = await createTempNamedPipe();
-  const fakeEditorCommand = `${fakeEditorPath} ${pipePath}`;
+  const envVars = { JJ_FAKEEDITOR_PIPE_PATH: pipePath };
+
   if (process.platform !== "win32") {
     return {
-      fakeEditorCommand,
-      succeedFakeeditor: () => {
-        return fs.writeFile(pipePath, "EXIT\n");
+      envVars,
+      succeedFakeeditor: async () => {
+        let fileHandle;
+        try {
+          fileHandle = await fs.open(pipePath, "w");
+          const stream = fileHandle.createWriteStream();
+
+          await new Promise<void>((resolve, reject) => {
+            stream.on("error", (err) => {
+              reject(
+                new Error(
+                  `Failed to write to named pipe '${pipePath}': ${err.message}`,
+                ),
+              );
+            });
+            stream.on("finish", () => {
+              resolve();
+            });
+
+            stream.write("EXIT\n");
+            stream.end();
+          });
+        } finally {
+          if (fileHandle) {
+            await fileHandle.close();
+          }
+        }
       },
       cleanup: () => {
         return fs.unlink(pipePath).catch(() => {});
       },
     };
   } else {
-    await new Promise<void>((resolve, reject) => {
-      const server: Server = net.createServer();
+    const server = await new Promise<Server>((resolve, reject) => {
+      const server = net.createServer();
       server.listen(pipePath);
       server.on("error", (err: Error) => {
         reject(new Error(`Failed to create named pipe: ${err.message}`));
       });
       server.on("listening", () => {
-        resolve();
+        resolve(server);
       });
       server.unref();
     });
     return {
-      fakeEditorCommand,
+      envVars,
       succeedFakeeditor: () => {
         return new Promise<void>((resolve, reject) => {
           const client = net.createConnection(pipePath, () => {
@@ -1642,8 +1672,17 @@ async function prepareFakeeditor(): Promise<{
           });
         });
       },
-      cleanup: async () => {
+      cleanup: () => {
         // On Windows, the pipe is automatically cleaned up when fakeeditor exits
+        return new Promise<void>((resolve, reject) => {
+          server.close((e) => {
+            if (e) {
+              reject(new Error(`Failed to close named pipe: ${e.message}`));
+            } else {
+              resolve();
+            }
+          });
+        });
       },
     };
   }
