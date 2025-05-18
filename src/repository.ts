@@ -8,6 +8,14 @@ import { logger } from "./logger";
 import type { ChildProcess } from "child_process";
 import { anyEvent } from "./utils";
 import { JJFileSystemProvider } from "./fileSystemProvider";
+import * as os from "os";
+import * as crypto from "crypto";
+import { exec } from "child_process";
+import { promisify } from "util";
+import type { Server } from "net";
+import net from "net";
+
+const execPromise = promisify(exec);
 
 export let jjVersion = "jj 0.28.0";
 export async function initJJVersion() {
@@ -838,7 +846,7 @@ export class JJRepository {
    * @param options.content - The contents of the file at filepath with some of the changes in fromRev applied to it;
    *                          those changes will be moved to the destination revision.
    */
-  squashContent({
+  async squashContent({
     fromRev,
     toRev,
     filepath,
@@ -849,7 +857,8 @@ export class JJRepository {
     filepath: string;
     content: string;
   }): Promise<void> {
-    return new Promise((resolve, reject) => {
+    const { succeedFakeeditor, cleanup, envVars } = await prepareFakeeditor();
+    return new Promise<void>((resolve, reject) => {
       const childProcess = spawnJJ(
         [
           "squash",
@@ -858,13 +867,14 @@ export class JJRepository {
           "--into",
           toRev,
           "--interactive",
-          "--config-toml",
-          `ui.diff-editor = "${fakeEditorPath.replaceAll("\\", "\\\\")}"`,
+          "--tool",
+          `${fakeEditorPath}`,
           "--use-destination-message",
         ],
         {
           timeout: 10_000, // Ensure this is longer than fakeeditor's internal timeout
           cwd: this.repositoryRoot,
+          env: { ...process.env, ...envVars },
         },
       );
 
@@ -886,7 +896,7 @@ export class JJRepository {
 
         const lines = output.trim().split("\n");
         const fakeEditorPID = lines[0];
-        // lines[1] is the fakeeditor executable path, which we don't need here
+        // lines[1] is the fakeeditor executable path
         const leftFolderPath = lines[2];
         const rightFolderPath = lines[3];
 
@@ -900,6 +910,7 @@ export class JJRepository {
               );
             }
           }
+          void cleanup();
           reject(new Error(`Unexpected output from fakeeditor: ${output}`));
           return;
         }
@@ -920,6 +931,7 @@ export class JJRepository {
               );
             }
           }
+          void cleanup();
           reject(new Error(`Unexpected output from fakeeditor: ${output}`));
           return;
         }
@@ -937,16 +949,7 @@ export class JJRepository {
           )
           .then(() => fs.rm(fileToEdit, { force: true })) // remove the specific file we're about to write to avoid its read-only permissions copied from the left folder
           .then(() => fs.writeFile(fileToEdit, content))
-          .then(() => {
-            try {
-              process.kill(parseInt(fakeEditorPID), "SIGINT");
-            } catch (killError) {
-              logger.error(
-                `Failed to send SIGINT to fakeeditor (PID: ${fakeEditorPID}): ${killError instanceof Error ? killError : ""}`,
-              );
-              // If SIGINT fails, fakeeditor will timeout and exit 1, leading to rejection in 'on close'.
-            }
-          })
+          .then(succeedFakeeditor)
           .catch((error) => {
             if (fakeEditorPID) {
               try {
@@ -957,6 +960,7 @@ export class JJRepository {
                 );
               }
             }
+            void cleanup();
             reject(error); // eslint-disable-line @typescript-eslint/prefer-promise-reject-errors
           });
       });
@@ -967,6 +971,7 @@ export class JJRepository {
       });
 
       childProcess.on("close", (code, signal) => {
+        void cleanup();
         if (code) {
           reject(
             new Error(
@@ -1221,41 +1226,56 @@ export class JJRepository {
     rev: string,
     filepath: string,
   ): Promise<Buffer | undefined> {
+    const { cleanup, envVars } = await prepareFakeeditor();
+
     const output = await new Promise<string>((resolve, reject) => {
       const childProcess = spawnJJ(
         [
           "diff",
           "--summary",
           "--tool",
-          fakeEditorPath,
+          `${fakeEditorPath}`,
           "-r",
           rev,
           filepathToFileset(filepath),
         ],
         {
-          timeout: 5000,
+          timeout: 10_000, // Ensure this is longer than fakeeditor's internal timeout
           cwd: this.repositoryRoot,
+          env: { ...process.env, ...envVars },
         },
       );
 
-      let output = "";
-      const errOutput: Buffer[] = [];
-      childProcess.stdout!.on("data", (data: Buffer) => {
-        output += data.toString();
+      let fakeEditorOutputBuffer = "";
+      const FAKEEDITOR_SENTINEL = "FAKEEDITOR_OUTPUT_END\n";
 
-        // There should be two data events. The first will contain the summary,
-        // the second will be the output of fakeEditor.
-        if (output.includes(fakeEditorPath)) {
-          resolve(output);
+      childProcess.stdout!.on("data", (data: Buffer) => {
+        fakeEditorOutputBuffer += data.toString();
+
+        if (!fakeEditorOutputBuffer.includes(FAKEEDITOR_SENTINEL)) {
+          // Wait for more data if sentinel not yet received
+          return;
         }
+
+        const completeOutput = fakeEditorOutputBuffer.substring(
+          0,
+          fakeEditorOutputBuffer.indexOf(FAKEEDITOR_SENTINEL),
+        );
+        resolve(completeOutput);
       });
+
+      const errOutput: Buffer[] = [];
       childProcess.stderr!.on("data", (data: Buffer) => {
         errOutput.push(data);
       });
+
       childProcess.on("error", (error: Error) => {
+        void cleanup();
         reject(new Error(`Spawning command failed: ${error.message}`));
       });
+
       childProcess.on("close", (code, signal) => {
+        void cleanup();
         if (code) {
           reject(
             new Error(
@@ -1268,8 +1288,6 @@ export class JJRepository {
               `Command failed with signal ${signal}.\nstdout: ${output}\nstderr: ${Buffer.concat(errOutput).toString()}`,
             ),
           );
-        } else {
-          resolve(output);
         }
       });
     });
@@ -1288,6 +1306,7 @@ export class JJRepository {
 
     const summaryLines = lines.slice(0, pidLineIdx);
     const fakeEditorPID = lines[pidLineIdx];
+    // lines[pidLineIdx + 1] is the fakeeditor executable path
     const leftFolderPath = lines[pidLineIdx + 2];
 
     if (summaryLines.length === 0) {
@@ -1306,12 +1325,18 @@ export class JJRepository {
         const filePath = summaryLine.slice(2).trim();
         const fullPath = path.join(leftFolderPath, filePath);
 
-        return await fs.readFile(fullPath);
+        return fs.readFile(fullPath);
       } else {
         return undefined;
       }
     } finally {
-      process.kill(parseInt(fakeEditorPID));
+      try {
+        process.kill(parseInt(fakeEditorPID), "SIGTERM");
+      } catch (killError) {
+        logger.error(
+          `Failed to kill fakeeditor (PID: ${fakeEditorPID}) after success: ${killError instanceof Error ? killError : ""}`,
+        );
+      }
     }
   }
 }
@@ -1552,4 +1577,99 @@ export function parseRenamePaths(
 
 function filepathToFileset(filepath: string): string {
   return `file:"${filepath.replaceAll(/\\/g, "\\\\")}"`;
+}
+
+async function prepareFakeeditor(): Promise<{
+  succeedFakeeditor: () => Promise<void>;
+  cleanup: () => Promise<void>;
+  envVars: { [key: string]: string };
+}> {
+  const random = crypto.randomBytes(16).toString("hex");
+
+  if (process.platform !== "win32") {
+    const pipePath = path.join(os.tmpdir(), `jjk-${random}`);
+    await execPromise(`mkfifo "${pipePath}"`);
+    return {
+      envVars: { JJ_FAKEEDITOR_PIPE_PATH: pipePath },
+      succeedFakeeditor: async () => {
+        let fileHandle;
+        try {
+          fileHandle = await fs.open(pipePath, "w");
+          const stream = fileHandle.createWriteStream();
+
+          await new Promise<void>((resolve, reject) => {
+            stream.on("error", (err) => {
+              reject(
+                new Error(
+                  `Failed to write to named pipe '${pipePath}': ${err.message}`,
+                ),
+              );
+            });
+            stream.on("finish", () => {
+              resolve();
+            });
+
+            stream.write("EXIT\n");
+            stream.end();
+          });
+        } finally {
+          if (fileHandle) {
+            await fileHandle.close();
+          }
+        }
+      },
+      cleanup: () => {
+        return fs.unlink(pipePath);
+      },
+    };
+  } else {
+    const pipePath = `\\\\.\\pipe\\jjk-${random}`;
+
+    const server = await new Promise<Server>((resolve, reject) => {
+      const server = net.createServer();
+      server.listen(pipePath);
+      server.on("error", (err) => {
+        reject(new Error(`Failed to create named pipe: ${err.message}`));
+      });
+      server.on("listening", () => resolve(server));
+      server.unref();
+    });
+
+    let clientSocket: net.Socket | null = null;
+    server.once("connection", (socket: net.Socket) => {
+      clientSocket = socket;
+    });
+
+    return {
+      envVars: { JJ_FAKEEDITOR_PIPE_PATH: pipePath },
+      succeedFakeeditor: () => {
+        if (clientSocket === null) {
+          return Promise.reject(
+            new Error("fakeeditor did not connect to pipe"),
+          );
+        }
+        try {
+          clientSocket.write("EXIT\n");
+          clientSocket.end();
+          return Promise.resolve();
+        } catch (err) {
+          return Promise.reject(
+            err instanceof Error ? err : new Error(String(err)),
+          );
+        }
+      },
+      cleanup: () => {
+        // On Windows, the pipe is automatically cleaned up when fakeeditor exits
+        return new Promise<void>((resolve, reject) => {
+          server.close((e) => {
+            if (e) {
+              reject(e);
+            } else {
+              resolve();
+            }
+          });
+        });
+      },
+    };
+  }
 }
