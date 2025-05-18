@@ -975,13 +975,13 @@ export class JJRepository {
         if (code) {
           reject(
             new Error(
-              `Command failed with exit code ${code}.\nstderr: ${errOutput}`,
+              `Command failed with exit code ${code}.\nstdout: ${fakeEditorOutputBuffer}\nstderr: ${errOutput}`,
             ),
           );
         } else if (signal) {
           reject(
             new Error(
-              `Command failed with signal ${signal}.\nstderr: ${errOutput}`,
+              `Command failed with signal ${signal}.\nstdout: ${fakeEditorOutputBuffer}\nstderr: ${errOutput}`,
             ),
           );
         } else {
@@ -1279,13 +1279,21 @@ export class JJRepository {
         if (code) {
           reject(
             new Error(
-              `Command failed with exit code ${code}.\nstdout: ${output}\nstderr: ${Buffer.concat(errOutput).toString()}`,
+              `Command failed with exit code ${code}.\nstdout: ${fakeEditorOutputBuffer}\nstderr: ${Buffer.concat(errOutput).toString()}`,
             ),
           );
         } else if (signal) {
           reject(
             new Error(
-              `Command failed with signal ${signal}.\nstdout: ${output}\nstderr: ${Buffer.concat(errOutput).toString()}`,
+              `Command failed with signal ${signal}.\nstdout: ${fakeEditorOutputBuffer}\nstderr: ${Buffer.concat(errOutput).toString()}`,
+            ),
+          );
+        } else {
+          // This reject will only matter if the promise wasn't resolved already; that means we'll only
+          // see if this if the command exited without sending the sentinel.
+          reject(
+            new Error(
+              `Command exited unexpectedly.\nstdout:${fakeEditorOutputBuffer}\nstderr: ${Buffer.concat(errOutput).toString()}`,
             ),
           );
         }
