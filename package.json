@@ -191,31 +191,33 @@
       "editor/title": [
         {
           "command": "jj.squashSelectedRanges",
-          "when": "editorTextFocus && editorHasSelection && !editorReadonly"
+          "when": "scmProvider == jj && editorTextFocus && editorHasSelection && !editorReadonly"
         },
         {
           "command": "jj.openFileEditor",
-          "when": "isInDiffEditor",
+          "when": "scmProvider == jj && isInDiffEditor",
           "group": "navigation"
         },
         {
           "command": "jj.openDiffEditor",
-          "when": "!isInDiffEditor",
+          "when": "scmProvider == jj && !isInDiffEditor",
           "group": "navigation@1"
         },
         {
           "command": "jj.openParentChange",
+          "when": "scmProvider == jj",
           "group": "navigation@2"
         },
         {
           "command": "jj.openChildChange",
+          "when": "scmProvider == jj",
           "group": "navigation@3"
         }
       ],
       "editor/context": [
         {
           "command": "jj.squashSelectedRanges",
-          "when": "editorTextFocus && editorHasSelection && !editorReadonly"
+          "when": "scmProvider == jj && editorTextFocus && editorHasSelection && !editorReadonly"
         }
       ],
       "view/title": [
