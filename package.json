@@ -60,7 +60,7 @@
         "command": "jj.openDiffEditor",
         "title": "Open diff",
         "category": "Jujutsu",
-        "icon": "$(diff-multiple)"
+        "icon": "$(compare-changes)"
       },
       {
         "command": "jj.describe",
