@@ -1339,8 +1339,8 @@ export class JJRepository {
 
     try {
       const summaryLine = summaryLines[0].trim();
-      // Check if the file was modified (as opposed to added or deleted)
-      if (/^M\s+/.test(summaryLine)) {
+      // Check if the file was modified or deleted
+      if (/^(M|D)\s+/.test(summaryLine)) {
         const filePath = summaryLine.slice(2).trim();
         const fullPath = path.join(leftFolderPath, filePath);
 
