@@ -1098,10 +1098,19 @@ export class JJRepository {
   async annotate(filepath: string, rev: string): Promise<string[]> {
     const output = (
       await handleCommand(
-        spawnJJ(["file", "annotate", "-r", rev, filepathToFileset(filepath)], {
-          timeout: 60_000,
-          cwd: this.repositoryRoot,
-        }),
+        spawnJJ(
+          [
+            "file",
+            "annotate",
+            "-r",
+            rev,
+            filepath, // `jj file annotate` takes a path, not a fileset
+          ],
+          {
+            timeout: 60_000,
+            cwd: this.repositoryRoot,
+          },
+        ),
       )
     ).toString();
     if (output === "") {
