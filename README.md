@@ -1,5 +1,7 @@
 # Jujutsu Kaizen
+
 ![banner](images/banner.png)
+
 > A Visual Studio Code extension for the [Jujutsu (jj) version control system](https://github.com/jj-vcs/jj).
 
 [![VS Code Extension](https://img.shields.io/visual-studio-marketplace/v/jjk.jjk)](https://marketplace.visualstudio.com/items?itemName=jjk.jjk)
@@ -7,7 +9,7 @@
 
 ## 🚀 Features
 
-The goal of this extension is to bring the great UX of Jujutsu into the VS Code UI. We are currently focused on achieving parity for commonly used features of VS Code's built-in Git extension, such as the various operations possible via the Source Control view. 
+The goal of this extension is to bring the great UX of Jujutsu into the VS Code UI. We are currently focused on achieving parity for commonly used features of VS Code's built-in Git extension, such as the various operations possible via the Source Control view.
 
 Here's what you can do so far:
 
@@ -26,9 +28,11 @@ Here's what you can do so far:
 - Edit descriptions for Working Copy and parent changes  
   ![edit description](images/describe.png)
 - Move changes between Working Copy and parents  
-  ![revision history](images/squash.png)
+  ![squash](images/squash.png)
+- Move specific lines from the Working Copy to its parent changes
+  ![squash range](images/squash_range.webp)
 - Discard changes  
-  ![revision history](images/restore.png)
+  ![restore](images/restore.png)
 - Browse and navigate revision history  
   <img src="images/edit.gif" width="50%" alt="revision history">
 - Create merge changes  
