@@ -114,13 +114,41 @@ export async function initConfigArgs(extensionDir: string, jjVersion: string) {
   }
 }
 
-function spawnJJ(args: string[], options: Parameters<typeof spawn>[2]) {
+/**
+ * If jjk.commandTimeout is set, returns that value.
+ * Otherwise, returns the provided default timeout, or 30 seconds if no default is provided.
+ */
+function getCommandTimeout(
+  repositoryRoot: string,
+  defaultTimeout: number | undefined,
+): number {
+  const config = vscode.workspace.getConfiguration(
+    "jjk",
+    vscode.Uri.file(repositoryRoot),
+  );
+  const configuredTimeout = config.get<number | null>("commandTimeout");
+  if (configuredTimeout !== null && configuredTimeout !== undefined) {
+    return configuredTimeout;
+  }
+  return defaultTimeout ?? 30000;
+}
+
+function spawnJJ(
+  args: string[],
+  options: Parameters<typeof spawn>[2] & { cwd: string },
+) {
   const allArgs = [...args, ...configArgs];
+
+  const finalOptions = {
+    ...options,
+    timeout: getCommandTimeout(options.cwd, options.timeout),
+  };
+
   logger.debug(`spawn: jj ${allArgs.join(" ")}`, {
-    spawnOptions: options,
+    spawnOptions: finalOptions,
   });
 
-  return spawn("jj", allArgs, options);
+  return spawn("jj", allArgs, finalOptions);
 }
 
 function handleCommand(childProcess: ChildProcess) {

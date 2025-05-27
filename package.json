@@ -410,6 +410,13 @@
           "default": true,
           "description": "Enables in-line blame annotations",
           "scope": "resource"
+        },
+        "jjk.commandTimeout": {
+          "type": "number",
+          "default": null,
+          "description": "Global timeout in milliseconds for all jj commands. If not set, per-command defaults will be used.",
+          "scope": "resource",
+          "minimum": 1000
         }
       }
     },
