@@ -412,7 +412,10 @@
           "scope": "resource"
         },
         "jjk.commandTimeout": {
-          "type": "number",
+          "type": [
+            "number",
+            "null"
+          ],
           "default": null,
           "description": "Global timeout in milliseconds for all jj commands. If not set, per-command defaults will be used.",
           "scope": "resource",
