@@ -3,7 +3,7 @@ import fs from "fs/promises";
 import os from "os";
 
 import { runTests } from "@vscode/test-electron";
-import { execPromise } from "./utils";
+import { execJJPromise } from "./utils";
 
 async function main() {
   try {
@@ -18,7 +18,7 @@ async function main() {
     const testRepoPath = await fs.mkdtemp(path.join(os.tmpdir(), "jjk-test-"));
 
     console.log(`Creating test repo in ${testRepoPath}`);
-    await execPromise("jj init --git", {
+    await execJJPromise("init --git", {
       cwd: testRepoPath,
     });
 

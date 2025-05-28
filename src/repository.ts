@@ -14,9 +14,10 @@ import * as crypto from "crypto";
 export let jjVersion = "jj 0.28.0";
 export async function initJJVersion() {
   try {
+    const jjPath = getJJPath(undefined);
     const version = (
       await handleCommand(
-        spawn("jj", ["version"], {
+        spawn(jjPath, ["version"], {
           timeout: 5000,
         }),
       )
@@ -127,6 +128,19 @@ function getCommandTimeout(
   return defaultTimeout ?? 30000;
 }
 
+/**
+ * Gets the configured jj executable path from settings.
+ * Falls back to "jj" if no path is configured.
+ */
+export function getJJPath(repositoryRoot: string | undefined): string {
+  const config = vscode.workspace.getConfiguration(
+    "jjk",
+    repositoryRoot !== undefined ? vscode.Uri.file(repositoryRoot) : undefined,
+  );
+  const configuredPath = config.get<string>("jjPath");
+  return configuredPath || "jj";
+}
+
 function spawnJJ(
   args: string[],
   options: Parameters<typeof spawn>[2] & { cwd: string },
@@ -138,11 +152,13 @@ function spawnJJ(
     timeout: getCommandTimeout(options.cwd, options.timeout),
   };
 
-  logger.debug(`spawn: jj ${allArgs.join(" ")}`, {
+  const jjPath = getJJPath(options.cwd);
+
+  logger.debug(`spawn: ${jjPath} ${allArgs.join(" ")}`, {
     spawnOptions: finalOptions,
   });
 
-  return spawn("jj", allArgs, finalOptions);
+  return spawn(jjPath, allArgs, finalOptions);
 }
 
 function handleCommand(childProcess: ChildProcess) {
