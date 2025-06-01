@@ -10,12 +10,6 @@ import { anyEvent } from "./utils";
 import { JJFileSystemProvider } from "./fileSystemProvider";
 import * as os from "os";
 import * as crypto from "crypto";
-import { exec } from "child_process";
-import { promisify } from "util";
-import type { Server } from "net";
-import net from "net";
-
-const execPromise = promisify(exec);
 
 export let jjVersion = "jj 0.28.0";
 export async function initJJVersion() {
@@ -38,7 +32,7 @@ export async function initJJVersion() {
 }
 
 export let extensionDir = "";
-let fakeEditorPath = "";
+export let fakeEditorPath = "";
 export function initExtensionDir(extensionUri: vscode.Uri) {
   extensionDir = vscode.Uri.joinPath(
     extensionUri,
@@ -1634,91 +1628,30 @@ async function prepareFakeeditor(): Promise<{
   envVars: { [key: string]: string };
 }> {
   const random = crypto.randomBytes(16).toString("hex");
+  const signalDir = path.join(os.tmpdir(), `jjk-signal-${random}`);
 
-  if (process.platform !== "win32") {
-    const pipePath = path.join(os.tmpdir(), `jjk-${random}`);
-    await execPromise(`mkfifo "${pipePath}"`);
-    return {
-      envVars: { JJ_FAKEEDITOR_PIPE_PATH: pipePath },
-      succeedFakeeditor: async () => {
-        let fileHandle;
-        try {
-          fileHandle = await fs.open(pipePath, "w");
-          const stream = fileHandle.createWriteStream();
+  await fs.mkdir(signalDir, { recursive: true });
 
-          await new Promise<void>((resolve, reject) => {
-            stream.on("error", (err) => {
-              reject(
-                new Error(
-                  `Failed to write to named pipe '${pipePath}': ${err.message}`,
-                ),
-              );
-            });
-            stream.on("finish", () => {
-              resolve();
-            });
-
-            stream.write("EXIT\n");
-            stream.end();
-          });
-        } finally {
-          if (fileHandle) {
-            await fileHandle.close();
-          }
-        }
-      },
-      cleanup: () => {
-        return fs.unlink(pipePath);
-      },
-    };
-  } else {
-    const pipePath = `\\\\.\\pipe\\jjk-${random}`;
-
-    const server = await new Promise<Server>((resolve, reject) => {
-      const server = net.createServer();
-      server.listen(pipePath);
-      server.on("error", (err) => {
-        reject(new Error(`Failed to create named pipe: ${err.message}`));
-      });
-      server.on("listening", () => resolve(server));
-      server.unref();
-    });
-
-    let clientSocket: net.Socket | null = null;
-    server.once("connection", (socket: net.Socket) => {
-      clientSocket = socket;
-    });
-
-    return {
-      envVars: { JJ_FAKEEDITOR_PIPE_PATH: pipePath },
-      succeedFakeeditor: () => {
-        if (clientSocket === null) {
-          return Promise.reject(
-            new Error("fakeeditor did not connect to pipe"),
-          );
-        }
-        try {
-          clientSocket.write("EXIT\n");
-          clientSocket.end();
-          return Promise.resolve();
-        } catch (err) {
-          return Promise.reject(
-            err instanceof Error ? err : new Error(String(err)),
-          );
-        }
-      },
-      cleanup: () => {
-        // On Windows, the pipe is automatically cleaned up when fakeeditor exits
-        return new Promise<void>((resolve, reject) => {
-          server.close((e) => {
-            if (e) {
-              reject(e);
-            } else {
-              resolve();
-            }
-          });
-        });
-      },
-    };
-  }
+  return {
+    envVars: { JJ_FAKEEDITOR_SIGNAL_DIR: signalDir },
+    succeedFakeeditor: async () => {
+      const signalFilePath = path.join(signalDir, "0");
+      try {
+        await fs.writeFile(signalFilePath, "");
+      } catch (error) {
+        throw new Error(
+          `Failed to write signal file '${signalFilePath}': ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    },
+    cleanup: async () => {
+      try {
+        await fs.rm(signalDir, { recursive: true, force: true });
+      } catch (error) {
+        throw new Error(
+          `Failed to cleanup signal directory '${signalDir}': ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    },
+  };
 }

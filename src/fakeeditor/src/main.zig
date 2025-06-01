@@ -1,22 +1,96 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const c = @cImport({
-    @cInclude("signal.h");
     @cInclude("stdlib.h");
-    // Windows-specific includes for named pipes
+    // For getppid / kill on POSIX
+    if (builtin.os.tag != .windows) {
+        @cInclude("unistd.h"); // For getppid
+        @cInclude("signal.h"); // For kill
+    }
+    // Windows-specific includes
     if (builtin.os.tag == .windows) {
         @cInclude("windows.h");
+        @cInclude("tlhelp32.h"); // For CreateToolhelp32Snapshot
     }
 });
 
+const POLLING_INTERVAL_MS: u64 = 50;
+const TOTAL_TIMEOUT_MS: u64 = 5000;
+
+// Helper function to check if a process exists on Windows
+fn parentProcessExistsWindows(parent_pid: c.DWORD) !bool {
+    const stderr = std.io.getStdErr().writer();
+
+    const hParentProcess = c.OpenProcess(c.SYNCHRONIZE, 0, parent_pid);
+    if (hParentProcess == null) {
+        // If we can't open the process, it might have already exited or we lack permissions.
+        // For our purpose, if OpenProcess fails, we assume the parent is gone or inaccessible.
+        return false;
+    }
+    defer _ = c.CloseHandle(hParentProcess);
+
+    // Check if the parent process object is signaled (i.e., terminated)
+    // WaitForSingleObject with 0 timeout is a non-blocking check.
+    const wait_status = c.WaitForSingleObject(hParentProcess, 0);
+    if (wait_status == c.WAIT_OBJECT_0) {
+        return false; // Parent process terminated
+    } else if (wait_status == c.WAIT_TIMEOUT) {
+        return true; // Parent process still running
+    } else {
+        // WAIT_FAILED or other error
+        try stderr.print("WaitForSingleObject failed: {}\n", .{c.GetLastError()});
+        return false; // Assume parent is gone on error
+    }
+}
+
+// Helper function to get parent PID on Windows
+fn getParentPidWindows() !c.DWORD {
+    const stderr = std.io.getStdErr().writer();
+
+    const current_pid = c.GetCurrentProcessId();
+    const hSnapshot = c.CreateToolhelp32Snapshot(c.TH32CS_SNAPPROCESS, 0);
+    if (hSnapshot == c.INVALID_HANDLE_VALUE) {
+        try stderr.print("CreateToolhelp32Snapshot failed: {}\n", .{c.GetLastError()});
+        return error.SnapshotFailed;
+    }
+    defer _ = c.CloseHandle(hSnapshot);
+
+    var pe32: c.PROCESSENTRY32 = undefined;
+    pe32.dwSize = @sizeOf(c.PROCESSENTRY32);
+
+    if (c.Process32First(hSnapshot, &pe32) == 0) { // BOOL is 0 for FALSE
+        try stderr.print("Process32First failed: {}\n", .{c.GetLastError()});
+        return error.Process32FirstFailed;
+    }
+
+    while (true) {
+        if (pe32.th32ProcessID == current_pid) {
+            if (pe32.th32ParentProcessID == 0) {
+                try stderr.print("Error: Retrieved parent PID is 0 for process {}. This is unexpected.\n", .{current_pid});
+                return error.ParentIsSystemIdleProcess;
+            }
+            return pe32.th32ParentProcessID;
+        }
+        if (c.Process32Next(hSnapshot, &pe32) == 0) { // BOOL is 0 for FALSE
+            if (c.GetLastError() == c.ERROR_NO_MORE_FILES) {
+                break; // Reached end of process list
+            }
+            try stderr.print("Process32Next failed: {}\n", .{c.GetLastError()});
+            return error.Process32NextFailed;
+        }
+    }
+    return error.ParentNotFound;
+}
+
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
+    const stderr = std.io.getStdErr().writer();
     const allocator = std.heap.page_allocator;
 
     const pid = switch (builtin.os.tag) {
         .linux => std.os.linux.getpid(),
-        .windows => std.os.windows.GetCurrentProcessId(),
-        .macos, .freebsd, .netbsd, .openbsd, .dragonfly => std.c.getpid(),
+        .windows => c.GetCurrentProcessId(),
+        .macos, .freebsd, .netbsd, .openbsd, .dragonfly => c.getpid(),
         else => @compileError("Unsupported OS"),
     };
     try stdout.print("{}\n", .{pid});
@@ -28,179 +102,84 @@ pub fn main() !void {
         try stdout.print("{s}\n", .{arg});
     }
 
-    var pipePath: []const u8 = undefined; // This will hold the pipe path slice to be used
-
-    const envVarName = "JJ_FAKEEDITOR_PIPE_PATH";
-    const env_pipe_path_owned = std.process.getEnvVarOwned(allocator, envVarName) catch |err| {
-        std.debug.print("Error getting environment variable '{s}': {any}\n", .{ envVarName, err });
+    const envVarName = "JJ_FAKEEDITOR_SIGNAL_DIR";
+    const signal_dir_path_owned = std.process.getEnvVarOwned(allocator, envVarName) catch |err| {
+        try stderr.print("Error getting environment variable '{s}': {any}\n", .{ envVarName, err });
         std.process.exit(1);
     };
-    pipePath = env_pipe_path_owned;
-    defer allocator.free(env_pipe_path_owned);
+    defer allocator.free(signal_dir_path_owned);
 
     try stdout.print("FAKEEDITOR_OUTPUT_END\n", .{});
 
+    const start_time = std.time.nanoTimestamp();
+
+    const signal_file_path = std.fs.path.join(allocator, &.{ signal_dir_path_owned, "0" }) catch |e| {
+        try stderr.print("Critical Error: Failed to construct signal file path '{s}{c}{s}': {any}. Exiting fakeeditor.\n", .{ signal_dir_path_owned, std.fs.path.sep, "0", e });
+        std.process.exit(1);
+    };
+
+    var ppid: if (builtin.os.tag != .windows) c.pid_t else void =
+        if (builtin.os.tag != .windows) 0 else {};
+    var win_ppid: if (builtin.os.tag == .windows) c.DWORD else void =
+        if (builtin.os.tag == .windows) 0 else {};
+    var parent_monitoring_active: bool = true;
+
     if (builtin.os.tag == .windows) {
-        var overlapped: c.OVERLAPPED = std.mem.zeroes(c.OVERLAPPED);
-        overlapped.hEvent = c.CreateEventA(
-            null, // lpEventAttributes
-            1, // bManualReset (TRUE)
-            0, // bInitialState (FALSE)
-            null, // lpName
-        );
-        // CreateEventA returns NULL on failure.
-        if (overlapped.hEvent == null) {
-            std.debug.print("Failed to create event: {}\n", .{c.GetLastError()});
-            std.process.exit(1);
-        }
-        defer _ = c.CloseHandle(overlapped.hEvent);
-
-        const hPipe = c.CreateFileA(
-            pipePath.ptr,
-            c.GENERIC_READ | c.GENERIC_WRITE, // Keep original access mode
-            0, // dwShareMode (0 for exclusive access)
-            null, // lpSecurityAttributes
-            c.OPEN_EXISTING,
-            c.FILE_FLAG_OVERLAPPED, // Enable overlapped I/O
-            null, // hTemplateFile
-        );
-        if (hPipe == c.INVALID_HANDLE_VALUE) {
-            std.debug.print("Failed to connect to pipe: {}\n", .{c.GetLastError()});
-            std.process.exit(1);
-        }
-        defer _ = c.CloseHandle(hPipe);
-
-        var readBuf: [16]u8 = undefined;
-        var bytesRead: c.DWORD = 0;
-
-        // Initiate an overlapped read.
-        // For ReadFile with overlapped I/O, the lpNumberOfBytesRead param must be NULL if lpOverlapped is not NULL.
-        const read_requested = c.ReadFile(hPipe, &readBuf, readBuf.len, null, &overlapped);
-
-        if (read_requested == 0) { // BOOL is 0 for FALSE
-            const last_error = c.GetLastError();
-            if (last_error == c.ERROR_IO_PENDING) {
-                // Operation is pending, wait for it or timeout
-                const wait_timeout_ms: c.DWORD = 5000;
-                const wait_status = c.WaitForSingleObject(overlapped.hEvent, wait_timeout_ms);
-
-                if (wait_status == c.WAIT_OBJECT_0) {
-                    // Operation completed. Get the result.
-                    // bWait = FALSE because WaitForSingleObject already ensured completion.
-                    if (c.GetOverlappedResult(hPipe, &overlapped, &bytesRead, 0) == 0) { // WINBOOL FALSE
-                        std.debug.print("GetOverlappedResult failed after wait: {}\n", .{c.GetLastError()});
-                        std.process.exit(1);
-                    }
-                    // bytesRead is now populated.
-                } else if (wait_status == c.WAIT_TIMEOUT) {
-                    std.debug.print("Timeout waiting for EXIT command on pipe (Windows)\n", .{});
-                    // Attempt to cancel the pending I/O operation.
-                    _ = c.CancelIoEx(hPipe, &overlapped);
-                    std.process.exit(1);
-                } else { // WAIT_FAILED or other unexpected status
-                    std.debug.print("WaitForSingleObject failed: {}\n", .{c.GetLastError()});
-                    std.process.exit(1);
-                }
-            } else {
-                // ReadFile failed immediately for a reason other than ERROR_IO_PENDING.
-                std.debug.print("ReadFile failed immediately: {}\n", .{last_error});
-                std.process.exit(1);
-            }
-        } else {
-            // ReadFile completed synchronously. Get the result.
-            // bWait = FALSE as it completed synchronously.
-            if (c.GetOverlappedResult(hPipe, &overlapped, &bytesRead, 0) == 0) { // WINBOOL FALSE
-                std.debug.print("GetOverlappedResult failed after synchronous read: {}\n", .{c.GetLastError()});
-                std.process.exit(1);
-            }
-            // bytesRead is now populated.
-        }
-
-        // At this point, if we haven't exited, the read operation (if successful) has completed.
-        // Check if any bytes were read and if it's the EXIT command.
-        if (bytesRead > 0) {
-            const cmd = readBuf[0..bytesRead];
-            if (std.mem.eql(u8, cmd, "EXIT\n")) {
-                std.process.exit(0);
-            } else {
-                std.debug.print("Received non-EXIT command: {s} (Windows)\n", .{cmd});
-                std.process.exit(1);
-            }
-        } else {
-            // Read 0 bytes (e.g., pipe closed by writer before EXIT was sent, or other issues).
-            // Timeout case is handled above. This handles successful read of zero bytes.
-            std.debug.print("Read 0 bytes or pipe closed before EXIT (Windows)\n", .{});
-            std.process.exit(1);
-        }
+        win_ppid = getParentPidWindows() catch |err| blk: {
+            try stderr.print("Warning: Failed to get parent PID on Windows: {any}. Parent process monitoring will be disabled.\n", .{err});
+            parent_monitoring_active = false;
+            break :blk 0;
+        };
     } else {
-        // On Unix, open the pipe for reading
-        const file = std.fs.cwd().openFile(pipePath, .{ .mode = .read_only }) catch |err| {
-            std.debug.print("Failed to open pipe: {}\n", .{err});
-            std.process.exit(1);
-        };
-        defer file.close();
-
-        // Get the file descriptor for polling
-        const fd = file.handle;
-
-        var poll_fds = [_]std.posix.pollfd{
-            .{
-                .fd = fd,
-                .events = std.posix.POLL.IN,
-                .revents = 0,
-            },
-        };
-
-        // Poll for 5 seconds (5000 milliseconds)
-        const poll_timeout_ms: i32 = 5000;
-        const num_events = std.posix.poll(&poll_fds, poll_timeout_ms) catch |err| {
-            std.debug.print("Failed to poll pipe (std.posix.poll): {}\n", .{err});
-            std.process.exit(1);
-        };
-
-        if (num_events == 0) {
-            // Timeout occurred
-            std.debug.print("Timeout waiting for EXIT command on pipe (Unix)\n", .{});
-            std.process.exit(1);
-        }
-
-        // Check if our file descriptor has input events
-        if (poll_fds[0].revents & std.posix.POLL.IN != 0) {
-            var readBuf: [16]u8 = undefined;
-            const bytesRead = file.read(&readBuf) catch |err| {
-                std.debug.print("Failed to read from pipe: {}\n", .{err});
-                std.process.exit(1);
-            };
-
-            if (bytesRead > 0) {
-                const cmd = readBuf[0..bytesRead];
-                if (std.mem.eql(u8, cmd, "EXIT\n")) {
-                    std.process.exit(0);
-                } else {
-                    std.debug.print("Received non-EXIT command: {s} (Unix)\n", .{cmd});
-                    std.process.exit(1);
-                }
-            } else {
-                // Read 0 bytes (e.g., pipe closed by writer).
-                std.debug.print("Read 0 bytes or pipe closed before EXIT (Unix)\n", .{});
-                std.process.exit(1);
-            }
-        } else {
-            // Poll returned > 0, but not for POLLIN, or an error/hangup occurred on the fd.
-            if (poll_fds[0].revents & std.posix.POLL.ERR != 0 or
-                poll_fds[0].revents & std.posix.POLL.HUP != 0 or
-                poll_fds[0].revents & std.posix.POLL.NVAL != 0)
-            {
-                std.debug.print("Pipe error, hangup, or invalid fd during poll (Unix)\n", .{});
-            } else {
-                std.debug.print("Poll returned ready, but not for input (Unix), revents: {}\n", .{poll_fds[0].revents});
-            }
-            std.process.exit(1);
+        ppid = c.getppid();
+        if (ppid == 1) { // Reparented to init/launchd
+            try stderr.print("Info: Parent process is init/launchd (PID 1), original parent likely exited. Exiting fakeeditor.\n", .{});
+            std.process.exit(1); // Exit immediately if reparented
         }
     }
 
-    // If control flow reaches here, it means an unexpected state or an unhandled case.
-    // All expected paths (success, timeout, error, non-EXIT command) should exit above.
-    std.debug.print("Reached end of main unexpectedly.\n", .{});
-    std.process.exit(1);
+    while (true) {
+        const current_time = std.time.nanoTimestamp();
+        const elapsed_ms = @divTrunc((current_time - start_time), std.time.ns_per_ms);
+
+        if (elapsed_ms >= TOTAL_TIMEOUT_MS) {
+            try stderr.print("Error: Timeout ({}ms) reached in fakeeditor. Exiting.\n", .{TOTAL_TIMEOUT_MS});
+            std.process.exit(1);
+        }
+
+        // Parent Process Check
+        if (parent_monitoring_active) {
+            if (builtin.os.tag == .windows) {
+                if (!try parentProcessExistsWindows(win_ppid)) {
+                    try stderr.print("Parent process (PID: {}) no longer exists (Windows). Exiting.\n", .{win_ppid});
+                    std.process.exit(1);
+                }
+            } else {
+                if (std.posix.kill(ppid, 0)) |_| {
+                    // kill succeeded, parent process still exists
+                } else |err| {
+                    if (err == error.NoSuchProcess) {
+                        try stderr.print("Parent process (PID: {}) no longer exists (POSIX). Exiting.\n", .{ppid});
+                        std.process.exit(1);
+                    }
+                    // Other errors with kill could also indicate an issue, but NoSuchProcess is the key one.
+                    // If kill fails for other reasons, we might want to log it to stderr but not necessarily exit immediately,
+                    // relying on the main timeout or signal file.
+                }
+            }
+        }
+
+        // Check for signal file "0"
+        if (std.fs.accessAbsolute(signal_file_path, .{})) |_| {
+            // File "0" exists
+            std.process.exit(0);
+        } else |err| {
+            if (err != error.FileNotFound) {
+                // Some other error accessing the file, log it but continue polling
+                try stderr.print("Error checking for signal file '0' in fakeeditor: {any}\n", .{err});
+            }
+        }
+
+        std.time.sleep(POLLING_INTERVAL_MS * std.time.ns_per_ms);
+    }
 }
