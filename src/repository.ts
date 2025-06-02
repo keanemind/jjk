@@ -1356,16 +1356,16 @@ export class JJRepository {
     // lines[pidLineIdx + 1] is the fakeeditor executable path
     const leftFolderPath = lines[pidLineIdx + 2];
 
-    if (summaryLines.length === 0) {
-      // No changes to the file
-      return undefined;
-    } else if (summaryLines.length > 1) {
-      throw new Error(
-        `Unexpected number of summary lines (${summaryLines.length}): ${summaryLines.join("\n")}`,
-      );
-    }
-
     try {
+      if (summaryLines.length === 0) {
+        // No changes to the file
+        return undefined;
+      } else if (summaryLines.length > 1) {
+        throw new Error(
+          `Unexpected number of summary lines (${summaryLines.length}): ${summaryLines.join("\n")}`,
+        );
+      }
+
       const summaryLine = summaryLines[0].trim();
       // Check if the file was modified or deleted
       if (/^(M|D)\s+/.test(summaryLine)) {
@@ -1381,7 +1381,7 @@ export class JJRepository {
         process.kill(parseInt(fakeEditorPID), "SIGTERM");
       } catch (killError) {
         logger.error(
-          `Failed to kill fakeeditor (PID: ${fakeEditorPID}) after success: ${killError instanceof Error ? killError : ""}`,
+          `Failed to kill fakeeditor (PID: ${fakeEditorPID}) in getDiffOriginal: ${killError instanceof Error ? killError : ""}`,
         );
       }
     }
