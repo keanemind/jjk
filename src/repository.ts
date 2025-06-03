@@ -2,6 +2,7 @@ import path from "path";
 import * as vscode from "vscode";
 import spawn from "cross-spawn";
 import fs from "fs/promises";
+import * as fsSync from "fs";
 import { getParams, toJJUri } from "./uri";
 import type { JJDecorationProvider } from "./decorationProvider";
 import { logger } from "./logger";
@@ -130,7 +131,7 @@ function getCommandTimeout(
 
 /**
  * Gets the configured jj executable path from settings.
- * Falls back to "jj" if no path is configured.
+ * If no path is configured, searches through common installation paths before falling back to "jj".
  */
 export function getJJPath(repositoryRoot: string | undefined): string {
   const config = vscode.workspace.getConfiguration(
@@ -138,7 +139,43 @@ export function getJJPath(repositoryRoot: string | undefined): string {
     repositoryRoot !== undefined ? vscode.Uri.file(repositoryRoot) : undefined,
   );
   const configuredPath = config.get<string>("jjPath");
-  return configuredPath || "jj";
+
+  if (configuredPath) {
+    return configuredPath;
+  }
+
+  // It's particularly important to check common locations on MacOS because of https://github.com/microsoft/vscode/issues/30847#issuecomment-420399383
+  const commonPaths = [
+    path.join(os.homedir(), ".cargo", "bin", "jj"),
+    path.join(os.homedir(), ".cargo", "bin", "jj.exe"),
+    path.join(os.homedir(), ".nix-profile", "bin", "jj"),
+    "/usr/bin/jj",
+    "/home/linuxbrew/.linuxbrew/bin/jj",
+    "/usr/local/bin/jj",
+    "/opt/homebrew/bin/jj",
+    "/opt/local/bin/jj",
+  ];
+
+  for (const commonPath of commonPaths) {
+    if (isExecutableFile(commonPath)) {
+      return commonPath;
+    }
+  }
+
+  return "jj";
+}
+
+/**
+ * Checks if a path exists and is a file (not a directory)
+ */
+function isExecutableFile(filePath: string): boolean {
+  try {
+    fsSync.accessSync(filePath, fsSync.constants.F_OK);
+    const stats = fsSync.statSync(filePath);
+    return stats.isFile();
+  } catch {
+    return false;
+  }
 }
 
 function spawnJJ(
