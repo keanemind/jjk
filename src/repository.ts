@@ -133,10 +133,12 @@ function getCommandTimeout(
  * Gets the configured jj executable path from settings.
  * If no path is configured, searches through common installation paths before falling back to "jj".
  */
-export function getJJPath(repositoryRoot: string | undefined): string {
+export function getJJPath(workspaceFolder: string | undefined): string {
   const config = vscode.workspace.getConfiguration(
     "jjk",
-    repositoryRoot !== undefined ? vscode.Uri.file(repositoryRoot) : undefined,
+    workspaceFolder !== undefined
+      ? vscode.Uri.file(workspaceFolder)
+      : undefined,
   );
   const configuredPath = config.get<string>("jjPath");
 
@@ -181,6 +183,7 @@ function isExecutableFile(filePath: string): boolean {
 }
 
 function spawnJJ(
+  jjPath: string,
   args: string[],
   options: Parameters<typeof spawn>[2] & { cwd: string },
 ) {
@@ -190,8 +193,6 @@ function spawnJJ(
     ...options,
     timeout: getCommandTimeout(options.cwd, options.timeout),
   };
-
-  const jjPath = getJJPath(options.cwd);
 
   logger.debug(`spawn: ${jjPath} ${allArgs.join(" ")}`, {
     spawnOptions: finalOptions,
@@ -240,9 +241,10 @@ async function createSCMsInWorkspace(
   const repos: RepositorySourceControlManager[] = [];
   for (const workspaceFolder of vscode.workspace.workspaceFolders || []) {
     try {
+      const jjPath = getJJPath(workspaceFolder.uri.fsPath);
       const output = (
         await handleCommand(
-          spawnJJ(["root"], {
+          spawnJJ(jjPath, ["root"], {
             timeout: 5000,
             cwd: workspaceFolder.uri.fsPath,
           }),
@@ -254,6 +256,7 @@ async function createSCMsInWorkspace(
           repoRoot,
           decorationProvider,
           fileSystemProvider,
+          jjPath,
         ),
       );
     } catch (e) {
@@ -393,8 +396,9 @@ class RepositorySourceControlManager {
     public repositoryRoot: string,
     private decorationProvider: JJDecorationProvider,
     private fileSystemProvider: JJFileSystemProvider,
+    jjPath: string,
   ) {
-    this.repository = new JJRepository(repositoryRoot);
+    this.repository = new JJRepository(repositoryRoot, jjPath);
     this.subscriptions.push(
       this.repository.onDidRunJJStatus((status) => this.refresh(status)),
     );
@@ -635,6 +639,12 @@ export class JJRepository {
     this._onDidChangeStatus.event;
 
   statusCache: RepositoryStatus | undefined;
+  gitFetchPromise: Promise<void> | undefined;
+
+  constructor(
+    public repositoryRoot: string,
+    private jjPath: string,
+  ) {}
 
   async getStatus(useCache = false): Promise<RepositoryStatus> {
     if (useCache && this.statusCache) {
@@ -643,7 +653,7 @@ export class JJRepository {
 
     const output = (
       await handleCommand(
-        spawnJJ(["status", "--color=always"], {
+        spawnJJ(this.jjPath, ["status", "--color=always"], {
           timeout: 5000,
           cwd: this.repositoryRoot,
         }),
@@ -661,14 +671,10 @@ export class JJRepository {
     return status;
   }
 
-  gitFetchPromise: Promise<void> | undefined;
-
-  constructor(public repositoryRoot: string) {}
-
   async fileList() {
     return (
       await handleCommand(
-        spawnJJ(["file", "list"], {
+        spawnJJ(this.jjPath, ["file", "list"], {
           timeout: 5000,
           cwd: this.repositoryRoot,
         }),
@@ -710,6 +716,7 @@ export class JJRepository {
     const output = (
       await handleCommand(
         spawnJJ(
+          this.jjPath,
           [
             "log",
             "-T",
@@ -832,6 +839,7 @@ export class JJRepository {
   readFile(rev: string, filepath: string) {
     return handleCommand(
       spawnJJ(
+        this.jjPath,
         ["file", "show", "--revision", rev, filepathToFileset(filepath)],
         {
           timeout: 5000,
@@ -844,7 +852,7 @@ export class JJRepository {
   async describe(rev: string, message: string) {
     return (
       await handleCommand(
-        spawnJJ(["describe", "-m", message, rev], {
+        spawnJJ(this.jjPath, ["describe", "-m", message, rev], {
           timeout: 5000,
           cwd: this.repositoryRoot,
         }),
@@ -856,6 +864,7 @@ export class JJRepository {
     try {
       return await handleCommand(
         spawnJJ(
+          this.jjPath,
           [
             "new",
             ...(message ? ["-m", message] : []),
@@ -896,6 +905,7 @@ export class JJRepository {
     return (
       await handleCommand(
         spawnJJ(
+          this.jjPath,
           [
             "squash",
             "--from",
@@ -939,6 +949,7 @@ export class JJRepository {
     const { succeedFakeeditor, cleanup, envVars } = await prepareFakeeditor();
     return new Promise<void>((resolve, reject) => {
       const childProcess = spawnJJ(
+        this.jjPath,
         [
           "squash",
           "--from",
@@ -1079,6 +1090,7 @@ export class JJRepository {
     return (
       await handleCommand(
         spawnJJ(
+          this.jjPath,
           [
             "log",
             "-r",
@@ -1101,7 +1113,7 @@ export class JJRepository {
   async edit(rev: string) {
     try {
       return await handleCommand(
-        spawnJJ(["edit", "-r", rev, "--ignore-immutable"], {
+        spawnJJ(this.jjPath, ["edit", "-r", rev, "--ignore-immutable"], {
           timeout: 5000,
           cwd: this.repositoryRoot,
         }),
@@ -1125,6 +1137,7 @@ export class JJRepository {
     try {
       return await handleCommand(
         spawnJJ(
+          this.jjPath,
           [
             "restore",
             "--changes-in",
@@ -1159,7 +1172,7 @@ export class JJRepository {
       this.gitFetchPromise = (async () => {
         try {
           await handleCommand(
-            spawnJJ(["git", "fetch"], {
+            spawnJJ(this.jjPath, ["git", "fetch"], {
               timeout: 60_000,
               cwd: this.repositoryRoot,
             }),
@@ -1176,6 +1189,7 @@ export class JJRepository {
     const output = (
       await handleCommand(
         spawnJJ(
+          this.jjPath,
           [
             "file",
             "annotate",
@@ -1216,6 +1230,7 @@ export class JJRepository {
     const output = (
       await handleCommand(
         spawnJJ(
+          this.jjPath,
           [
             "operation",
             "log",
@@ -1288,7 +1303,7 @@ export class JJRepository {
   async operationUndo(id: string) {
     return (
       await handleCommand(
-        spawnJJ(["operation", "undo", id], {
+        spawnJJ(this.jjPath, ["operation", "undo", id], {
           timeout: 5000,
           cwd: this.repositoryRoot,
         }),
@@ -1299,7 +1314,7 @@ export class JJRepository {
   async operationRestore(id: string) {
     return (
       await handleCommand(
-        spawnJJ(["operation", "restore", id], {
+        spawnJJ(this.jjPath, ["operation", "restore", id], {
           timeout: 5000,
           cwd: this.repositoryRoot,
         }),
@@ -1318,6 +1333,7 @@ export class JJRepository {
 
     const output = await new Promise<string>((resolve, reject) => {
       const childProcess = spawnJJ(
+        this.jjPath,
         [
           "diff",
           "--summary",
