@@ -45,7 +45,7 @@ Here's what you can do so far:
 
 ## 📋 Prerequisites
 
-- Ensure `jj` is installed and available in your system's `$PATH`
+- Ensure `jj` is installed and available in your system's `$PATH`, or configure a custom path using the `jjk.jjPath` setting
 
 ## 🐛 Known Issues
 

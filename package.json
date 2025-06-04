@@ -420,6 +420,12 @@
           "description": "Global timeout in milliseconds for all jj commands. If not set, per-command defaults will be used.",
           "scope": "resource",
           "minimum": 1000
+        },
+        "jjk.jjPath": {
+          "type": "string",
+          "default": "jj",
+          "description": "Path to the jj executable. If not set, 'jj' will be used and must be available in the PATH.",
+          "scope": "resource"
         }
       }
     },

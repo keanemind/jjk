@@ -4,6 +4,7 @@ import path from "path";
 import "./repository";
 import {
   extensionDir,
+  getJJPath,
   initExtensionDir,
   initJJVersion,
   jjVersion,
@@ -60,9 +61,9 @@ export async function activate(context: vscode.ExtensionContext) {
   });
 
   // Check if the jj CLI is installed
-  const jjPath = await which("jj", { nothrow: true });
-  if (!jjPath) {
-    throw new Error("jj CLI not found");
+  const configuredJJPath = getJJPath(undefined);
+  if (!(await which(configuredJJPath, { nothrow: true }))) {
+    throw new Error(`jj CLI not found at path: ${configuredJJPath}`);
   }
 
   const workspaceSCM = new WorkspaceSourceControlManager(decorationProvider);
