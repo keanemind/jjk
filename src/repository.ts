@@ -149,6 +149,8 @@ export function getJJPath(repositoryRoot: string | undefined): string {
     path.join(os.homedir(), ".cargo", "bin", "jj"),
     path.join(os.homedir(), ".cargo", "bin", "jj.exe"),
     path.join(os.homedir(), ".nix-profile", "bin", "jj"),
+    path.join(os.homedir(), ".local", "bin", "jj"),
+    path.join(os.homedir(), "bin", "jj"),
     "/usr/bin/jj",
     "/home/linuxbrew/.linuxbrew/bin/jj",
     "/usr/local/bin/jj",
