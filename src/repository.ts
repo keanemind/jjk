@@ -2,7 +2,6 @@ import path from "path";
 import * as vscode from "vscode";
 import spawn from "cross-spawn";
 import fs from "fs/promises";
-import * as fsSync from "fs";
 import { getParams, toJJUri } from "./uri";
 import type { JJDecorationProvider } from "./decorationProvider";
 import { logger } from "./logger";
@@ -134,7 +133,7 @@ function getCommandTimeout(
  * Gets the configured jj executable path from settings.
  * If no path is configured, searches through common installation paths before falling back to "jj".
  */
-export function getJJPath(workspaceFolder: string): string {
+async function getJJPath(workspaceFolder: string): Promise<string> {
   const config = vscode.workspace.getConfiguration(
     "jjk",
     workspaceFolder !== undefined
@@ -144,7 +143,20 @@ export function getJJPath(workspaceFolder: string): string {
   const configuredPath = config.get<string>("jjPath");
 
   if (configuredPath) {
-    return configuredPath;
+    if (await which(configuredPath, { nothrow: true })) {
+      logger.info(`Using configured jjk.jjPath: ${configuredPath}`);
+      return configuredPath;
+    } else {
+      throw new Error(
+        `Configured jjk.jjPath is not an executable file: ${configuredPath}`,
+      );
+    }
+  }
+
+  const jjInPath = await which("jj", { nothrow: true });
+  if (jjInPath) {
+    logger.info(`Found jj in PATH: ${jjInPath}`);
+    return jjInPath;
   }
 
   // It's particularly important to check common locations on MacOS because of https://github.com/microsoft/vscode/issues/30847#issuecomment-420399383
@@ -162,25 +174,14 @@ export function getJJPath(workspaceFolder: string): string {
   ];
 
   for (const commonPath of commonPaths) {
-    if (isExecutableFile(commonPath)) {
-      return commonPath;
+    const jjInCommonPath = await which(commonPath, { nothrow: true });
+    if (jjInCommonPath) {
+      logger.info(`Found jj in: ${jjInCommonPath}`);
+      return jjInCommonPath;
     }
   }
 
-  return "jj";
-}
-
-/**
- * Checks if a path exists and is a file (not a directory)
- */
-function isExecutableFile(filePath: string): boolean {
-  try {
-    fsSync.accessSync(filePath, fsSync.constants.F_OK);
-    const stats = fsSync.statSync(filePath);
-    return stats.isFile();
-  } catch {
-    return false;
-  }
+  throw new Error(`jj CLI not found in PATH nor in common locations.`);
 }
 
 function spawnJJ(
@@ -240,10 +241,7 @@ async function createSCMsInWorkspace(
   const repos: RepositorySourceControlManager[] = [];
   for (const workspaceFolder of vscode.workspace.workspaceFolders || []) {
     try {
-      const jjPath = getJJPath(workspaceFolder.uri.fsPath);
-      if (!(await which(jjPath, { nothrow: true }))) {
-        throw new Error(`jj CLI not found at path: ${jjPath}`);
-      }
+      const jjPath = await getJJPath(workspaceFolder.uri.fsPath);
       const jjVersion = await getJJVersion(jjPath);
       const jjConfigArgs = await getConfigArgs(extensionDir, jjVersion);
 
