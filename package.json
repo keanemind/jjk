@@ -423,8 +423,8 @@
         },
         "jjk.jjPath": {
           "type": "string",
-          "default": "jj",
-          "description": "Path to the jj executable. If not set, 'jj' will be used and must be available in the PATH.",
+          "default": "",
+          "description": "Path to the jj executable. If not set, your PATH and common locations will be searched for a jj executable.",
           "scope": "resource"
         }
       }
