@@ -1,13 +1,8 @@
 import * as vscode from "vscode";
-import which from "which";
 import path from "path";
 import "./repository";
 import {
-  extensionDir,
-  getJJPath,
   initExtensionDir,
-  initJJVersion,
-  jjVersion,
   provideOriginalResource,
   WorkspaceSourceControlManager,
 } from "./repository";
@@ -23,7 +18,6 @@ import { getParams, toJJUri } from "./uri";
 import { logger } from "./logger";
 import { LogOutputChannelTransport } from "./vendor/winston-transport-vscode/logOutputChannelTransport";
 import winston from "winston";
-import { initConfigArgs } from "./repository";
 import { linesDiffComputers } from "./vendor/vscode/editor/common/diff/linesDiffComputers";
 import {
   ILinesDiffComputer,
@@ -50,21 +44,13 @@ export async function activate(context: vscode.ExtensionContext) {
 
   logger.info("Extension activated");
 
-  await initJJVersion();
   initExtensionDir(context.extensionUri);
-  await initConfigArgs(extensionDir, jjVersion);
 
   const decorationProvider = new JJDecorationProvider((decorationProvider) => {
     context.subscriptions.push(
       vscode.window.registerFileDecorationProvider(decorationProvider),
     );
   });
-
-  // Check if the jj CLI is installed
-  const configuredJJPath = getJJPath(undefined);
-  if (!(await which(configuredJJPath, { nothrow: true }))) {
-    throw new Error(`jj CLI not found at path: ${configuredJJPath}`);
-  }
 
   const workspaceSCM = new WorkspaceSourceControlManager(decorationProvider);
   await workspaceSCM.refresh();
