@@ -46,12 +46,7 @@ export class JJFileSystemProvider implements FileSystemProvider {
 
   dispose() {}
 
-  onDidChangeRepository({
-    repositoryRoot,
-  }: {
-    uri: Uri;
-    repositoryRoot: string;
-  }): void {
+  onDidChangeRepository({ repositoryRoot }: { repositoryRoot: string }): void {
     this.changedRepositoryRoots.add(repositoryRoot);
     void this.fireChangeEvents();
   }

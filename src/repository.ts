@@ -237,6 +237,9 @@ function handleCommand(childProcess: ChildProcess) {
 async function createSCMsInWorkspace(
   decorationProvider: JJDecorationProvider,
   fileSystemProvider: JJFileSystemProvider,
+  repoUpdateEventEmitter: vscode.EventEmitter<{
+    repoSCM: RepositorySourceControlManager;
+  }>,
 ) {
   const repos: RepositorySourceControlManager[] = [];
   for (const workspaceFolder of vscode.workspace.workspaceFolders || []) {
@@ -255,16 +258,22 @@ async function createSCMsInWorkspace(
       )
         .toString()
         .trim();
-      repos.push(
-        new RepositorySourceControlManager(
-          repoRoot,
-          decorationProvider,
-          fileSystemProvider,
-          jjPath,
-          jjVersion,
-          jjConfigArgs,
-        ),
+      const repoSCM = new RepositorySourceControlManager(
+        repoRoot,
+        decorationProvider,
+        fileSystemProvider,
+        jjPath,
+        jjVersion,
+        jjConfigArgs,
       );
+      repoSCM.onDidUpdate(
+        () => {
+          repoUpdateEventEmitter.fire({ repoSCM });
+        },
+        undefined,
+        repoSCM.subscriptions,
+      );
+      repos.push(repoSCM);
     } catch (e) {
       if (e instanceof Error && e.message.includes("no jj repo in")) {
         // Ignore this error, as it means there is no jj repo in this workspace folder
@@ -283,6 +292,13 @@ export class WorkspaceSourceControlManager {
     dispose(): unknown;
   }[] = [];
   fileSystemProvider: JJFileSystemProvider;
+
+  private _onDidRepoUpdate = new vscode.EventEmitter<{
+    repoSCM: RepositorySourceControlManager;
+  }>();
+  readonly onDidRepoUpdate: vscode.Event<{
+    repoSCM: RepositorySourceControlManager;
+  }> = this._onDidRepoUpdate.event;
 
   constructor(private decorationProvider: JJDecorationProvider) {
     this.fileSystemProvider = new JJFileSystemProvider(this);
@@ -306,6 +322,7 @@ export class WorkspaceSourceControlManager {
     this.repoSCMs = await createSCMsInWorkspace(
       this.decorationProvider,
       this.fileSystemProvider,
+      this._onDidRepoUpdate,
     );
   }
 
@@ -402,8 +419,12 @@ class RepositorySourceControlManager {
   workingCopyResourceGroup: vscode.SourceControlResourceGroup;
   parentResourceGroups: vscode.SourceControlResourceGroup[] = [];
   repository: JJRepository;
-  refreshPromise: Promise<void> | undefined;
+  checkForUpdatesPromise: Promise<void> | undefined;
 
+  private _onDidUpdate = new vscode.EventEmitter<void>();
+  readonly onDidUpdate: vscode.Event<void> = this._onDidUpdate.event;
+
+  operationId: string | undefined; // the latest operation id seen by this manager
   fileStatusesByChange: Map<string, FileStatus[]> = new Map();
   trackedFiles: Set<string> = new Set();
   status: RepositoryStatus | undefined;
@@ -422,9 +443,6 @@ class RepositorySourceControlManager {
       jjPath,
       jjVersion,
       jjConfigArgs,
-    );
-    this.subscriptions.push(
-      this.repository.onDidRunJJStatus((status) => this.refresh(status)),
     );
 
     this.sourceControl = vscode.scm.createSourceControl(
@@ -468,36 +486,44 @@ class RepositorySourceControlManager {
       watcherOperations.onDidDelete,
     );
     repoChangedWatchEvent(
-      (uri) => {
+      async (_uri) => {
         this.fileSystemProvider.onDidChangeRepository({
           repositoryRoot: this.repositoryRoot,
-          uri,
         });
+        await this.checkForUpdates();
       },
       undefined,
       this.subscriptions,
     );
   }
 
-  async refresh(status: RepositoryStatus) {
-    if (!this.refreshPromise) {
-      this.refreshPromise = this.refreshUnsafe(status);
+  async checkForUpdates(force = false) {
+    if (!this.checkForUpdatesPromise) {
+      this.checkForUpdatesPromise = this.checkForUpdatesUnsafe(force);
       try {
-        await this.refreshPromise;
+        await this.checkForUpdatesPromise;
       } finally {
-        this.refreshPromise = undefined;
+        this.checkForUpdatesPromise = undefined;
       }
     } else {
-      await this.refreshPromise;
+      await this.checkForUpdatesPromise;
     }
   }
 
   /**
    * This should never be called concurrently.
    */
-  async refreshUnsafe(status: RepositoryStatus) {
-    await this.updateState(status);
-    this.render();
+  async checkForUpdatesUnsafe(force: boolean) {
+    const latestOperationId = await this.repository.getLatestOperationId();
+    if (force || this.operationId !== latestOperationId) {
+      this.operationId = latestOperationId;
+      const status = await this.repository.status();
+
+      await this.updateState(status);
+      this.render();
+
+      this._onDidUpdate.fire(undefined);
+    }
   }
 
   async updateState(status: RepositoryStatus) {
@@ -695,10 +721,6 @@ function getResourceStateCommand(
 }
 
 export class JJRepository {
-  private _onDidChangeStatus = new vscode.EventEmitter<RepositoryStatus>();
-  readonly onDidRunJJStatus: vscode.Event<RepositoryStatus> =
-    this._onDidChangeStatus.event;
-
   statusCache: RepositoryStatus | undefined;
   gitFetchPromise: Promise<void> | undefined;
 
@@ -714,6 +736,25 @@ export class JJRepository {
     options: Parameters<typeof spawn>[2] & { cwd: string },
   ) {
     return spawnJJ(this.jjPath, [...args, ...this.jjConfigArgs], options);
+  }
+
+  /**
+   * Note: this command may itself snapshot the working copy and add an operation to the log, in which case it will
+   * return the new operation id.
+   */
+  async getLatestOperationId() {
+    return (
+      await handleCommand(
+        this.spawnJJ(
+          ["operation", "log", "--limit", "1", "-T", "self.id()", "--no-graph"],
+          {
+            cwd: this.repositoryRoot,
+          },
+        ),
+      )
+    )
+      .toString()
+      .trim();
   }
 
   async getStatus(useCache = false): Promise<RepositoryStatus> {
@@ -737,7 +778,6 @@ export class JJRepository {
 
   async status(useCache = false): Promise<RepositoryStatus> {
     const status = await this.getStatus(useCache);
-    this._onDidChangeStatus.fire(status);
     return status;
   }
 

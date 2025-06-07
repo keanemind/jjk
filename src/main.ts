@@ -13,7 +13,7 @@ import {
   OperationLogTreeDataProvider,
   OperationTreeItem,
 } from "./operationLogTreeView";
-import { JJGraphWebview, RefreshArgs } from "./graphWebview";
+import { JJGraphWebview } from "./graphWebview";
 import { getParams, toJJUri } from "./uri";
 import { logger } from "./logger";
 import { LogOutputChannelTransport } from "./vendor/winston-transport-vscode/logOutputChannelTransport";
@@ -64,6 +64,24 @@ export async function activate(context: vscode.ExtensionContext) {
   let operationLogManager: OperationLogManager | undefined;
   let graphWebview: JJGraphWebview;
 
+  context.subscriptions.push(
+    workspaceSCM.onDidRepoUpdate(({ repoSCM }) => {
+      if (
+        operationLogManager &&
+        operationLogManager.operationLogTreeDataProvider.getSelectedRepo()
+          .repositoryRoot === repoSCM.repositoryRoot
+      ) {
+        void operationLogManager.setSelectedRepo(repoSCM.repository);
+      }
+      if (
+        graphWebview &&
+        graphWebview.repository.repositoryRoot === repoSCM.repositoryRoot
+      ) {
+        void graphWebview.refresh();
+      }
+    }),
+  );
+
   vscode.workspace.onDidChangeWorkspaceFolders(
     async () => {
       logger.info("Workspace folders changed");
@@ -103,6 +121,7 @@ export async function activate(context: vscode.ExtensionContext) {
     );
     operationLogManager = new OperationLogManager(operationLogTreeDataProvider);
     context.subscriptions.push(operationLogManager);
+    void operationLogManager.setSelectedRepo(selectedRepo);
 
     const statusBarItem = vscode.window.createStatusBarItem(
       vscode.StatusBarAlignment.Left,
@@ -318,7 +337,6 @@ export async function activate(context: vscode.ExtensionContext) {
             const message = sourceControl.inputBox.value.trim() || undefined;
             await repository.new(message);
             sourceControl.inputBox.value = "";
-            await updateResources();
           } catch (error) {
             vscode.window.showErrorMessage(
               `Failed to create change${error instanceof Error ? `: ${error.message}` : ""}`,
@@ -481,8 +499,6 @@ export async function activate(context: vscode.ExtensionContext) {
                   ? [status.renamedFrom]
                   : []),
               ]);
-
-              await updateResources();
             } catch (error) {
               vscode.window.showErrorMessage(
                 `Failed to restore${error instanceof Error ? `: ${error.message}` : ""}`,
@@ -553,7 +569,6 @@ export async function activate(context: vscode.ExtensionContext) {
                 message,
                 filepaths: [resourceState.resourceUri.fsPath],
               });
-              await updateResources();
             } catch (error) {
               vscode.window.showErrorMessage(
                 `Failed to squash${error instanceof Error ? `: ${error.message}` : ""}`,
@@ -614,7 +629,6 @@ export async function activate(context: vscode.ExtensionContext) {
                 message,
                 filepaths: [resourceState.resourceUri.fsPath],
               });
-              await updateResources();
             } catch (error) {
               vscode.window.showErrorMessage(
                 `Failed to squash${error instanceof Error ? `: ${error.message}` : ""}`,
@@ -649,7 +663,6 @@ export async function activate(context: vscode.ExtensionContext) {
 
           try {
             await repository.describe(resourceGroup.id, message);
-            await updateResources();
           } catch (error) {
             vscode.window.showErrorMessage(
               `Failed to update description${error instanceof Error ? `: ${error.message}` : ""}`,
@@ -715,7 +728,6 @@ export async function activate(context: vscode.ExtensionContext) {
                 toRev: destinationParentChange.changeId,
                 message,
               });
-              await updateResources();
             } catch (error) {
               vscode.window.showErrorMessage(
                 `Failed to squash${error instanceof Error ? `: ${error.message}` : ""}`,
@@ -770,7 +782,6 @@ export async function activate(context: vscode.ExtensionContext) {
                 toRev: "@",
                 message,
               });
-              await updateResources();
             } catch (error) {
               vscode.window.showErrorMessage(
                 `Failed to squash${error instanceof Error ? `: ${error.message}` : ""}`,
@@ -793,8 +804,6 @@ export async function activate(context: vscode.ExtensionContext) {
                 throw new Error("Repository not found");
               }
               await repository.restore(resourceGroup.id);
-
-              await updateResources();
             } catch (error) {
               vscode.window.showErrorMessage(
                 `Failed to restore${error instanceof Error ? `: ${error.message}` : ""}`,
@@ -816,8 +825,6 @@ export async function activate(context: vscode.ExtensionContext) {
               throw new Error("Repository not found");
             }
             await repository.edit(resourceGroup.id);
-
-            await updateResources();
           } catch (error) {
             vscode.window.showErrorMessage(
               `Failed to switch to change${error instanceof Error ? `: ${error.message}` : ""}`,
@@ -830,7 +837,7 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
       vscode.commands.registerCommand("jj.refreshGraphWebview", async () => {
         try {
-          await graphWebview.refresh(true, true);
+          await graphWebview.refresh();
         } catch (error) {
           vscode.window.showErrorMessage(
             `Failed to refresh graph${error instanceof Error ? `: ${error.message}` : ""}`,
@@ -849,8 +856,6 @@ export async function activate(context: vscode.ExtensionContext) {
 
         try {
           await graphWebview.repository.new(undefined, revs);
-
-          await updateResources();
         } catch (error) {
           vscode.window.showErrorMessage(
             `Failed to create change${error instanceof Error ? `: ${error.message}` : ""}`,
@@ -882,7 +887,7 @@ export async function activate(context: vscode.ExtensionContext) {
               "selectedRepository",
               selectedRepo.repositoryRoot,
             );
-            await updateResources();
+            await poll(true);
           }
         } catch (error) {
           vscode.window.showErrorMessage(
@@ -927,7 +932,7 @@ export async function activate(context: vscode.ExtensionContext) {
               "selectedRepository",
               selectedRepo.repositoryRoot,
             );
-            await updateResources();
+            await poll(true);
           }
         } catch (error) {
           vscode.window.showErrorMessage(
@@ -952,7 +957,6 @@ export async function activate(context: vscode.ExtensionContext) {
               throw new Error("Repository not found");
             }
             await repository.operationUndo(item.operation.id);
-            await updateResources();
           } catch (error) {
             vscode.window.showErrorMessage(
               `Failed to undo operation${error instanceof Error ? `: ${error.message}` : ""}`,
@@ -977,7 +981,6 @@ export async function activate(context: vscode.ExtensionContext) {
               throw new Error("Repository not found");
             }
             await repository.operationRestore(item.operation.id);
-            await updateResources();
           } catch (error) {
             vscode.window.showErrorMessage(
               `Failed to restore operation${error instanceof Error ? `: ${error.message}` : ""}`,
@@ -1154,7 +1157,6 @@ export async function activate(context: vscode.ExtensionContext) {
               diffInput.original,
               textEditor,
             );
-            await updateResources();
           } else if (textEditor.document.uri.scheme === "file") {
             await computeAndSquashSelectedDiff(
               repository,
@@ -1164,7 +1166,6 @@ export async function activate(context: vscode.ExtensionContext) {
               }),
               textEditor,
             );
-            await updateResources();
           }
         } catch (error) {
           vscode.window.showErrorMessage(
@@ -1375,12 +1376,7 @@ export async function activate(context: vscode.ExtensionContext) {
     isInitialized = true;
   }
 
-  async function updateResources(args?: Partial<RefreshArgs>) {
-    const defaultArgs: RefreshArgs = {
-      preserveScroll: false,
-    };
-    const finalArgs = { ...defaultArgs, ...args };
-
+  async function poll(force = false) {
     if (workspaceSCM.repoSCMs.length > 0) {
       vscode.commands.executeCommand("setContext", "jj.reposExist", true);
       if (!isInitialized) {
@@ -1388,23 +1384,21 @@ export async function activate(context: vscode.ExtensionContext) {
       }
       const selectedRepo = getSelectedRepo(context, workspaceSCM);
       graphWebview.setSelectedRepository(selectedRepo);
-
-      await graphWebview.refresh(finalArgs.preserveScroll);
-
-      if (operationLogManager) {
-        void operationLogManager.setSelectedRepo(selectedRepo);
-      }
     } else {
       vscode.commands.executeCommand("setContext", "jj.reposExist", false);
     }
 
-    for (const repoSCM of workspaceSCM.repoSCMs) {
-      await repoSCM.repository.status();
-    }
+    // Snapshot changes
+    await Promise.all(
+      workspaceSCM.repoSCMs.map((repoSCM) => repoSCM.checkForUpdates(force)),
+    );
   }
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("jj.refresh", showLoading(updateResources)),
+    vscode.commands.registerCommand(
+      "jj.refresh",
+      showLoading(() => poll(true)),
+    ),
   );
 
   context.subscriptions.push(
@@ -1537,8 +1531,8 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
   );
 
-  await updateResources();
-  const intervalId = setInterval(() => void updateResources(), 5_000);
+  await poll();
+  const intervalId = setInterval(() => void poll(), 5_000);
   context.subscriptions.push({
     dispose() {
       clearInterval(intervalId);

@@ -9,10 +9,6 @@ type Message = {
   selectedNodes: string[];
 };
 
-export type RefreshArgs = {
-  preserveScroll: boolean;
-};
-
 export class ChangeNode {
   label: string;
   description: string;
@@ -44,7 +40,6 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
 
   public panel?: vscode.WebviewView;
   public repository: JJRepository;
-  public logData: ChangeNode[] = [];
   public selectedNodes: Set<string> = new Set();
 
   constructor(
@@ -93,10 +88,6 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
         case "editChange":
           try {
             await this.repository.edit(message.changeId);
-
-            await vscode.commands.executeCommand("jj.refresh", {
-              preserveScroll: true,
-            });
           } catch (error: unknown) {
             vscode.window.showErrorMessage(
               `Failed to switch to change: ${error as string}`,
@@ -124,38 +115,24 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
     }
   }
 
-  public async refresh(
-    preserveScroll: boolean = false,
-    force: boolean = false,
-  ) {
+  public async refresh() {
     if (!this.panel) {
       return;
     }
-    const currChanges = this.logData;
 
     let changes = parseJJLog(await this.repository.log());
     changes = await this.getChangeNodesWithParents(changes);
-    this.logData = changes;
 
-    // Get the old status from cache before fetching new status
-    const oldStatus = this.repository.statusCache;
-    const status = await this.repository.getStatus();
+    const status = await this.repository.getStatus(true);
     const workingCopyId = status.workingCopy.changeId;
 
-    if (
-      force ||
-      !oldStatus || // Handle first run when cache is empty
-      status.workingCopy.changeId !== oldStatus.workingCopy.changeId ||
-      !this.areChangeNodesEqual(currChanges, changes)
-    ) {
-      this.selectedNodes.clear();
-      this.panel.webview.postMessage({
-        command: "updateGraph",
-        changes: changes,
-        workingCopyId,
-        preserveScroll,
-      });
-    }
+    this.selectedNodes.clear();
+    this.panel.webview.postMessage({
+      command: "updateGraph",
+      changes: changes,
+      workingCopyId,
+      preserveScroll: true,
+    });
   }
 
   private getWebviewContent(webview: vscode.Webview) {
