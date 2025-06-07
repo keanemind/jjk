@@ -6,7 +6,7 @@ import {
   provideOriginalResource,
   WorkspaceSourceControlManager,
 } from "./repository";
-import type { JJRepository, ChangeWithDetails } from "./repository";
+import type { JJRepository, ChangeWithDetails, FileStatus } from "./repository";
 import { JJDecorationProvider } from "./decorationProvider";
 import {
   OperationLogManager,
@@ -430,11 +430,56 @@ export async function activate(context: vscode.ExtensionContext) {
               if (!repository) {
                 throw new Error("Repository not found");
               }
+
+              const scm = workspaceSCM.getRepositorySourceControlManagerFromUri(
+                resourceState.resourceUri,
+              );
+              if (!scm) {
+                throw new Error("SCM not found for resource state");
+              }
+
               const group =
                 workspaceSCM.getResourceGroupFromResourceState(resourceState);
 
+              let status: FileStatus;
+              if (scm.workingCopyResourceGroup === group) {
+                if (!scm.status?.workingCopy) {
+                  throw new Error("No current working copy change found");
+                }
+                const foundStatus = scm.status.fileStatuses.find(
+                  (status) => status.path === resourceState.resourceUri.fsPath,
+                );
+                if (!foundStatus) {
+                  throw new Error(
+                    "No file status found for the resource in the working copy change",
+                  );
+                }
+                status = foundStatus;
+              } else if (scm.parentResourceGroups.includes(group)) {
+                const show = scm.parentShowResults.get(group.id);
+                if (!show) {
+                  throw new Error(
+                    "No current parent change show result found for the resource group",
+                  );
+                }
+                const foundStatus = show.fileStatuses.find(
+                  (status) => status.path === resourceState.resourceUri.fsPath,
+                );
+                if (!foundStatus) {
+                  throw new Error(
+                    "No file status found for the resource in the parent change",
+                  );
+                }
+                status = foundStatus;
+              } else {
+                throw new Error("Resource group was not found in the SCM");
+              }
+
               await repository.restore(group.id, [
                 resourceState.resourceUri.fsPath,
+                ...(status.renamedFrom !== undefined
+                  ? [status.renamedFrom]
+                  : []),
               ]);
 
               await updateResources();
