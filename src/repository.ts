@@ -331,6 +331,12 @@ export class WorkspaceSourceControlManager {
       ?.repository;
   }
 
+  getRepositorySourceControlManagerFromUri(uri: vscode.Uri) {
+    return this.repoSCMs.find((repo) => {
+      return !path.relative(repo.repositoryRoot, uri.fsPath).startsWith("..");
+    });
+  }
+
   getResourceGroupFromResourceState(
     resourceState: vscode.SourceControlResourceState,
   ) {
