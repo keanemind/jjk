@@ -95,6 +95,10 @@ pub fn main() !void {
     };
     try stdout.print("{}\n", .{pid});
 
+    var cwd_buffer: [4096]u8 = undefined;
+    const cwd = try std.posix.getcwd(&cwd_buffer);
+    try stdout.print("{s}\n", .{cwd});
+
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
 

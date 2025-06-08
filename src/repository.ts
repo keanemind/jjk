@@ -1003,11 +1003,12 @@ export class JJRepository {
 
         const lines = output.trim().split("\n");
         const fakeEditorPID = lines[0];
-        // lines[1] is the fakeeditor executable path
-        const leftFolderPath = lines[2];
-        const rightFolderPath = lines[3];
+        const fakeEditorCWD = lines[1];
+        // lines[2] is the fakeeditor executable path
+        const leftFolderPath = lines[3];
+        const rightFolderPath = lines[4];
 
-        if (lines.length !== 4) {
+        if (lines.length !== 5) {
           if (fakeEditorPID) {
             try {
               process.kill(parseInt(fakeEditorPID), "SIGTERM");
@@ -1024,6 +1025,7 @@ export class JJRepository {
 
         if (
           !fakeEditorPID ||
+          !fakeEditorCWD ||
           !leftFolderPath ||
           !leftFolderPath.endsWith("left") ||
           !rightFolderPath ||
@@ -1043,16 +1045,25 @@ export class JJRepository {
           return;
         }
 
+        const leftFolderAbsolutePath = path.isAbsolute(leftFolderPath)
+          ? leftFolderPath
+          : path.join(fakeEditorCWD, leftFolderPath);
+        const rightFolderAbsolutePath = path.isAbsolute(rightFolderPath)
+          ? rightFolderPath
+          : path.join(fakeEditorCWD, rightFolderPath);
+
         // Convert filepath to relative path and join with rightFolderPath
         const relativeFilePath = path.relative(this.repositoryRoot, filepath);
-        const fileToEdit = path.join(rightFolderPath, relativeFilePath);
+        const fileToEdit = path.join(rightFolderAbsolutePath, relativeFilePath);
 
         // Ensure right folder is an exact copy of left, then handle the specific file
         void fs
-          .rm(rightFolderPath, { recursive: true, force: true })
-          .then(() => fs.mkdir(rightFolderPath, { recursive: true }))
+          .rm(rightFolderAbsolutePath, { recursive: true, force: true })
+          .then(() => fs.mkdir(rightFolderAbsolutePath, { recursive: true }))
           .then(() =>
-            fs.cp(leftFolderPath, rightFolderPath, { recursive: true }),
+            fs.cp(leftFolderAbsolutePath, rightFolderAbsolutePath, {
+              recursive: true,
+            }),
           )
           .then(() => fs.rm(fileToEdit, { force: true })) // remove the specific file we're about to write to avoid its read-only permissions copied from the left folder
           .then(() => fs.writeFile(fileToEdit, content))
@@ -1420,18 +1431,23 @@ export class JJRepository {
     const pidLineIdx =
       lines.findIndex((line) => {
         return line.includes(fakeEditorPath);
-      }) - 1;
+      }) - 2;
     if (pidLineIdx < 0) {
       throw new Error("PID line not found.");
     }
-    if (pidLineIdx + 2 >= lines.length) {
+    if (pidLineIdx + 3 >= lines.length) {
       throw new Error(`Unexpected output from fakeeditor: ${output}`);
     }
 
     const summaryLines = lines.slice(0, pidLineIdx);
     const fakeEditorPID = lines[pidLineIdx];
-    // lines[pidLineIdx + 1] is the fakeeditor executable path
-    const leftFolderPath = lines[pidLineIdx + 2];
+    const fakeEditorCWD = lines[pidLineIdx + 1];
+    // lines[pidLineIdx + 2] is the fakeeditor executable path
+    const leftFolderPath = lines[pidLineIdx + 3];
+
+    const leftFolderAbsolutePath = path.isAbsolute(leftFolderPath)
+      ? leftFolderPath
+      : path.join(fakeEditorCWD, leftFolderPath);
 
     try {
       if (summaryLines.length === 0) {
@@ -1447,7 +1463,7 @@ export class JJRepository {
       // Check if the file was modified or deleted
       if (/^(M|D)\s+/.test(summaryLine)) {
         const filePath = summaryLine.slice(2).trim();
-        const fullPath = path.join(leftFolderPath, filePath);
+        const fullPath = path.join(leftFolderAbsolutePath, filePath);
 
         return fs.readFile(fullPath);
       } else {
