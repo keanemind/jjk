@@ -331,6 +331,12 @@ export class WorkspaceSourceControlManager {
       ?.repository;
   }
 
+  getRepositorySourceControlManagerFromUri(uri: vscode.Uri) {
+    return this.repoSCMs.find((repo) => {
+      return !path.relative(repo.repositoryRoot, uri.fsPath).startsWith("..");
+    });
+  }
+
   getResourceGroupFromResourceState(
     resourceState: vscode.SourceControlResourceState,
   ) {
@@ -397,6 +403,11 @@ class RepositorySourceControlManager {
   parentResourceGroups: vscode.SourceControlResourceGroup[] = [];
   repository: JJRepository;
   refreshPromise: Promise<void> | undefined;
+
+  fileStatusesByChange: Map<string, FileStatus[]> = new Map();
+  trackedFiles: Set<string> = new Set();
+  status: RepositoryStatus | undefined;
+  parentShowResults: Map<string, Show> = new Map();
 
   constructor(
     public repositoryRoot: string,
@@ -485,23 +496,69 @@ class RepositorySourceControlManager {
    * This should never be called concurrently.
    */
   async refreshUnsafe(status: RepositoryStatus) {
-    const fileStatusesByChange = new Map<string, FileStatus[]>([
+    await this.updateState(status);
+    this.render();
+  }
+
+  async updateState(status: RepositoryStatus) {
+    const newTrackedFiles = new Set<string>();
+    const newParentShowResults = new Map<string, Show>();
+    const newFileStatusesByChange = new Map<string, FileStatus[]>([
       ["@", status.fileStatuses],
     ]);
 
-    function getLabel(prefix: string, change: Change) {
-      return `${prefix} [${change.changeId}]${
-        change.description ? ` • ${change.description}` : ""
-      }${change.isEmpty ? " (empty)" : ""}${
-        change.isConflict ? " (conflict)" : ""
-      }${change.description ? "" : " (no description)"}`;
+    const trackedFilesList = await this.repository.fileList();
+    for (const t of trackedFilesList) {
+      const pathParts = t.split(path.sep);
+      let currentPath = this.repositoryRoot + path.sep;
+      for (const p of pathParts) {
+        currentPath += p;
+        newTrackedFiles.add(currentPath);
+        currentPath += path.sep;
+      }
     }
 
-    this.workingCopyResourceGroup.label = getLabel(
-      "Working Copy",
-      status.workingCopy,
+    const parentShowPromises = status.parentChanges.map(
+      async (parentChange) => {
+        const showResult = await this.repository.show(parentChange.changeId);
+        return { changeId: parentChange.changeId, showResult };
+      },
     );
-    this.workingCopyResourceGroup.resourceStates = status.fileStatuses.map(
+
+    const parentShowResultsArray = await Promise.all(parentShowPromises);
+
+    for (const { changeId, showResult } of parentShowResultsArray) {
+      newParentShowResults.set(changeId, showResult);
+      newFileStatusesByChange.set(changeId, showResult.fileStatuses);
+    }
+
+    this.status = status;
+    this.fileStatusesByChange = newFileStatusesByChange;
+    this.parentShowResults = newParentShowResults;
+    this.trackedFiles = newTrackedFiles;
+  }
+
+  static getLabel(prefix: string, change: Change) {
+    return `${prefix} [${change.changeId}]${
+      change.description ? ` • ${change.description}` : ""
+    }${change.isEmpty ? " (empty)" : ""}${
+      change.isConflict ? " (conflict)" : ""
+    }${change.description ? "" : " (no description)"}`;
+  }
+
+  render() {
+    if (!this.status?.workingCopy) {
+      throw new Error(
+        "Cannot render source control without a current working copy change.",
+      );
+    }
+
+    this.workingCopyResourceGroup.label =
+      RepositorySourceControlManager.getLabel(
+        "Working Copy",
+        this.status.workingCopy,
+      );
+    this.workingCopyResourceGroup.resourceStates = this.status.fileStatuses.map(
       (fileStatus) => {
         return {
           resourceUri: vscode.Uri.file(fileStatus.path),
@@ -520,40 +577,27 @@ class RepositorySourceControlManager {
         };
       },
     );
-    this.sourceControl.count = status.fileStatuses.length;
+    this.sourceControl.count = this.status.fileStatuses.length;
 
     const updatedGroups: vscode.SourceControlResourceGroup[] = [];
     for (const group of this.parentResourceGroups) {
-      const parentChange = status.parentChanges.find(
+      const parentChange = this.status.parentChanges.find(
         (change) => change.changeId === group.id,
       );
       if (!parentChange) {
         group.dispose();
       } else {
-        group.label = getLabel("Parent Commit", parentChange);
+        group.label = RepositorySourceControlManager.getLabel(
+          "Parent Commit",
+          parentChange,
+        );
         updatedGroups.push(group);
       }
     }
-
     this.parentResourceGroups = updatedGroups;
 
-    const trackedFilesList = await this.repository.fileList();
-    const trackedFiles = new Set<string>();
-
-    for (const t of trackedFilesList) {
-      const pathParts = t.split(path.sep);
-      let currentPath = this.repositoryRoot + path.sep;
-      for (const p of pathParts) {
-        currentPath += p;
-        trackedFiles.add(currentPath);
-        currentPath += path.sep;
-      }
-    }
-
-    for (const parentChange of status.parentChanges) {
-      let parentChangeResourceGroup:
-        | vscode.SourceControlResourceGroup
-        | undefined;
+    for (const parentChange of this.status.parentChanges) {
+      let parentChangeResourceGroup!: vscode.SourceControlResourceGroup;
 
       const parentGroup = this.parentResourceGroups.find(
         (group) => group.id === parentChange.changeId,
@@ -561,44 +605,48 @@ class RepositorySourceControlManager {
       if (!parentGroup) {
         parentChangeResourceGroup = this.sourceControl.createResourceGroup(
           parentChange.changeId,
-          getLabel("Parent Commit", parentChange),
+          RepositorySourceControlManager.getLabel(
+            "Parent Commit",
+            parentChange,
+          ),
         );
-
         this.parentResourceGroups.push(parentChangeResourceGroup);
       } else {
         parentChangeResourceGroup = parentGroup;
       }
 
-      const showResult = await this.repository.show(parentChange.changeId);
-
-      parentChangeResourceGroup.resourceStates = showResult.fileStatuses.map(
-        (parentStatus) => {
-          return {
-            resourceUri: toJJUri(vscode.Uri.file(parentStatus.path), {
-              rev: parentChange.changeId,
-            }),
-            decorations: {
-              strikeThrough: parentStatus.type === "D",
-              tooltip: path.basename(parentStatus.file),
-            },
-            command: getResourceStateCommand(
-              parentStatus,
-              toJJUri(vscode.Uri.file(parentStatus.path), {
-                diffOriginalRev: parentChange.changeId,
-              }),
-              toJJUri(vscode.Uri.file(parentStatus.path), {
+      const showResult = this.parentShowResults.get(parentChange.changeId);
+      if (showResult) {
+        parentChangeResourceGroup.resourceStates = showResult.fileStatuses.map(
+          (parentStatus) => {
+            return {
+              resourceUri: toJJUri(vscode.Uri.file(parentStatus.path), {
                 rev: parentChange.changeId,
               }),
-              `(${parentChange.changeId})`,
-            ),
-          };
-        },
-      );
-
-      fileStatusesByChange.set(parentChange.changeId, showResult.fileStatuses);
+              decorations: {
+                strikeThrough: parentStatus.type === "D",
+                tooltip: path.basename(parentStatus.file),
+              },
+              command: getResourceStateCommand(
+                parentStatus,
+                toJJUri(vscode.Uri.file(parentStatus.path), {
+                  diffOriginalRev: parentChange.changeId,
+                }),
+                toJJUri(vscode.Uri.file(parentStatus.path), {
+                  rev: parentChange.changeId,
+                }),
+                `(${parentChange.changeId})`,
+              ),
+            };
+          },
+        );
+      }
     }
 
-    this.decorationProvider.onRefresh(fileStatusesByChange, trackedFiles);
+    this.decorationProvider.onRefresh(
+      this.fileStatusesByChange,
+      this.trackedFiles,
+    );
   }
 
   dispose() {
