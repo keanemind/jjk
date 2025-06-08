@@ -1405,15 +1405,11 @@ export class JJRepository {
 
     const output = await new Promise<string>((resolve, reject) => {
       const childProcess = this.spawnJJ(
-        [
-          "diff",
-          "--summary",
-          "--tool",
-          `${fakeEditorPath}`,
-          "-r",
-          rev,
-          filepathToFileset(filepath),
-        ],
+        // We don't pass the filepath to diff because we need the left folder to have all files,
+        // in case the file was renamed or copied. If we knew the status of the file, we could
+        // pass the previous filename in addition to the current filename upon seeing a rename or copy.
+        // We don't have the status though, which is why we're using `--summary` here.
+        ["diff", "--summary", "--tool", `${fakeEditorPath}`, "-r", rev],
         {
           timeout: 10_000, // Ensure this is longer than fakeeditor's internal timeout
           cwd: this.repositoryRoot,
@@ -1464,8 +1460,8 @@ export class JJRepository {
             ),
           );
         } else {
-          // This reject will only matter if the promise wasn't resolved already; that means we'll only
-          // see if this if the command exited without sending the sentinel.
+          // This reject will only matter if the promise wasn't resolved already;
+          // that means we'll only see this if the command exited without sending the sentinel.
           reject(
             new Error(
               `Command exited unexpectedly.\nstdout:${fakeEditorOutputBuffer}\nstderr: ${Buffer.concat(errOutput).toString()}`,
@@ -1498,25 +1494,60 @@ export class JJRepository {
       : path.join(fakeEditorCWD, leftFolderPath);
 
     try {
-      if (summaryLines.length === 0) {
-        // No changes to the file
-        return undefined;
-      } else if (summaryLines.length > 1) {
-        throw new Error(
-          `Unexpected number of summary lines (${summaryLines.length}): ${summaryLines.join("\n")}`,
-        );
+      let pathInLeftFolder: string | undefined;
+
+      for (const summaryLineRaw of summaryLines) {
+        const summaryLine = summaryLineRaw.trim();
+
+        const type = summaryLine.charAt(0);
+        const file = summaryLine.slice(2).trim();
+
+        if (type === "M" || type === "D") {
+          const normalizedSummaryPath = path.join(this.repositoryRoot, file);
+          const normalizedTargetPath = path
+            .normalize(filepath)
+            .replace(/\\/g, "/");
+          if (normalizedSummaryPath === normalizedTargetPath) {
+            pathInLeftFolder = file;
+            break;
+          }
+        } else if (type === "R" || type === "C") {
+          const parseResult = parseRenamePaths(file);
+          if (!parseResult) {
+            throw new Error(`Unexpected rename line: ${summaryLineRaw}`);
+          }
+
+          const normalizedSummaryPath = path.join(
+            this.repositoryRoot,
+            parseResult.toPath,
+          );
+          const normalizedTargetPath = path
+            .normalize(filepath)
+            .replace(/\\/g, "/");
+          if (normalizedSummaryPath === normalizedTargetPath) {
+            // The file was renamed TO our target filepath, so we need its OLD path from the left folder
+            pathInLeftFolder = parseResult.fromPath;
+            break;
+          }
+        }
       }
 
-      const summaryLine = summaryLines[0].trim();
-      // Check if the file was modified or deleted
-      if (/^(M|D)\s+/.test(summaryLine)) {
-        const filePath = summaryLine.slice(2).trim();
-        const fullPath = path.join(leftFolderAbsolutePath, filePath);
-
-        return fs.readFile(fullPath);
-      } else {
-        return undefined;
+      if (pathInLeftFolder) {
+        const fullPath = path.join(leftFolderAbsolutePath, pathInLeftFolder);
+        try {
+          return await fs.readFile(fullPath);
+        } catch (e) {
+          logger.error(
+            `Failed to read original file content from left folder at ${fullPath}: ${String(
+              e,
+            )}`,
+          );
+          throw e;
+        }
       }
+
+      // File was either added or unchanged in this revision.
+      return undefined;
     } finally {
       try {
         process.kill(parseInt(fakeEditorPID), "SIGTERM");
