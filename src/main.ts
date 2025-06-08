@@ -1404,6 +1404,7 @@ export async function activate(context: vscode.ExtensionContext) {
   }
 
   async function poll() {
+    await workspaceSCM.refresh();
     if (workspaceSCM.repoSCMs.length > 0) {
       vscode.commands.executeCommand("setContext", "jj.reposExist", true);
       if (!isInitialized) {

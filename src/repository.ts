@@ -20,7 +20,9 @@ async function getJJVersion(jjPath: string): Promise<string> {
           timeout: 5000,
         }),
       )
-    ).toString();
+    )
+      .toString()
+      .trim();
 
     if (version.startsWith("jj")) {
       return version;
@@ -102,7 +104,7 @@ async function getConfigArgs(
       const configValue = await fs.readFile(configPath, "utf8");
       return [configOption, configValue];
     } catch (e) {
-      logger.error(`Failed to read config file at ${configPath}`);
+      logger.error(`Failed to read config file at ${configPath}: ${String(e)}`);
       throw e;
     }
   } else {
@@ -133,7 +135,9 @@ function getCommandTimeout(
  * Gets the configured jj executable path from settings.
  * If no path is configured, searches through common installation paths before falling back to "jj".
  */
-async function getJJPath(workspaceFolder: string): Promise<string> {
+async function getJJPath(
+  workspaceFolder: string,
+): Promise<{ filepath: string; source: "configured" | "path" | "common" }> {
   const config = vscode.workspace.getConfiguration(
     "jjk",
     workspaceFolder !== undefined
@@ -144,8 +148,7 @@ async function getJJPath(workspaceFolder: string): Promise<string> {
 
   if (configuredPath) {
     if (await which(configuredPath, { nothrow: true })) {
-      logger.info(`Using configured jjk.jjPath: ${configuredPath}`);
-      return configuredPath;
+      return { filepath: configuredPath, source: "configured" };
     } else {
       throw new Error(
         `Configured jjk.jjPath is not an executable file: ${configuredPath}`,
@@ -155,8 +158,7 @@ async function getJJPath(workspaceFolder: string): Promise<string> {
 
   const jjInPath = await which("jj", { nothrow: true });
   if (jjInPath) {
-    logger.info(`Found jj in PATH: ${jjInPath}`);
-    return jjInPath;
+    return { filepath: jjInPath, source: "path" };
   }
 
   // It's particularly important to check common locations on MacOS because of https://github.com/microsoft/vscode/issues/30847#issuecomment-420399383
@@ -176,8 +178,7 @@ async function getJJPath(workspaceFolder: string): Promise<string> {
   for (const commonPath of commonPaths) {
     const jjInCommonPath = await which(commonPath, { nothrow: true });
     if (jjInCommonPath) {
-      logger.info(`Found jj in: ${jjInCommonPath}`);
-      return jjInCommonPath;
+      return { filepath: jjInCommonPath, source: "common" };
     }
   }
 
@@ -234,59 +235,18 @@ function handleCommand(childProcess: ChildProcess) {
   });
 }
 
-async function createSCMsInWorkspace(
-  decorationProvider: JJDecorationProvider,
-  fileSystemProvider: JJFileSystemProvider,
-  repoUpdateEventEmitter: vscode.EventEmitter<{
-    repoSCM: RepositorySourceControlManager;
-  }>,
-) {
-  const repos: RepositorySourceControlManager[] = [];
-  for (const workspaceFolder of vscode.workspace.workspaceFolders || []) {
-    try {
-      const jjPath = await getJJPath(workspaceFolder.uri.fsPath);
-      const jjVersion = await getJJVersion(jjPath);
-      const jjConfigArgs = await getConfigArgs(extensionDir, jjVersion);
-
-      const repoRoot = (
-        await handleCommand(
-          spawnJJ(jjPath, ["root", ...jjConfigArgs], {
-            timeout: 5000,
-            cwd: workspaceFolder.uri.fsPath,
-          }),
-        )
-      )
-        .toString()
-        .trim();
-      const repoSCM = new RepositorySourceControlManager(
-        repoRoot,
-        decorationProvider,
-        fileSystemProvider,
-        jjPath,
-        jjVersion,
-        jjConfigArgs,
-      );
-      repoSCM.onDidUpdate(
-        () => {
-          repoUpdateEventEmitter.fire({ repoSCM });
-        },
-        undefined,
-        repoSCM.subscriptions,
-      );
-      repos.push(repoSCM);
-    } catch (e) {
-      if (e instanceof Error && e.message.includes("no jj repo in")) {
-        // Ignore this error, as it means there is no jj repo in this workspace folder
-        logger.info(`No jj repo in ${workspaceFolder.uri.fsPath}`);
-        continue;
-      }
-      throw e;
-    }
-  }
-  return repos;
-}
-
 export class WorkspaceSourceControlManager {
+  repoInfos:
+    | Map<
+        string,
+        {
+          jjPath: Awaited<ReturnType<typeof getJJPath>>;
+          jjVersion: string;
+          jjConfigArgs: string[];
+          repoRoot: string;
+        }
+      >
+    | undefined;
   repoSCMs: RepositorySourceControlManager[] = [];
   subscriptions: {
     dispose(): unknown;
@@ -316,14 +276,107 @@ export class WorkspaceSourceControlManager {
   }
 
   async refresh() {
-    for (const repo of this.repoSCMs) {
-      repo.dispose();
+    const newRepoInfos = new Map<
+      string,
+      {
+        jjPath: Awaited<ReturnType<typeof getJJPath>>;
+        jjVersion: string;
+        jjConfigArgs: string[];
+        repoRoot: string;
+      }
+    >();
+    for (const workspaceFolder of vscode.workspace.workspaceFolders || []) {
+      try {
+        const jjPath = await getJJPath(workspaceFolder.uri.fsPath);
+        const jjVersion = await getJJVersion(jjPath.filepath);
+        const jjConfigArgs = await getConfigArgs(extensionDir, jjVersion);
+
+        const repoRoot = (
+          await handleCommand(
+            spawnJJ(jjPath.filepath, ["root"], {
+              timeout: 5000,
+              cwd: workspaceFolder.uri.fsPath,
+            }),
+          )
+        )
+          .toString()
+          .trim();
+        newRepoInfos.set(workspaceFolder.uri.fsPath, {
+          jjPath,
+          jjVersion,
+          jjConfigArgs,
+          repoRoot,
+        });
+      } catch (e) {
+        if (e instanceof Error && e.message.includes("no jj repo in")) {
+          logger.debug(`No jj repo in ${workspaceFolder.uri.fsPath}`);
+        } else {
+          logger.error(
+            `Error while initializing jjk in workspace ${workspaceFolder.uri.fsPath}: ${String(e)}`,
+          );
+        }
+        continue;
+      }
     }
-    this.repoSCMs = await createSCMsInWorkspace(
-      this.decorationProvider,
-      this.fileSystemProvider,
-      this._onDidRepoUpdate,
-    );
+
+    let isAnyRepoChanged = false;
+    for (const [key, value] of newRepoInfos) {
+      const oldValue = this.repoInfos?.get(key);
+      if (!oldValue) {
+        isAnyRepoChanged = true;
+        logger.info(`Detected new jj repo in workspace: ${key}`);
+      } else if (
+        oldValue.jjVersion !== value.jjVersion ||
+        oldValue.jjPath.filepath !== value.jjPath.filepath ||
+        oldValue.jjConfigArgs.join(" ") !== value.jjConfigArgs.join(" ") ||
+        oldValue.repoRoot !== value.repoRoot
+      ) {
+        isAnyRepoChanged = true;
+        logger.info(
+          `Detected change that requires reinitialization in workspace: ${key}`,
+        );
+      }
+    }
+    for (const key of this.repoInfos?.keys() || []) {
+      if (!newRepoInfos.has(key)) {
+        isAnyRepoChanged = true;
+        logger.info(`Detected jj repo removal in workspace: ${key}`);
+      }
+    }
+    this.repoInfos = newRepoInfos;
+
+    if (isAnyRepoChanged) {
+      const repoSCMs: RepositorySourceControlManager[] = [];
+      for (const [
+        workspaceFolder,
+        { repoRoot, jjPath, jjVersion, jjConfigArgs },
+      ] of newRepoInfos.entries()) {
+        logger.info(
+          `Initializing jjk in workspace ${workspaceFolder}. Using ${jjVersion} at ${jjPath.filepath} (${jjPath.source}).`,
+        );
+        const repoSCM = new RepositorySourceControlManager(
+          repoRoot,
+          this.decorationProvider,
+          this.fileSystemProvider,
+          jjPath.filepath,
+          jjVersion,
+          jjConfigArgs,
+        );
+        repoSCM.onDidUpdate(
+          () => {
+            this._onDidRepoUpdate.fire({ repoSCM });
+          },
+          undefined,
+          repoSCM.subscriptions,
+        );
+        repoSCMs.push(repoSCM);
+      }
+
+      for (const repoSCM of this.repoSCMs) {
+        repoSCM.dispose();
+      }
+      this.repoSCMs = repoSCMs;
+    }
   }
 
   getRepositoryFromUri(uri: vscode.Uri) {
