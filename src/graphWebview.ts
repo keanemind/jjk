@@ -87,7 +87,7 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
       switch (message.command) {
         case "editChange":
           try {
-            await this.repository.edit(message.changeId);
+            await this.repository.editRetryImmutable(message.changeId);
           } catch (error: unknown) {
             vscode.window.showErrorMessage(
               `Failed to switch to change: ${error as string}`,

@@ -235,6 +235,22 @@ function handleCommand(childProcess: ChildProcess) {
   });
 }
 
+export class ImmutableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ImmutableError";
+  }
+}
+
+function convertJJErrors(e: unknown): never {
+  if (e instanceof Error) {
+    if (e.message.includes("is immutable")) {
+      throw new ImmutableError(e.message);
+    }
+  }
+  throw e;
+}
+
 export class WorkspaceSourceControlManager {
   repoInfos:
     | Map<
@@ -1075,14 +1091,40 @@ export class JJRepository {
     );
   }
 
-  async describe(rev: string, message: string) {
+  async describeRetryImmutable(rev: string, message: string) {
+    try {
+      return await this.describe(rev, message);
+    } catch (e) {
+      if (e instanceof ImmutableError) {
+        const choice = await vscode.window.showQuickPick(["Continue"], {
+          title: `${rev} is immutable, are you sure?`,
+        });
+        if (!choice) {
+          return;
+        }
+        return await this.describe(rev, message, true);
+      }
+      throw e;
+    }
+  }
+
+  async describe(rev: string, message: string, ignoreImmutable = false) {
     return (
       await handleCommand(
-        this.spawnJJ(["describe", "-m", message, rev], {
-          timeout: 5000,
-          cwd: this.repositoryRoot,
-        }),
-      )
+        this.spawnJJ(
+          [
+            "describe",
+            "-m",
+            message,
+            rev,
+            ...(ignoreImmutable ? ["--ignore-immutable"] : []),
+          ],
+          {
+            timeout: 5000,
+            cwd: this.repositoryRoot,
+          },
+        ),
+      ).catch(convertJJErrors)
     ).toString();
   }
 
@@ -1116,7 +1158,7 @@ export class JJRepository {
     }
   }
 
-  async squash({
+  async squashRetryImmutable({
     fromRev,
     toRev,
     message,
@@ -1126,6 +1168,46 @@ export class JJRepository {
     toRev: string;
     message?: string;
     filepaths?: string[];
+  }) {
+    try {
+      return await this.squash({
+        fromRev,
+        toRev,
+        message,
+        filepaths,
+      });
+    } catch (e) {
+      if (e instanceof ImmutableError) {
+        const choice = await vscode.window.showQuickPick(["Continue"], {
+          title: `${toRev} is immutable, are you sure?`,
+        });
+        if (!choice) {
+          return;
+        }
+        return await this.squash({
+          fromRev,
+          toRev,
+          message,
+          filepaths,
+          ignoreImmutable: true,
+        });
+      }
+      throw e;
+    }
+  }
+
+  async squash({
+    fromRev,
+    toRev,
+    message,
+    filepaths,
+    ignoreImmutable = false,
+  }: {
+    fromRev: string;
+    toRev: string;
+    message?: string;
+    filepaths?: string[];
+    ignoreImmutable?: boolean;
   }) {
     return (
       await handleCommand(
@@ -1140,14 +1222,53 @@ export class JJRepository {
             ...(filepaths
               ? filepaths.map((filepath) => filepathToFileset(filepath))
               : []),
+            ...(ignoreImmutable ? ["--ignore-immutable"] : []),
           ],
           {
             timeout: 5000,
             cwd: this.repositoryRoot,
           },
         ),
-      )
+      ).catch(convertJJErrors)
     ).toString();
+  }
+
+  async squashContentRetryImmutable({
+    fromRev,
+    toRev,
+    filepath,
+    content,
+  }: {
+    fromRev: string;
+    toRev: string;
+    filepath: string;
+    content: string;
+  }) {
+    try {
+      return await this.squashContent({
+        fromRev,
+        toRev,
+        filepath,
+        content,
+      });
+    } catch (e) {
+      if (e instanceof ImmutableError) {
+        const choice = await vscode.window.showQuickPick(["Continue"], {
+          title: `${toRev} is immutable, are you sure?`,
+        });
+        if (!choice) {
+          return;
+        }
+        return await this.squashContent({
+          fromRev,
+          toRev,
+          filepath,
+          content,
+          ignoreImmutable: true,
+        });
+      }
+      throw e;
+    }
   }
 
   /**
@@ -1164,11 +1285,13 @@ export class JJRepository {
     toRev,
     filepath,
     content,
+    ignoreImmutable = false,
   }: {
     fromRev: string;
     toRev: string;
     filepath: string;
     content: string;
+    ignoreImmutable?: boolean;
   }): Promise<void> {
     const { succeedFakeeditor, cleanup, envVars } = await prepareFakeeditor();
     return new Promise<void>((resolve, reject) => {
@@ -1183,6 +1306,7 @@ export class JJRepository {
           "--tool",
           `${fakeEditorPath}`,
           "--use-destination-message",
+          ...(ignoreImmutable ? ["--ignore-immutable"] : []),
         ],
         {
           timeout: 10_000, // Ensure this is longer than fakeeditor's internal timeout
@@ -1312,7 +1436,7 @@ export class JJRepository {
           resolve();
         }
       });
-    });
+    }).catch(convertJJErrors);
   }
 
   async log(
@@ -1343,60 +1467,70 @@ export class JJRepository {
     ).toString();
   }
 
-  async edit(rev: string) {
+  async editRetryImmutable(rev: string) {
     try {
-      return await handleCommand(
-        this.spawnJJ(["edit", "-r", rev, "--ignore-immutable"], {
-          timeout: 5000,
-          cwd: this.repositoryRoot,
-        }),
-      );
-    } catch (error) {
-      if (error instanceof Error) {
-        const match = error.message.match(/error:\s*([\s\S]+)$/i);
-        if (match) {
-          const errorMessage = match[1];
-          throw new Error(errorMessage);
-        } else {
-          throw error;
+      return await this.edit(rev);
+    } catch (e) {
+      if (e instanceof ImmutableError) {
+        const choice = await vscode.window.showQuickPick(["Continue"], {
+          title: `${rev} is immutable, are you sure?`,
+        });
+        if (!choice) {
+          return;
         }
-      } else {
-        throw error;
+        return await this.edit(rev, true);
       }
+      throw e;
     }
   }
 
-  async restore(rev?: string, filepaths?: string[]) {
+  async edit(rev: string, ignoreImmutable = false) {
+    return await handleCommand(
+      this.spawnJJ(
+        ["edit", "-r", rev, ...(ignoreImmutable ? ["--ignore-immutable"] : [])],
+        {
+          timeout: 5000,
+          cwd: this.repositoryRoot,
+        },
+      ),
+    ).catch(convertJJErrors);
+  }
+
+  async restoreRetryImmutable(rev?: string, filepaths?: string[]) {
     try {
-      return await handleCommand(
-        this.spawnJJ(
-          [
-            "restore",
-            "--changes-in",
-            rev ? rev : "@",
-            ...(filepaths
-              ? filepaths.map((filepath) => filepathToFileset(filepath))
-              : []),
-          ],
-          {
-            timeout: 5000,
-            cwd: this.repositoryRoot,
-          },
-        ),
-      );
-    } catch (error) {
-      if (error instanceof Error) {
-        const match = error.message.match(/error:\s*([\s\S]+)$/i);
-        if (match) {
-          const errorMessage = match[1];
-          throw new Error(errorMessage);
-        } else {
-          throw error;
+      return await this.restore(rev, filepaths);
+    } catch (e) {
+      if (e instanceof ImmutableError) {
+        const choice = await vscode.window.showQuickPick(["Continue"], {
+          title: `${rev} is immutable, are you sure?`,
+        });
+        if (!choice) {
+          return;
         }
-      } else {
-        throw error;
+        return await this.restore(rev, filepaths, true);
       }
+      throw e;
     }
+  }
+
+  async restore(rev?: string, filepaths?: string[], ignoreImmutable = false) {
+    return await handleCommand(
+      this.spawnJJ(
+        [
+          "restore",
+          "--changes-in",
+          rev ? rev : "@",
+          ...(filepaths
+            ? filepaths.map((filepath) => filepathToFileset(filepath))
+            : []),
+          ...(ignoreImmutable ? ["--ignore-immutable"] : []),
+        ],
+        {
+          timeout: 5000,
+          cwd: this.repositoryRoot,
+        },
+      ),
+    ).catch(convertJJErrors);
   }
 
   gitFetch(): Promise<void> {
