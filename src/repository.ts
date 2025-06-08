@@ -497,9 +497,9 @@ class RepositorySourceControlManager {
     );
   }
 
-  async checkForUpdates(force = false) {
+  async checkForUpdates() {
     if (!this.checkForUpdatesPromise) {
-      this.checkForUpdatesPromise = this.checkForUpdatesUnsafe(force);
+      this.checkForUpdatesPromise = this.checkForUpdatesUnsafe();
       try {
         await this.checkForUpdatesPromise;
       } finally {
@@ -513,9 +513,9 @@ class RepositorySourceControlManager {
   /**
    * This should never be called concurrently.
    */
-  async checkForUpdatesUnsafe(force: boolean) {
+  async checkForUpdatesUnsafe() {
     const latestOperationId = await this.repository.getLatestOperationId();
-    if (force || this.operationId !== latestOperationId) {
+    if (this.operationId !== latestOperationId) {
       this.operationId = latestOperationId;
       const status = await this.repository.status();
 

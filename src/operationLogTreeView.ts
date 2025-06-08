@@ -38,6 +38,10 @@ export class OperationLogManager {
     )})`;
   }
 
+  async refresh() {
+    await this.operationLogTreeDataProvider.refresh();
+  }
+
   dispose() {
     this.subscriptions.forEach((s) => s.dispose());
   }
@@ -95,8 +99,11 @@ export class OperationLogTreeDataProvider implements TreeDataProvider<unknown> {
   }
 
   async setSelectedRepo(repo: JJRepository) {
+    const prevRepo = this.selectedRepository;
     this.selectedRepository = repo;
-    await this.refresh();
+    if (prevRepo.repositoryRoot !== repo.repositoryRoot) {
+      await this.refresh();
+    }
   }
 
   getSelectedRepo() {

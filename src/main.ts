@@ -61,26 +61,33 @@ export async function activate(context: vscode.ExtensionContext) {
   // Check for colocated repositories and warn about Git extension
   await checkColocatedRepositories(workspaceSCM, context);
 
-  let operationLogManager: OperationLogManager | undefined;
-  let graphWebview: JJGraphWebview;
+  const _onDidSetSelectedRepository = new vscode.EventEmitter<void>();
+  const onDidSetSelectedRepository = _onDidSetSelectedRepository.event;
 
-  context.subscriptions.push(
-    workspaceSCM.onDidRepoUpdate(({ repoSCM }) => {
-      if (
-        operationLogManager &&
-        operationLogManager.operationLogTreeDataProvider.getSelectedRepo()
-          .repositoryRoot === repoSCM.repositoryRoot
-      ) {
-        void operationLogManager.setSelectedRepo(repoSCM.repository);
-      }
-      if (
-        graphWebview &&
-        graphWebview.repository.repositoryRoot === repoSCM.repositoryRoot
-      ) {
-        void graphWebview.refresh();
-      }
-    }),
-  );
+  function setSelectedRepo(repository: JJRepository): void {
+    context.workspaceState.update(
+      "selectedRepository",
+      repository.repositoryRoot,
+    );
+    _onDidSetSelectedRepository.fire();
+  }
+
+  function getSelectedRepo(): JJRepository {
+    const selectedRepo =
+      context.workspaceState.get<string>("selectedRepository");
+    let repository: JJRepository;
+
+    if (selectedRepo) {
+      repository =
+        workspaceSCM.repoSCMs.find(
+          (repo) => repo.repositoryRoot === selectedRepo,
+        )?.repository || workspaceSCM.repoSCMs[0].repository;
+    } else {
+      repository = workspaceSCM.repoSCMs[0].repository;
+    }
+
+    return repository;
+  }
 
   vscode.workspace.onDidChangeWorkspaceFolders(
     async () => {
@@ -109,19 +116,49 @@ export async function activate(context: vscode.ExtensionContext) {
 
   let isInitialized = false;
   function init() {
-    const selectedRepo = getSelectedRepo(context, workspaceSCM);
-    graphWebview = new JJGraphWebview(
+    const initialSelectedRepo = getSelectedRepo();
+    const graphWebview = new JJGraphWebview(
       context.extensionUri,
-      selectedRepo,
+      initialSelectedRepo,
       context,
+    );
+    context.subscriptions.push(graphWebview);
+    onDidSetSelectedRepository(
+      async () => {
+        await graphWebview.setSelectedRepository(getSelectedRepo());
+      },
+      undefined,
+      context.subscriptions,
     );
 
     const operationLogTreeDataProvider = new OperationLogTreeDataProvider(
-      selectedRepo,
+      initialSelectedRepo,
     );
-    operationLogManager = new OperationLogManager(operationLogTreeDataProvider);
+    const operationLogManager = new OperationLogManager(
+      operationLogTreeDataProvider,
+    );
     context.subscriptions.push(operationLogManager);
-    void operationLogManager.setSelectedRepo(selectedRepo);
+    onDidSetSelectedRepository(
+      async () => {
+        await operationLogManager.setSelectedRepo(getSelectedRepo());
+      },
+      undefined,
+      context.subscriptions,
+    );
+
+    context.subscriptions.push(
+      workspaceSCM.onDidRepoUpdate(({ repoSCM }) => {
+        if (
+          operationLogManager.operationLogTreeDataProvider.getSelectedRepo()
+            .repositoryRoot === repoSCM.repositoryRoot
+        ) {
+          void operationLogManager.refresh();
+        }
+        if (graphWebview.repository.repositoryRoot === repoSCM.repositoryRoot) {
+          void graphWebview.refresh();
+        }
+      }),
+    );
 
     const statusBarItem = vscode.window.createStatusBarItem(
       vscode.StatusBarAlignment.Left,
@@ -882,12 +919,7 @@ export async function activate(context: vscode.ExtensionContext) {
           );
 
           if (selectedRepo) {
-            graphWebview.setSelectedRepository(selectedRepo.repository);
-            context.workspaceState.update(
-              "selectedRepository",
-              selectedRepo.repositoryRoot,
-            );
-            await poll(true);
+            setSelectedRepo(selectedRepo.repository);
           }
         } catch (error) {
           vscode.window.showErrorMessage(
@@ -900,7 +932,7 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
       vscode.commands.registerCommand("jj.refreshOperationLog", async () => {
         try {
-          await operationLogTreeDataProvider.refresh();
+          await operationLogManager.refresh();
         } catch (error) {
           vscode.window.showErrorMessage(
             `Failed to refresh operation log${error instanceof Error ? `: ${error.message}` : ""}`,
@@ -927,12 +959,7 @@ export async function activate(context: vscode.ExtensionContext) {
           );
 
           if (selectedRepo) {
-            await operationLogManager!.setSelectedRepo(selectedRepo.repository);
-            context.workspaceState.update(
-              "selectedRepository",
-              selectedRepo.repositoryRoot,
-            );
-            await poll(true);
+            setSelectedRepo(selectedRepo.repository);
           }
         } catch (error) {
           vscode.window.showErrorMessage(
@@ -1376,28 +1403,26 @@ export async function activate(context: vscode.ExtensionContext) {
     isInitialized = true;
   }
 
-  async function poll(force = false) {
+  async function poll() {
     if (workspaceSCM.repoSCMs.length > 0) {
       vscode.commands.executeCommand("setContext", "jj.reposExist", true);
       if (!isInitialized) {
         init();
       }
-      const selectedRepo = getSelectedRepo(context, workspaceSCM);
-      graphWebview.setSelectedRepository(selectedRepo);
     } else {
       vscode.commands.executeCommand("setContext", "jj.reposExist", false);
     }
 
     // Snapshot changes
     await Promise.all(
-      workspaceSCM.repoSCMs.map((repoSCM) => repoSCM.checkForUpdates(force)),
+      workspaceSCM.repoSCMs.map((repoSCM) => repoSCM.checkForUpdates()),
     );
   }
 
   context.subscriptions.push(
     vscode.commands.registerCommand(
       "jj.refresh",
-      showLoading(() => poll(true)),
+      showLoading(() => poll()),
     ),
   );
 
@@ -1551,24 +1576,6 @@ function showLoading<T extends unknown[]>(
         await callback(...(args.length ? args : (initialArgs as T)));
       },
     );
-}
-
-function getSelectedRepo(
-  context: vscode.ExtensionContext,
-  workspaceSCM: WorkspaceSourceControlManager,
-): JJRepository {
-  const selectedRepo = context.workspaceState.get<string>("selectedRepository");
-  let repository: JJRepository;
-
-  if (selectedRepo) {
-    repository =
-      workspaceSCM.repoSCMs.find((repo) => repo.repositoryRoot === selectedRepo)
-        ?.repository || workspaceSCM.repoSCMs[0].repository;
-  } else {
-    repository = workspaceSCM.repoSCMs[0].repository;
-  }
-
-  return repository;
 }
 
 export function deactivate() {}

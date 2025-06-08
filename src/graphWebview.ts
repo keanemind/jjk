@@ -108,10 +108,14 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
     await this.refresh();
   }
 
-  public setSelectedRepository(repo: JJRepository) {
+  public async setSelectedRepository(repo: JJRepository) {
+    const prevRepo = this.repository;
     this.repository = repo;
     if (this.panel) {
       this.panel.title = `Source Control Graph (${path.basename(this.repository.repositoryRoot)})`;
+    }
+    if (prevRepo.repositoryRoot !== repo.repositoryRoot) {
+      await this.refresh();
     }
   }
 
