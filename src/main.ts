@@ -92,7 +92,10 @@ export async function activate(context: vscode.ExtensionContext) {
   vscode.workspace.onDidChangeWorkspaceFolders(
     async () => {
       logger.info("Workspace folders changed");
-      await workspaceSCM.refresh();
+      const didUpdate = await workspaceSCM.refresh();
+      if (didUpdate) {
+        setSelectedRepo(getSelectedRepo());
+      }
       await checkReposFunction();
     },
     undefined,
@@ -1404,7 +1407,10 @@ export async function activate(context: vscode.ExtensionContext) {
   }
 
   async function poll() {
-    await workspaceSCM.refresh();
+    const didUpdate = await workspaceSCM.refresh();
+    if (didUpdate) {
+      setSelectedRepo(getSelectedRepo());
+    }
     if (workspaceSCM.repoSCMs.length > 0) {
       vscode.commands.executeCommand("setContext", "jj.reposExist", true);
       if (!isInitialized) {
