@@ -401,6 +401,7 @@ export class WorkspaceSourceControlManager {
       }
       this.repoSCMs = repoSCMs;
     }
+    return isAnyRepoChanged;
   }
 
   getRepositoryFromUri(uri: vscode.Uri) {
