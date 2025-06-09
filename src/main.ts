@@ -530,7 +530,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 throw new Error("Resource group was not found in the SCM");
               }
 
-              await repository.restore(group.id, [
+              await repository.restoreRetryImmutable(group.id, [
                 resourceState.resourceUri.fsPath,
                 ...(status.renamedFrom !== undefined
                   ? [status.renamedFrom]
@@ -600,7 +600,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 }
               }
 
-              await repository.squash({
+              await repository.squashRetryImmutable({
                 fromRev: "@",
                 toRev: destinationParentChange.changeId,
                 message,
@@ -660,7 +660,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 }
               }
 
-              await repository.squash({
+              await repository.squashRetryImmutable({
                 fromRev: resourceGroup.id,
                 toRev: "@",
                 message,
@@ -699,7 +699,7 @@ export async function activate(context: vscode.ExtensionContext) {
           }
 
           try {
-            await repository.describe(resourceGroup.id, message);
+            await repository.describeRetryImmutable(resourceGroup.id, message);
           } catch (error) {
             vscode.window.showErrorMessage(
               `Failed to update description${error instanceof Error ? `: ${error.message}` : ""}`,
@@ -760,7 +760,7 @@ export async function activate(context: vscode.ExtensionContext) {
             }
 
             try {
-              await repository.squash({
+              await repository.squashRetryImmutable({
                 fromRev: "@",
                 toRev: destinationParentChange.changeId,
                 message,
@@ -814,7 +814,7 @@ export async function activate(context: vscode.ExtensionContext) {
             }
 
             try {
-              await repository.squash({
+              await repository.squashRetryImmutable({
                 fromRev: resourceGroup.id,
                 toRev: "@",
                 message,
@@ -840,7 +840,7 @@ export async function activate(context: vscode.ExtensionContext) {
               if (!repository) {
                 throw new Error("Repository not found");
               }
-              await repository.restore(resourceGroup.id);
+              await repository.restoreRetryImmutable(resourceGroup.id);
             } catch (error) {
               vscode.window.showErrorMessage(
                 `Failed to restore${error instanceof Error ? `: ${error.message}` : ""}`,
@@ -861,7 +861,7 @@ export async function activate(context: vscode.ExtensionContext) {
             if (!repository) {
               throw new Error("Repository not found");
             }
-            await repository.edit(resourceGroup.id);
+            await repository.editRetryImmutable(resourceGroup.id);
           } catch (error) {
             vscode.window.showErrorMessage(
               `Failed to switch to change${error instanceof Error ? `: ${error.message}` : ""}`,
@@ -1154,7 +1154,7 @@ export async function activate(context: vscode.ExtensionContext) {
               selectedChanges,
             );
 
-            await repository.squashContent({
+            await repository.squashContentRetryImmutable({
               fromRev: "@",
               toRev: destinationRev,
               content: result,
