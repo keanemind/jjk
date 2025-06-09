@@ -479,6 +479,7 @@ class RepositorySourceControlManager {
 
   operationId: string | undefined; // the latest operation id seen by this manager
   fileStatusesByChange: Map<string, FileStatus[]> = new Map();
+  conflictedFilesByChange: Map<string, Set<string>> = new Map();
   trackedFiles: Set<string> = new Set();
   status: RepositoryStatus | undefined;
   parentShowResults: Map<string, Show> = new Map();
@@ -585,6 +586,9 @@ class RepositorySourceControlManager {
     const newFileStatusesByChange = new Map<string, FileStatus[]>([
       ["@", status.fileStatuses],
     ]);
+    const newConflictedFilesByChange = new Map<string, Set<string>>([
+      ["@", status.conflictedFiles],
+    ]);
 
     const trackedFilesList = await this.repository.fileList();
     for (const t of trackedFilesList) {
@@ -609,10 +613,12 @@ class RepositorySourceControlManager {
     for (const { changeId, showResult } of parentShowResultsArray) {
       newParentShowResults.set(changeId, showResult);
       newFileStatusesByChange.set(changeId, showResult.fileStatuses);
+      newConflictedFilesByChange.set(changeId, showResult.conflictedFiles);
     }
 
     this.status = status;
     this.fileStatusesByChange = newFileStatusesByChange;
+    this.conflictedFilesByChange = newConflictedFilesByChange;
     this.parentShowResults = newParentShowResults;
     this.trackedFiles = newTrackedFiles;
   }
@@ -725,6 +731,7 @@ class RepositorySourceControlManager {
     this.decorationProvider.onRefresh(
       this.fileStatusesByChange,
       this.trackedFiles,
+      this.conflictedFilesByChange,
     );
   }
 
@@ -861,7 +868,9 @@ export class JJRepository {
 
   async showAll(revsets: string[]) {
     const revSeparator = "jjkඞ\n";
-    const separator = "ඞjjk";
+    const fieldSeparator = "ඞjjk";
+    const summarySeparator = "@?!"; // characters that are illegal in filepaths
+    const isConflictDetectionSupported = this.jjVersion >= "jj 0.26.0";
     const templateFields = [
       "change_id",
       "commit_id",
@@ -871,10 +880,13 @@ export class JJRepository {
       "description",
       "empty",
       "conflict",
-      "diff.summary()",
+      isConflictDetectionSupported
+        ? `diff.files().map(|entry| entry.status() ++ "${summarySeparator}" ++ entry.source().path().display() ++ "${summarySeparator}" ++ entry.target().path().display() ++ "${summarySeparator}" ++ entry.target().conflict()).join("\n")`
+        : "diff.summary()",
     ];
     const template =
-      templateFields.join(` ++ "${separator}" ++ `) + ` ++ "${revSeparator}"`;
+      templateFields.join(` ++ "${fieldSeparator}" ++ `) +
+      ` ++ "${revSeparator}"`;
 
     const output = (
       await handleCommand(
@@ -902,7 +914,7 @@ export class JJRepository {
 
     const revResults = output.split(revSeparator).slice(0, -1); // the output ends in a separator so remove the empty string at the end
     return revResults.map((revResult) => {
-      const fields = revResult.split(separator);
+      const fields = revResult.split(fieldSeparator);
       if (fields.length > templateFields.length) {
         throw new Error(
           "Separator found in a field value. This is not supported.",
@@ -924,6 +936,7 @@ export class JJRepository {
           isConflict: false,
         },
         fileStatuses: [],
+        conflictedFiles: new Set<string>(),
       };
 
       for (let i = 0; i < fields.length; i++) {
@@ -954,39 +967,91 @@ export class JJRepository {
           case "conflict":
             ret.change.isConflict = value === "true";
             break;
-          case "diff.summary()": {
+          default: {
             const changeRegex = /^(A|M|D|R|C) (.+)$/;
             for (const line of value.split("\n").filter(Boolean)) {
-              const changeMatch = changeRegex.exec(line);
-              if (changeMatch) {
-                const [_, type, file] = changeMatch;
-
-                if (type === "R" || type === "C") {
-                  const parsedPaths = parseRenamePaths(file);
-                  if (parsedPaths) {
+              if (isConflictDetectionSupported) {
+                const [status, rawSourcePath, rawTargetPath, conflict] =
+                  line.split(summarySeparator);
+                const sourcePath = path
+                  .normalize(rawSourcePath)
+                  .replace(/\\/g, "/");
+                const targetPath = path
+                  .normalize(rawTargetPath)
+                  .replace(/\\/g, "/");
+                if (
+                  [
+                    "modified",
+                    "added",
+                    "removed",
+                    "copied",
+                    "renamed",
+                  ].includes(status)
+                ) {
+                  if (status === "renamed" || status === "copied") {
                     ret.fileStatuses.push({
-                      type: type,
-                      file: parsedPaths.toPath,
-                      path: path.join(this.repositoryRoot, parsedPaths.toPath),
-                      renamedFrom: parsedPaths.fromPath,
+                      type: status === "renamed" ? "R" : "C",
+                      file: path.basename(targetPath),
+                      path: path.join(this.repositoryRoot, targetPath),
+                      renamedFrom: sourcePath,
                     });
                   } else {
-                    throw new Error(
-                      `Unexpected ${type === "R" ? "rename" : "copy"} line: ${line}`,
+                    ret.fileStatuses.push({
+                      type:
+                        status === "added"
+                          ? "A"
+                          : status === "removed"
+                            ? "D"
+                            : "M",
+                      file: path.basename(targetPath),
+                      path: path.join(this.repositoryRoot, targetPath),
+                    });
+                  }
+                  if (conflict === "true") {
+                    ret.conflictedFiles.add(
+                      path.join(this.repositoryRoot, targetPath),
                     );
                   }
                 } else {
-                  const normalizedFile = path
-                    .normalize(file)
-                    .replace(/\\/g, "/");
-                  ret.fileStatuses.push({
-                    type: type as "A" | "M" | "D",
-                    file: normalizedFile,
-                    path: path.join(this.repositoryRoot, normalizedFile),
-                  });
+                  throw new Error(
+                    `Unexpected diff custom summary line: ${line}`,
+                  );
                 }
               } else {
-                throw new Error(`Unexpected diff summary line: ${line}`);
+                const changeMatch = changeRegex.exec(line);
+                if (changeMatch) {
+                  const [_, type, file] = changeMatch;
+
+                  if (type === "R" || type === "C") {
+                    const parsedPaths = parseRenamePaths(file);
+                    if (parsedPaths) {
+                      ret.fileStatuses.push({
+                        type: type,
+                        file: parsedPaths.toPath,
+                        path: path.join(
+                          this.repositoryRoot,
+                          parsedPaths.toPath,
+                        ),
+                        renamedFrom: parsedPaths.fromPath,
+                      });
+                    } else {
+                      throw new Error(
+                        `Unexpected ${type === "R" ? "rename" : "copy"} line: ${line}`,
+                      );
+                    }
+                  } else {
+                    const normalizedFile = path
+                      .normalize(file)
+                      .replace(/\\/g, "/");
+                    ret.fileStatuses.push({
+                      type: type as "A" | "M" | "D",
+                      file: normalizedFile,
+                      path: path.join(this.repositoryRoot, normalizedFile),
+                    });
+                  }
+                } else {
+                  throw new Error(`Unexpected diff summary line: ${line}`);
+                }
               }
             }
             break;
@@ -1683,11 +1748,13 @@ export type RepositoryStatus = {
   fileStatuses: FileStatus[];
   workingCopy: Change;
   parentChanges: Change[];
+  conflictedFiles: Set<string>;
 };
 
 export type Show = {
   change: ChangeWithDetails;
   fileStatuses: FileStatus[];
+  conflictedFiles: Set<string>;
 };
 
 export type Operation = {
@@ -1705,6 +1772,7 @@ async function parseJJStatus(
 ): Promise<RepositoryStatus> {
   const lines = output.split("\n");
   const fileStatuses: FileStatus[] = [];
+  const conflictedFiles = new Set<string>();
   let workingCopy: Change = {
     changeId: "",
     commitId: "",
@@ -1718,18 +1786,57 @@ async function parseJJStatus(
   const commitRegex =
     /^(Working copy|Parent commit)\s*(\(@-?\))?\s*:\s+(\S+)\s+(\S+)(?:\s+(.+?)\s+\|)?(?:\s+(.*))?$/;
 
+  let isParsingConflicts = false;
+
   for (const line of lines) {
+    const trimmedLine = line.trim();
+    const ansiStrippedTrimmedLine = await stripAnsiCodes(trimmedLine);
+
     if (
-      line.startsWith("Working copy changes:") ||
-      line.startsWith("The working copy is clean") ||
-      line.trim() === ""
+      ansiStrippedTrimmedLine === "" ||
+      ansiStrippedTrimmedLine.startsWith("Working copy changes:") ||
+      ansiStrippedTrimmedLine.startsWith("The working copy is clean")
     ) {
       continue;
     }
 
-    const ansiStrippedLine = await stripAnsiCodes(line);
+    if (
+      ansiStrippedTrimmedLine.includes(
+        "There are unresolved conflicts at these paths:",
+      )
+    ) {
+      isParsingConflicts = true;
+      continue;
+    }
 
-    const changeMatch = changeRegex.exec(ansiStrippedLine);
+    if (isParsingConflicts) {
+      const regions = await extractColoredRegions(trimmedLine);
+      let filePath = "";
+      let firstColoredRegionIndex = -1;
+      for (let i = 0; i < regions.length; i++) {
+        if (regions[i].colored) {
+          firstColoredRegionIndex = i;
+          break;
+        }
+        filePath += regions[i].text;
+      }
+      filePath = filePath.trim();
+
+      if (ansiStrippedTrimmedLine.includes("To resolve the conflicts")) {
+        isParsingConflicts = false;
+        continue;
+      }
+
+      // If filePath is non-empty and we found a colored region after it, it's a conflict line
+      if (filePath && firstColoredRegionIndex !== -1) {
+        const normalizedFile = path.normalize(filePath).replace(/\\/g, "/");
+        conflictedFiles.add(path.join(repositoryRoot, normalizedFile));
+      } else {
+        isParsingConflicts = false;
+      }
+    }
+
+    const changeMatch = changeRegex.exec(ansiStrippedTrimmedLine);
     if (changeMatch) {
       const [_, type, file] = changeMatch;
 
@@ -1760,6 +1867,7 @@ async function parseJJStatus(
 
     const commitMatch = commitRegex.exec(line);
     if (commitMatch) {
+      isParsingConflicts = false;
       const [
         _firstMatch,
         type,
@@ -1805,6 +1913,7 @@ async function parseJJStatus(
       } else if ((await stripAnsiCodes(type)) === "Parent commit") {
         parentCommits.push(commitDetails);
       }
+      continue;
     }
   }
 
@@ -1812,6 +1921,7 @@ async function parseJJStatus(
     fileStatuses: fileStatuses,
     workingCopy,
     parentChanges: parentCommits,
+    conflictedFiles: conflictedFiles,
   };
 }
 
