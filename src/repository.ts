@@ -202,6 +202,10 @@ function spawnJJ(
   return spawn(jjPath, args, finalOptions);
 }
 
+function handleJJCommand(childProcess: ChildProcess) {
+  return handleCommand(childProcess).catch(convertJJErrors);
+}
+
 function handleCommand(childProcess: ChildProcess) {
   return new Promise<Buffer>((resolve, reject) => {
     const output: Buffer[] = [];
@@ -242,6 +246,10 @@ export class ImmutableError extends Error {
   }
 }
 
+/**
+ * Detects common error messages from jj and converts them to custom error instances to make them easier to selectively
+ * handle.
+ */
 function convertJJErrors(e: unknown): never {
   if (e instanceof Error) {
     if (e.message.includes("is immutable")) {
@@ -820,7 +828,7 @@ export class JJRepository {
    */
   async getLatestOperationId() {
     return (
-      await handleCommand(
+      await handleJJCommand(
         this.spawnJJ(
           ["operation", "log", "--limit", "1", "-T", "self.id()", "--no-graph"],
           {
@@ -839,7 +847,7 @@ export class JJRepository {
     }
 
     const output = (
-      await handleCommand(
+      await handleJJCommand(
         this.spawnJJ(["status", "--color=always"], {
           timeout: 5000,
           cwd: this.repositoryRoot,
@@ -859,7 +867,7 @@ export class JJRepository {
 
   async fileList() {
     return (
-      await handleCommand(
+      await handleJJCommand(
         this.spawnJJ(["file", "list"], {
           timeout: 5000,
           cwd: this.repositoryRoot,
@@ -905,7 +913,7 @@ export class JJRepository {
       ` ++ "${revSeparator}"`;
 
     const output = (
-      await handleCommand(
+      await handleJJCommand(
         this.spawnJJ(
           [
             "log",
@@ -1080,7 +1088,7 @@ export class JJRepository {
   }
 
   readFile(rev: string, filepath: string) {
-    return handleCommand(
+    return handleJJCommand(
       this.spawnJJ(
         ["file", "show", "--revision", rev, filepathToFileset(filepath)],
         {
@@ -1110,7 +1118,7 @@ export class JJRepository {
 
   async describe(rev: string, message: string, ignoreImmutable = false) {
     return (
-      await handleCommand(
+      await handleJJCommand(
         this.spawnJJ(
           [
             "describe",
@@ -1124,13 +1132,13 @@ export class JJRepository {
             cwd: this.repositoryRoot,
           },
         ),
-      ).catch(convertJJErrors)
+      )
     ).toString();
   }
 
   async new(message?: string, revs?: string[]) {
     try {
-      return await handleCommand(
+      return await handleJJCommand(
         this.spawnJJ(
           [
             "new",
@@ -1210,7 +1218,7 @@ export class JJRepository {
     ignoreImmutable?: boolean;
   }) {
     return (
-      await handleCommand(
+      await handleJJCommand(
         this.spawnJJ(
           [
             "squash",
@@ -1229,7 +1237,7 @@ export class JJRepository {
             cwd: this.repositoryRoot,
           },
         ),
-      ).catch(convertJJErrors)
+      )
     ).toString();
   }
 
@@ -1446,7 +1454,7 @@ export class JJRepository {
     noGraph: boolean = false,
   ) {
     return (
-      await handleCommand(
+      await handleJJCommand(
         this.spawnJJ(
           [
             "log",
@@ -1485,7 +1493,7 @@ export class JJRepository {
   }
 
   async edit(rev: string, ignoreImmutable = false) {
-    return await handleCommand(
+    return await handleJJCommand(
       this.spawnJJ(
         ["edit", "-r", rev, ...(ignoreImmutable ? ["--ignore-immutable"] : [])],
         {
@@ -1493,7 +1501,7 @@ export class JJRepository {
           cwd: this.repositoryRoot,
         },
       ),
-    ).catch(convertJJErrors);
+    );
   }
 
   async restoreRetryImmutable(rev?: string, filepaths?: string[]) {
@@ -1514,7 +1522,7 @@ export class JJRepository {
   }
 
   async restore(rev?: string, filepaths?: string[], ignoreImmutable = false) {
-    return await handleCommand(
+    return await handleJJCommand(
       this.spawnJJ(
         [
           "restore",
@@ -1530,14 +1538,14 @@ export class JJRepository {
           cwd: this.repositoryRoot,
         },
       ),
-    ).catch(convertJJErrors);
+    );
   }
 
   gitFetch(): Promise<void> {
     if (!this.gitFetchPromise) {
       this.gitFetchPromise = (async () => {
         try {
-          await handleCommand(
+          await handleJJCommand(
             this.spawnJJ(["git", "fetch"], {
               timeout: 60_000,
               cwd: this.repositoryRoot,
@@ -1553,7 +1561,7 @@ export class JJRepository {
 
   async annotate(filepath: string, rev: string): Promise<string[]> {
     const output = (
-      await handleCommand(
+      await handleJJCommand(
         this.spawnJJ(
           [
             "file",
@@ -1593,7 +1601,7 @@ export class JJRepository {
       ` ++ "${operationSeparator}"`;
 
     const output = (
-      await handleCommand(
+      await handleJJCommand(
         this.spawnJJ(
           [
             "operation",
@@ -1666,7 +1674,7 @@ export class JJRepository {
 
   async operationUndo(id: string) {
     return (
-      await handleCommand(
+      await handleJJCommand(
         this.spawnJJ(["operation", "undo", id], {
           timeout: 5000,
           cwd: this.repositoryRoot,
@@ -1677,7 +1685,7 @@ export class JJRepository {
 
   async operationRestore(id: string) {
     return (
-      await handleCommand(
+      await handleJJCommand(
         this.spawnJJ(["operation", "restore", id], {
           timeout: 5000,
           cwd: this.repositoryRoot,
@@ -1761,7 +1769,7 @@ export class JJRepository {
           );
         }
       });
-    });
+    }).catch(convertJJErrors);
 
     const lines = output.trim().split("\n");
     const pidLineIdx =
