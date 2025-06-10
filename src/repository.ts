@@ -6,7 +6,7 @@ import { getParams, toJJUri } from "./uri";
 import type { JJDecorationProvider } from "./decorationProvider";
 import { logger } from "./logger";
 import type { ChildProcess } from "child_process";
-import { anyEvent } from "./utils";
+import { anyEvent, pathEquals } from "./utils";
 import { JJFileSystemProvider } from "./fileSystemProvider";
 import * as os from "os";
 import * as crypto from "crypto";
@@ -1804,11 +1804,13 @@ export class JJRepository {
         const file = summaryLine.slice(2).trim();
 
         if (type === "M" || type === "D") {
-          const normalizedSummaryPath = path.join(this.repositoryRoot, file);
+          const normalizedSummaryPath = path
+            .join(this.repositoryRoot, file)
+            .replace(/\\/g, "/");
           const normalizedTargetPath = path
             .normalize(filepath)
             .replace(/\\/g, "/");
-          if (normalizedSummaryPath === normalizedTargetPath) {
+          if (pathEquals(normalizedSummaryPath, normalizedTargetPath)) {
             pathInLeftFolder = file;
             break;
           }
@@ -1818,14 +1820,13 @@ export class JJRepository {
             throw new Error(`Unexpected rename line: ${summaryLineRaw}`);
           }
 
-          const normalizedSummaryPath = path.join(
-            this.repositoryRoot,
-            parseResult.toPath,
-          );
+          const normalizedSummaryPath = path
+            .join(this.repositoryRoot, parseResult.toPath)
+            .replace(/\\/g, "/");
           const normalizedTargetPath = path
             .normalize(filepath)
             .replace(/\\/g, "/");
-          if (normalizedSummaryPath === normalizedTargetPath) {
+          if (pathEquals(normalizedSummaryPath, normalizedTargetPath)) {
             // The file was renamed TO our target filepath, so we need its OLD path from the left folder
             pathInLeftFolder = parseResult.fromPath;
             break;
