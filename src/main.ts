@@ -24,7 +24,7 @@ import {
   LinesDiff,
 } from "./vendor/vscode/editor/common/diff/linesDiffComputer";
 import { match } from "arktype";
-import { getActiveTextEditorDiff } from "./utils";
+import { getActiveTextEditorDiff, pathEquals } from "./utils";
 
 export async function activate(context: vscode.ExtensionContext) {
   const outputChannel = vscode.window.createOutputChannel("Jujutsu Kaizen", {
@@ -504,8 +504,8 @@ export async function activate(context: vscode.ExtensionContext) {
                 if (!scm.status?.workingCopy) {
                   throw new Error("No current working copy change found");
                 }
-                const foundStatus = scm.status.fileStatuses.find(
-                  (status) => status.path === resourceState.resourceUri.fsPath,
+                const foundStatus = scm.status.fileStatuses.find((status) =>
+                  pathEquals(status.path, resourceState.resourceUri.fsPath),
                 );
                 if (!foundStatus) {
                   throw new Error(
@@ -520,8 +520,8 @@ export async function activate(context: vscode.ExtensionContext) {
                     "No current parent change show result found for the resource group",
                   );
                 }
-                const foundStatus = show.fileStatuses.find(
-                  (status) => status.path === resourceState.resourceUri.fsPath,
+                const foundStatus = show.fileStatuses.find((status) =>
+                  pathEquals(status.path, resourceState.resourceUri.fsPath),
                 );
                 if (!foundStatus) {
                   throw new Error(
