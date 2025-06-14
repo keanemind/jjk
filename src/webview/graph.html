@@ -361,10 +361,13 @@
                 // Create text content container
                 const textContent = document.createElement('div');
                 textContent.className = 'text-content';
-                textContent.innerHTML = `
-                    <div>${change.label}</div>
-                    <div class="description">${change.description}</div>
-                `;
+                const nodeLabel = document.createElement("div");
+                nodeLabel.textContent = change.label;
+                textContent.append(nodeLabel);
+                const nodeDescription = document.createElement("div");
+                nodeDescription.className = 'description';
+                nodeDescription.textContent = change.description;
+                textContent.append(nodeDescription);
                 node.appendChild(textContent);
 
                 // Create and append edit button
