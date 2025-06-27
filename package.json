@@ -429,6 +429,11 @@
         }
       }
     },
+    "configurationDefaults": {
+      "files.exclude": {
+        "**/.jj": true
+      }
+    },
     "colors": [
       {
         "id": "jjDecoration.addedResourceForeground",
