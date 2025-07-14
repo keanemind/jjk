@@ -325,12 +325,17 @@ export class WorkspaceSourceControlManager {
         )
           .toString()
           .trim();
-        newRepoInfos.set(workspaceFolder.uri.fsPath, {
-          jjPath,
-          jjVersion,
-          jjConfigArgs,
-          repoRoot,
-        });
+
+        const repoUri = vscode.Uri.file(repoRoot.replace(/^\\\\\?\\UNC\\/, "\\\\")).toString();
+
+        if (!newRepoInfos.has(repoUri)) {
+          newRepoInfos.set(repoUri, {
+            jjPath,
+            jjVersion,
+            jjConfigArgs,
+            repoRoot,
+          });
+        }
       } catch (e) {
         if (e instanceof Error && e.message.includes("no jj repo in")) {
           logger.debug(`No jj repo in ${workspaceFolder.uri.fsPath}`);
