@@ -476,69 +476,96 @@ export async function activate(context: vscode.ExtensionContext) {
       ),
     );
 
+    function getSharedResourceGroup(
+      resourceStates: vscode.SourceControlResourceState[],
+    ) {
+      if (resourceStates.length === 0) {
+        throw new Error("No resources found");
+      }
+
+      const [first, ...rest] = resourceStates;
+      const resourceGroup = workspaceSCM.getResourceGroupFromResourceState(first);
+
+      for (const resourceState of rest) {
+        const stateGroup =
+          workspaceSCM.getResourceGroupFromResourceState(resourceState);
+        if (stateGroup !== resourceGroup) {
+          throw new Error(
+            "All selected resources must belong to the same resource group",
+          );
+        }
+      }
+
+      return resourceGroup;
+    }
+
     context.subscriptions.push(
       vscode.commands.registerCommand(
         "jj.restoreResourceState",
         showLoading(
-          async (resourceState: vscode.SourceControlResourceState) => {
+          async (...resourceStates: vscode.SourceControlResourceState[]) => {
             try {
-              const repository = workspaceSCM.getRepositoryFromUri(
-                resourceState.resourceUri,
-              );
+              const resourceGroup = getSharedResourceGroup(resourceStates);
+              const repository =
+                workspaceSCM.getRepositoryFromResourceGroup(resourceGroup);
               if (!repository) {
                 throw new Error("Repository not found");
               }
 
-              const scm = workspaceSCM.getRepositorySourceControlManagerFromUri(
-                resourceState.resourceUri,
-              );
+              const scm =
+                workspaceSCM.getRepositorySourceControlManagerFromResourceGroup(
+                  resourceGroup,
+                );
               if (!scm) {
-                throw new Error("SCM not found for resource state");
+                throw new Error("SCM not found for resource group");
               }
 
-              const group =
-                workspaceSCM.getResourceGroupFromResourceState(resourceState);
-
-              let status: FileStatus;
-              if (scm.workingCopyResourceGroup === group) {
-                if (!scm.status?.workingCopy) {
-                  throw new Error("No current working copy change found");
-                }
-                const foundStatus = scm.status.fileStatuses.find((status) =>
-                  pathEquals(status.path, resourceState.resourceUri.fsPath),
-                );
-                if (!foundStatus) {
-                  throw new Error(
-                    "No file status found for the resource in the working copy change",
+              let statuses: FileStatus[];
+              if (scm.workingCopyResourceGroup === resourceGroup) {
+                statuses = resourceStates.map((resourceState) => {
+                  if (!scm.status?.workingCopy) {
+                    throw new Error("No current working copy change found");
+                  }
+                  const foundStatus = scm.status.fileStatuses.find((status) =>
+                    pathEquals(status.path, resourceState.resourceUri.fsPath),
                   );
-                }
-                status = foundStatus;
-              } else if (scm.parentResourceGroups.includes(group)) {
-                const show = scm.parentShowResults.get(group.id);
-                if (!show) {
-                  throw new Error(
-                    "No current parent change show result found for the resource group",
+                  if (!foundStatus) {
+                    throw new Error(
+                      "No file status found for the resource in the working copy change",
+                    );
+                  }
+                  return foundStatus;
+                });
+              } else if (scm.parentResourceGroups.includes(resourceGroup)) {
+                statuses = resourceStates.map((resourceState) => {
+                  const show = scm.parentShowResults.get(resourceGroup.id);
+                  if (!show) {
+                    throw new Error(
+                      "No current parent change show result found for the resource group",
+                    );
+                  }
+                  const foundStatus = show.fileStatuses.find((status) =>
+                    pathEquals(status.path, resourceState.resourceUri.fsPath),
                   );
-                }
-                const foundStatus = show.fileStatuses.find((status) =>
-                  pathEquals(status.path, resourceState.resourceUri.fsPath),
-                );
-                if (!foundStatus) {
-                  throw new Error(
-                    "No file status found for the resource in the parent change",
-                  );
-                }
-                status = foundStatus;
+                  if (!foundStatus) {
+                    throw new Error(
+                      "No file status found for the resource in the parent change",
+                    );
+                  }
+                  return foundStatus;
+                });
               } else {
                 throw new Error("Resource group was not found in the SCM");
               }
 
-              await repository.restoreRetryImmutable(group.id, [
-                resourceState.resourceUri.fsPath,
+              const paths = statuses.flatMap((status) => [
+                status.path,
                 ...(status.renamedFrom !== undefined
                   ? [status.renamedFrom]
                   : []),
               ]);
+
+              await repository.restoreRetryImmutable(resourceGroup.id, paths);
             } catch (error) {
               vscode.window.showErrorMessage(
                 `Failed to restore${error instanceof Error ? `: ${error.message}` : ""}`,
@@ -553,11 +580,11 @@ export async function activate(context: vscode.ExtensionContext) {
       vscode.commands.registerCommand(
         "jj.squashToParentResourceState",
         showLoading(
-          async (resourceState: vscode.SourceControlResourceState) => {
+          async (...resourceStates: vscode.SourceControlResourceState[]) => {
             try {
-              const repository = workspaceSCM.getRepositoryFromUri(
-                resourceState.resourceUri,
-              );
+              const resourceGroup = getSharedResourceGroup(resourceStates);
+              const repository =
+                workspaceSCM.getRepositoryFromResourceGroup(resourceGroup);
               if (!repository) {
                 throw new Error("Repository not found");
               }
@@ -587,7 +614,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
               let message: string | undefined;
               if (
-                status.fileStatuses.length === 1 && // this is the only file in the source change
+                resourceGroup.resourceStates.length === resourceStates.length && // the source change contains only the selected files
                 status.workingCopy.description !== "" &&
                 destinationParentChange.description !== ""
               ) {
@@ -607,7 +634,9 @@ export async function activate(context: vscode.ExtensionContext) {
                 fromRev: "@",
                 toRev: destinationParentChange.changeId,
                 message,
-                filepaths: [resourceState.resourceUri.fsPath],
+                filepaths: resourceStates.map(
+                  (state) => state.resourceUri.fsPath,
+                ),
               });
             } catch (error) {
               vscode.window.showErrorMessage(
@@ -623,18 +652,15 @@ export async function activate(context: vscode.ExtensionContext) {
       vscode.commands.registerCommand(
         "jj.squashToWorkingCopyResourceState",
         showLoading(
-          async (resourceState: vscode.SourceControlResourceState) => {
+          async (...resourceStates: vscode.SourceControlResourceState[]) => {
             try {
-              const repository = workspaceSCM.getRepositoryFromUri(
-                resourceState.resourceUri,
-              );
+              const resourceGroup = getSharedResourceGroup(resourceStates);
+              const repository =
+                workspaceSCM.getRepositoryFromResourceGroup(resourceGroup);
               if (!repository) {
                 throw new Error("Repository not found");
               }
               const status = await repository.status(true);
-
-              const resourceGroup =
-                workspaceSCM.getResourceGroupFromResourceState(resourceState);
 
               const parentChange = status.parentChanges.find(
                 (change) => change.changeId === resourceGroup.id,
@@ -647,7 +673,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
               let message: string | undefined;
               if (
-                resourceGroup.resourceStates.length === 1 && // this is the only file in the source change
+                resourceGroup.resourceStates.length === resourceStates.length && // the source change contains only the selected files
                 status.workingCopy.description !== "" &&
                 parentChange.description !== ""
               ) {
@@ -667,7 +693,9 @@ export async function activate(context: vscode.ExtensionContext) {
                 fromRev: resourceGroup.id,
                 toRev: "@",
                 message,
-                filepaths: [resourceState.resourceUri.fsPath],
+                filepaths: resourceStates.map(
+                  (state) => state.resourceUri.fsPath,
+                ),
               });
             } catch (error) {
               vscode.window.showErrorMessage(

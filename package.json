@@ -322,8 +322,18 @@
       ],
       "scm/resourceFolder/context": [
         {
-          "command": "jj.placeholderForFolders",
+          "command": "jj.restoreResourceState",
           "when": "scmProvider == jj",
+          "group": "inline"
+        },
+        {
+          "command": "jj.squashToParentResourceState",
+          "when": "scmProvider == jj && scmResourceGroup == @",
+          "group": "inline"
+        },
+        {
+          "command": "jj.squashToWorkingCopyResourceState",
+          "when": "scmProvider == jj && scmResourceGroup != @",
           "group": "inline"
         }
       ],
