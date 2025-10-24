@@ -426,6 +426,12 @@
           "default": "",
           "description": "Path to the jj executable. If not set, your PATH and common locations will be searched for a jj executable.",
           "scope": "resource"
+        },
+        "jjk.ignoreWorkingCopy": {
+          "type": "boolean",
+          "default": false,
+          "description": "Use --ignore-working-copy for read-only commands to prevent automatic working copy snapshots. This prevents divergent changesets from passive monitoring, but modified files may not auto-update until the next manual jj command.",
+          "scope": "resource"
         }
       }
     },
