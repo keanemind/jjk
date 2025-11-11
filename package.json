@@ -568,8 +568,8 @@
     ]
   },
   "scripts": {
-    "build": "npm run check-types && npm run lint && node esbuild.js --production && cp -r src/webview dist/ && cp src/config.toml dist/ && mkdir -p dist/codicons && cp -r node_modules/@vscode/codicons/dist/* dist/codicons/ && npm run build-fakeeditor && mkdir -p dist/fakeeditor/zig-out/bin && cp -r src/fakeeditor/zig-out/bin/. dist/fakeeditor/zig-out/bin/",
-    "build-fakeeditor": "cd src/fakeeditor && ./build_all_platforms.sh",
+    "build": "npm run check-types && npm run lint && node esbuild.js --production && cp -r src/webview dist/ && cp src/config.toml dist/ && mkdir -p dist/codicons && cp -r node_modules/@vscode/codicons/dist/* dist/codicons/ && npm run build:fakeeditor && mkdir -p dist/fakeeditor/zig-out/bin && cp -r src/fakeeditor/zig-out/bin/. dist/fakeeditor/zig-out/bin/",
+    "build:fakeeditor": "cd src/fakeeditor && ./build_all_platforms.sh",
     "vscode:prepublish": "npm run build",
     "compile": "npm run check-types && npm run lint && node esbuild.js",
     "watch": "npm-run-all -p watch:*",
