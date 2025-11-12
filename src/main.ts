@@ -1563,13 +1563,21 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
   );
 
-  await poll();
-  const intervalId = setInterval(() => void poll(), 5_000);
-  context.subscriptions.push({
-    dispose() {
-      clearInterval(intervalId);
-    },
-  });
+  let pollTimeoutId: NodeJS.Timeout | undefined;
+  const scheduleNextPoll = async () => {
+    try {
+      await poll();
+    } catch (err) {
+      logger.error(`Error during background poll: ${String(err)}`);
+    } finally {
+      // Schedule the next poll even if the current one fails.
+      pollTimeoutId = setTimeout(() => void scheduleNextPoll(), 5_000);
+    }
+  };
+
+  void scheduleNextPoll(); // Start the first poll.
+
+  context.subscriptions.push(new vscode.Disposable(() => clearTimeout(pollTimeoutId)));
 }
 
 function showLoading<T extends unknown[]>(
