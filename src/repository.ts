@@ -437,6 +437,10 @@ export class WorkspaceSourceControlManager {
     });
   }
 
+  getRepositorySourceControlManagerFromResourceGroup(resourceGroup: vscode.SourceControlResourceGroup) {
+    return this.repoSCMs.find((repo) => repo.workingCopyResourceGroup === resourceGroup || repo.parentResourceGroups.includes(resourceGroup));
+  }
+
   getResourceGroupFromResourceState(
     resourceState: vscode.SourceControlResourceState,
   ) {
