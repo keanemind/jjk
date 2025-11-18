@@ -465,43 +465,34 @@ export async function activate(context: vscode.ExtensionContext) {
             const rev = params.diffOriginalRev;
 
             const scm =
-              workspaceSCM.getRepositorySourceControlManagerFromUri(uri);
+              workspaceSCM.getRepositorySourceControlManagerFromUri(
+                originalUri,
+              );
+
             if (!scm) {
               throw new Error(
                 "Source Control Manager not found with given URI.",
               );
             }
 
-            const fileStatuses = scm?.fileStatusesByChange.get(rev) || [];
-            const fileStatus = fileStatuses.find((status) =>
-              pathEquals(status.path, uri.fsPath),
+            const repo = workspaceSCM.getRepositoryFromUri(originalUri);
+            if (!repo) {
+              throw new Error("Repository could not be found with given URI.");
+            }
+
+            const { fileStatuses } = await repo.show(rev);
+            const fileStatus = fileStatuses.find((file) =>
+              pathEquals(file.path, originalUri.path),
             );
 
-            if (!fileStatus) {
-              console.log("fileStatus Not found");
-            }
-
-            const repo = workspaceSCM.getRepositoryFromUri(originalUri);
-            console.log("TEST: ", await repo?.show(rev));
-            console.log("REV: ", rev);
-
-            let title = "";
-            const diffTitleSuffix = rev === "@" ? "(Working Copy)" : `(${rev})`;
-            if (fileStatus?.type === "R") {
-              title =
-                (fileStatus.renamedFrom
-                  ? `${fileStatus.renamedFrom} => `
-                  : "") + `${fileStatus.file} ${diffTitleSuffix}`;
-            } else {
-              const label = fileStatus?.file ?? "";
-              title = `${label} ${diffTitleSuffix}`;
-            }
-
+            const diffTitleSuffix =
+              rev === "@" ? "(Working Copy)" : `(${rev.substring(0, 8)})`;
             await vscode.commands.executeCommand(
               "vscode.diff",
               originalUri,
               uri,
-              title,
+              (fileStatus?.renamedFrom ? `${fileStatus.renamedFrom} => ` : "") +
+                `${path.relative(repo.repositoryRoot, originalUri.path)} ${diffTitleSuffix}`,
             );
           } catch (error) {
             vscode.window.showErrorMessage(
