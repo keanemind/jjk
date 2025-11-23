@@ -117,16 +117,18 @@ async function getConfigArgs(
  * Otherwise, returns the provided default timeout, or 30 seconds if no default is provided.
  */
 function getCommandTimeout(
-  repositoryRoot: string,
+  repositoryRoot: string | undefined,
   defaultTimeout: number | undefined,
 ): number {
-  const config = vscode.workspace.getConfiguration(
-    "jjk",
-    vscode.Uri.file(repositoryRoot),
-  );
-  const configuredTimeout = config.get<number | null>("commandTimeout");
-  if (configuredTimeout !== null && configuredTimeout !== undefined) {
-    return configuredTimeout;
+  if (repositoryRoot) {
+    const config = vscode.workspace.getConfiguration(
+      "jjk",
+      vscode.Uri.file(repositoryRoot),
+    );
+    const configuredTimeout = config.get<number | null>("commandTimeout");
+    if (configuredTimeout !== null && configuredTimeout !== undefined) {
+      return configuredTimeout;
+    }
   }
   return defaultTimeout ?? 30000;
 }
@@ -188,12 +190,21 @@ async function getJJPath(
 function spawnJJ(
   jjPath: string,
   args: string[],
-  options: Parameters<typeof spawn>[2] & { cwd: string },
+  options: Parameters<typeof spawn>[2],
+  {
+    repositoryRoot,
+    defaultTimeout,
+  }: {
+    repositoryRoot: string | undefined;
+    defaultTimeout: number | undefined;
+  },
 ) {
   const finalOptions = {
     ...options,
-    timeout: getCommandTimeout(options.cwd, options.timeout),
-  };
+    cwd: options?.cwd ?? repositoryRoot, // precedence: options.cwd > repositoryRoot > undefined
+    timeout:
+      options?.timeout ?? getCommandTimeout(repositoryRoot, defaultTimeout), // precedence: options.timeout > jjk.commandTimeout config > defaultTimeout > 30s
+  } satisfies Parameters<typeof spawn>[2];
 
   logger.debug(`spawn: ${jjPath} ${args.join(" ")}`, {
     spawnOptions: finalOptions,
@@ -317,16 +328,25 @@ export class WorkspaceSourceControlManager {
 
         const repoRoot = (
           await handleCommand(
-            spawnJJ(jjPath.filepath, ["root"], {
-              timeout: 5000,
-              cwd: workspaceFolder.uri.fsPath,
-            }),
+            spawnJJ(
+              jjPath.filepath,
+              ["root"],
+              {
+                cwd: workspaceFolder.uri.fsPath,
+              },
+              {
+                repositoryRoot: undefined,
+                defaultTimeout: 5000,
+              },
+            ),
           )
         )
           .toString()
           .trim();
 
-        const repoUri = vscode.Uri.file(repoRoot.replace(/^\\\\\?\\UNC\\/, "\\\\")).toString();
+        const repoUri = vscode.Uri.file(
+          repoRoot.replace(/^\\\\\?\\UNC\\/, "\\\\"),
+        ).toString();
 
         if (!newRepoInfos.has(repoUri)) {
           newRepoInfos.set(repoUri, {
@@ -823,9 +843,13 @@ export class JJRepository {
 
   spawnJJ(
     args: string[],
-    options: Parameters<typeof spawn>[2] & { cwd: string },
+    { defaultTimeout }: { defaultTimeout?: number } = {},
+    options?: Parameters<typeof spawn>[2],
   ) {
-    return spawnJJ(this.jjPath, [...args, ...this.jjConfigArgs], options);
+    return spawnJJ(this.jjPath, [...args, ...this.jjConfigArgs], options, {
+      repositoryRoot: this.repositoryRoot,
+      defaultTimeout,
+    });
   }
 
   /**
@@ -835,12 +859,15 @@ export class JJRepository {
   async getLatestOperationId() {
     return (
       await handleJJCommand(
-        this.spawnJJ(
-          ["operation", "log", "--limit", "1", "-T", "self.id()", "--no-graph"],
-          {
-            cwd: this.repositoryRoot,
-          },
-        ),
+        this.spawnJJ([
+          "operation",
+          "log",
+          "--limit",
+          "1",
+          "-T",
+          "self.id()",
+          "--no-graph",
+        ]),
       )
     )
       .toString()
@@ -855,8 +882,7 @@ export class JJRepository {
     const output = (
       await handleJJCommand(
         this.spawnJJ(["status", "--color=always"], {
-          timeout: 5000,
-          cwd: this.repositoryRoot,
+          defaultTimeout: 5000,
         }),
       )
     ).toString();
@@ -875,8 +901,7 @@ export class JJRepository {
     return (
       await handleJJCommand(
         this.spawnJJ(["file", "list"], {
-          timeout: 5000,
-          cwd: this.repositoryRoot,
+          defaultTimeout: 5000,
         }),
       )
     )
@@ -929,8 +954,7 @@ export class JJRepository {
             ...revsets.flatMap((revset) => ["-r", revset]),
           ],
           {
-            timeout: 5000,
-            cwd: this.repositoryRoot,
+            defaultTimeout: 5000,
           },
         ),
       )
@@ -1098,8 +1122,7 @@ export class JJRepository {
       this.spawnJJ(
         ["file", "show", "--revision", rev, filepathToFileset(filepath)],
         {
-          timeout: 5000,
-          cwd: this.repositoryRoot,
+          defaultTimeout: 5000,
         },
       ),
     );
@@ -1134,8 +1157,7 @@ export class JJRepository {
             ...(ignoreImmutable ? ["--ignore-immutable"] : []),
           ],
           {
-            timeout: 5000,
-            cwd: this.repositoryRoot,
+            defaultTimeout: 5000,
           },
         ),
       )
@@ -1152,8 +1174,7 @@ export class JJRepository {
             ...(revs ? ["-r", ...revs] : []),
           ],
           {
-            timeout: 5000,
-            cwd: this.repositoryRoot,
+            defaultTimeout: 5000,
           },
         ),
       );
@@ -1239,8 +1260,7 @@ export class JJRepository {
             ...(ignoreImmutable ? ["--ignore-immutable"] : []),
           ],
           {
-            timeout: 5000,
-            cwd: this.repositoryRoot,
+            defaultTimeout: 5000,
           },
         ),
       )
@@ -1323,8 +1343,9 @@ export class JJRepository {
           ...(ignoreImmutable ? ["--ignore-immutable"] : []),
         ],
         {
-          timeout: 10_000, // Ensure this is longer than fakeeditor's internal timeout
-          cwd: this.repositoryRoot,
+          defaultTimeout: 10_000, // Ensure this is longer than fakeeditor's internal timeout
+        },
+        {
           env: { ...process.env, ...envVars },
         },
       );
@@ -1473,8 +1494,7 @@ export class JJRepository {
             ...(noGraph ? ["--no-graph"] : []),
           ],
           {
-            timeout: 5000,
-            cwd: this.repositoryRoot,
+            defaultTimeout: 5000,
           },
         ),
       )
@@ -1503,8 +1523,7 @@ export class JJRepository {
       this.spawnJJ(
         ["edit", "-r", rev, ...(ignoreImmutable ? ["--ignore-immutable"] : [])],
         {
-          timeout: 5000,
-          cwd: this.repositoryRoot,
+          defaultTimeout: 5000,
         },
       ),
     );
@@ -1540,8 +1559,7 @@ export class JJRepository {
           ...(ignoreImmutable ? ["--ignore-immutable"] : []),
         ],
         {
-          timeout: 5000,
-          cwd: this.repositoryRoot,
+          defaultTimeout: 5000,
         },
       ),
     );
@@ -1553,8 +1571,7 @@ export class JJRepository {
         try {
           await handleJJCommand(
             this.spawnJJ(["git", "fetch"], {
-              timeout: 60_000,
-              cwd: this.repositoryRoot,
+              defaultTimeout: 60_000,
             }),
           );
         } finally {
@@ -1577,8 +1594,7 @@ export class JJRepository {
             filepath, // `jj file annotate` takes a path, not a fileset
           ],
           {
-            timeout: 60_000,
-            cwd: this.repositoryRoot,
+            defaultTimeout: 60_000,
           },
         ),
       )
@@ -1621,8 +1637,7 @@ export class JJRepository {
             template,
           ],
           {
-            timeout: 5000,
-            cwd: this.repositoryRoot,
+            defaultTimeout: 5000,
           },
         ),
       )
@@ -1682,8 +1697,7 @@ export class JJRepository {
     return (
       await handleJJCommand(
         this.spawnJJ(["operation", "undo", id], {
-          timeout: 5000,
-          cwd: this.repositoryRoot,
+          defaultTimeout: 5000,
         }),
       )
     ).toString();
@@ -1693,8 +1707,7 @@ export class JJRepository {
     return (
       await handleJJCommand(
         this.spawnJJ(["operation", "restore", id], {
-          timeout: 5000,
-          cwd: this.repositoryRoot,
+          defaultTimeout: 5000,
         }),
       )
     ).toString();
@@ -1717,8 +1730,9 @@ export class JJRepository {
         // We don't have the status though, which is why we're using `--summary` here.
         ["diff", "--summary", "--tool", `${fakeEditorPath}`, "-r", rev],
         {
-          timeout: 10_000, // Ensure this is longer than fakeeditor's internal timeout
-          cwd: this.repositoryRoot,
+          defaultTimeout: 10_000, // Ensure this is longer than fakeeditor's internal timeout
+        },
+        {
           env: { ...process.env, ...envVars },
         },
       );
