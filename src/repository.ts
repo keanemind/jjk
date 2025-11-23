@@ -946,110 +946,206 @@ export class JJRepository {
     }
 
     const revResults = output.split(revSeparator).slice(0, -1); // the output ends in a separator so remove the empty string at the end
-    return revResults.map((revResult) => {
-      const fields = revResult.split(fieldSeparator);
-      if (fields.length > templateFields.length) {
-        throw new Error(
-          "Separator found in a field value. This is not supported.",
-        );
-      } else if (fields.length < templateFields.length) {
-        throw new Error("Missing fields in the output.");
-      }
-      const ret: Show = {
-        change: {
-          changeId: "",
-          commitId: "",
-          description: "",
-          author: {
-            email: "",
-            name: "",
-          },
-          authoredDate: "",
-          isEmpty: false,
-          isConflict: false,
-        },
-        fileStatuses: [],
-        conflictedFiles: new Set<string>(),
-      };
+    return revResults.map((revResult) =>
+      this.parseShowResult(
+        revResult,
+        templateFields,
+        fieldSeparator,
+        summarySeparator,
+      ),
+    );
+  }
 
-      for (let i = 0; i < fields.length; i++) {
-        const field = fields[i];
-        const value = field.trim();
-        switch (templateFields[i]) {
-          case "change_id":
-            ret.change.changeId = value;
-            break;
-          case "commit_id":
-            ret.change.commitId = value;
-            break;
-          case "author.name()":
-            ret.change.author.name = value;
-            break;
-          case "author.email()":
-            ret.change.author.email = value;
-            break;
-          case 'author.timestamp().local().format("%F %H:%M:%S")':
-            ret.change.authoredDate = value;
-            break;
-          case "description":
-            ret.change.description = value;
-            break;
-          case "empty":
-            ret.change.isEmpty = value === "true";
-            break;
-          case "conflict":
-            ret.change.isConflict = value === "true";
-            break;
-          default: {
-            for (const line of value.split("\n").filter(Boolean)) {
-              const [status, rawSourcePath, rawTargetPath, conflict] =
-                line.split(summarySeparator);
-              const sourcePath = path
-                .normalize(rawSourcePath)
-                .replace(/\\/g, "/");
-              const targetPath = path
-                .normalize(rawTargetPath)
-                .replace(/\\/g, "/");
-              if (
-                ["modified", "added", "removed", "copied", "renamed"].includes(
-                  status,
-                )
-              ) {
-                if (status === "renamed" || status === "copied") {
-                  ret.fileStatuses.push({
-                    type: status === "renamed" ? "R" : "C",
-                    file: path.basename(targetPath),
-                    path: path.join(this.repositoryRoot, targetPath),
-                    renamedFrom: sourcePath,
-                  });
-                } else {
-                  ret.fileStatuses.push({
-                    type:
-                      status === "added"
-                        ? "A"
-                        : status === "removed"
-                          ? "D"
-                          : "M",
-                    file: path.basename(targetPath),
-                    path: path.join(this.repositoryRoot, targetPath),
-                  });
-                }
-                if (conflict === "true") {
-                  ret.conflictedFiles.add(
-                    path.join(this.repositoryRoot, targetPath),
-                  );
-                }
-              } else {
-                throw new Error(`Unexpected diff custom summary line: ${line}`);
-              }
-            }
-            break;
-          }
+  showAllPaginated(revsets: string[]): {
+    next: () => Promise<Show | null>;
+    kill: () => void;
+  } {
+    const revSeparator = "jjkඞ\n";
+    const fieldSeparator = "ඞjjk";
+    const summarySeparator = "@?!"; // characters that are illegal in filepaths
+    const templateFields = [
+      "change_id",
+      "commit_id",
+      "author.name()",
+      "author.email()",
+      'author.timestamp().local().format("%F %H:%M:%S")',
+      "description",
+      "empty",
+      "conflict",
+      `diff.files().map(|entry| entry.status() ++ "${summarySeparator}" ++ entry.source().path().display() ++ "${summarySeparator}" ++ entry.target().path().display() ++ "${summarySeparator}" ++ entry.target().conflict()).join("\n")`,
+    ];
+    const template =
+      templateFields.join(` ++ "${fieldSeparator}" ++ `) +
+      ` ++ "${revSeparator}"`;
+
+    const childProcess = this.spawnJJ(
+      [
+        "log",
+        "-T",
+        template,
+        "--no-graph",
+        ...revsets.flatMap((revset) => ["-r", revset]),
+      ],
+      undefined,
+      { timeout: 0 }, // no timeout
+    );
+
+    childProcess.stdout!.setEncoding("utf8");
+
+    let stderr = "";
+    childProcess.stderr!.on("data", (data) => {
+      stderr += data;
+    });
+
+    const exitPromise = new Promise<void>((resolve, reject) => {
+      childProcess.on("close", (code) => {
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`jj log exited with code ${code}: ${stderr}`));
+        }
+      });
+      childProcess.on("error", (err) => {
+        reject(err);
+      });
+    });
+
+    const generator = async function* (this: JJRepository) {
+      let buffer = "";
+      for await (const chunk of childProcess.stdout!) {
+        buffer += chunk;
+        let separatorIndex = buffer.indexOf(revSeparator);
+        while (separatorIndex !== -1) {
+          const revResult = buffer.slice(0, separatorIndex);
+          buffer = buffer.slice(separatorIndex + revSeparator.length);
+          yield this.parseShowResult(
+            revResult,
+            templateFields,
+            fieldSeparator,
+            summarySeparator,
+          );
+          separatorIndex = buffer.indexOf(revSeparator);
         }
       }
 
-      return ret;
-    });
+      await exitPromise;
+    }.call(this);
+
+    return {
+      next: async () => {
+        const result = await generator.next();
+        return result.done ? null : result.value;
+      },
+      kill: () => {
+        childProcess.kill();
+      },
+    };
+  }
+
+  private parseShowResult(
+    revResult: string,
+    templateFields: string[],
+    fieldSeparator: string,
+    summarySeparator: string,
+  ): Show {
+    const fields = revResult.split(fieldSeparator);
+    if (fields.length > templateFields.length) {
+      throw new Error(
+        "Separator found in a field value. This is not supported.",
+      );
+    } else if (fields.length < templateFields.length) {
+      throw new Error("Missing fields in the output.");
+    }
+    const ret: Show = {
+      change: {
+        changeId: "",
+        commitId: "",
+        description: "",
+        author: {
+          email: "",
+          name: "",
+        },
+        authoredDate: "",
+        isEmpty: false,
+        isConflict: false,
+      },
+      fileStatuses: [],
+      conflictedFiles: new Set<string>(),
+    };
+
+    for (let i = 0; i < fields.length; i++) {
+      const field = fields[i];
+      const value = field.trim();
+      switch (templateFields[i]) {
+        case "change_id":
+          ret.change.changeId = value;
+          break;
+        case "commit_id":
+          ret.change.commitId = value;
+          break;
+        case "author.name()":
+          ret.change.author.name = value;
+          break;
+        case "author.email()":
+          ret.change.author.email = value;
+          break;
+        case 'author.timestamp().local().format("%F %H:%M:%S")':
+          ret.change.authoredDate = value;
+          break;
+        case "description":
+          ret.change.description = value;
+          break;
+        case "empty":
+          ret.change.isEmpty = value === "true";
+          break;
+        case "conflict":
+          ret.change.isConflict = value === "true";
+          break;
+        default: {
+          for (const line of value.split("\n").filter(Boolean)) {
+            const [status, rawSourcePath, rawTargetPath, conflict] =
+              line.split(summarySeparator);
+            const sourcePath = path
+              .normalize(rawSourcePath)
+              .replace(/\\/g, "/");
+            const targetPath = path
+              .normalize(rawTargetPath)
+              .replace(/\\/g, "/");
+            if (
+              ["modified", "added", "removed", "copied", "renamed"].includes(
+                status,
+              )
+            ) {
+              if (status === "renamed" || status === "copied") {
+                ret.fileStatuses.push({
+                  type: status === "renamed" ? "R" : "C",
+                  file: path.basename(targetPath),
+                  path: path.join(this.repositoryRoot, targetPath),
+                  renamedFrom: sourcePath,
+                });
+              } else {
+                ret.fileStatuses.push({
+                  type:
+                    status === "added" ? "A" : status === "removed" ? "D" : "M",
+                  file: path.basename(targetPath),
+                  path: path.join(this.repositoryRoot, targetPath),
+                });
+              }
+              if (conflict === "true") {
+                ret.conflictedFiles.add(
+                  path.join(this.repositoryRoot, targetPath),
+                );
+              }
+            } else {
+              throw new Error(`Unexpected diff custom summary line: ${line}`);
+            }
+          }
+          break;
+        }
+      }
+    }
+
+    return ret;
   }
 
   readFile(rev: string, filepath: string) {
