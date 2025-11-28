@@ -1590,8 +1590,12 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
   );
 
+  let isPollingCanceled = false;
   let pollTimeoutId: NodeJS.Timeout | undefined;
   const scheduleNextPoll = async () => {
+    if (isPollingCanceled) {
+      return;
+    }
     try {
       await poll();
     } catch (err) {
@@ -1604,7 +1608,12 @@ export async function activate(context: vscode.ExtensionContext) {
 
   void scheduleNextPoll(); // Start the first poll.
 
-  context.subscriptions.push(new vscode.Disposable(() => clearTimeout(pollTimeoutId)));
+  context.subscriptions.push(
+    new vscode.Disposable(() => {
+      isPollingCanceled = true;
+      clearTimeout(pollTimeoutId);
+    }),
+  );
 }
 
 function showLoading<T extends unknown[]>(
