@@ -461,11 +461,38 @@ export async function activate(context: vscode.ExtensionContext) {
                 "Original resource does not have a diffOriginalRev. This is a bug.",
               );
             }
+
+            const rev = params.diffOriginalRev;
+
+            const scm =
+              workspaceSCM.getRepositorySourceControlManagerFromUri(
+                originalUri,
+              );
+
+            if (!scm) {
+              throw new Error(
+                "Source Control Manager not found with given URI.",
+              );
+            }
+
+            const repo = workspaceSCM.getRepositoryFromUri(originalUri);
+            if (!repo) {
+              throw new Error("Repository could not be found with given URI.");
+            }
+
+            const { fileStatuses } = await repo.show(rev);
+            const fileStatus = fileStatuses.find((file) =>
+              pathEquals(file.path, originalUri.path),
+            );
+
+            const diffTitleSuffix =
+              rev === "@" ? "(Working Copy)" : `(${rev.substring(0, 8)})`;
             await vscode.commands.executeCommand(
               "vscode.diff",
               originalUri,
               uri,
-              `${path.basename(uri.fsPath)} (${params.diffOriginalRev.substring(0, 8)})`,
+              (fileStatus?.renamedFrom ? `${fileStatus.renamedFrom} => ` : "") +
+                `${path.relative(repo.repositoryRoot, originalUri.path)} ${diffTitleSuffix}`,
             );
           } catch (error) {
             vscode.window.showErrorMessage(
