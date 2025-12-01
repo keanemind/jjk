@@ -511,7 +511,8 @@ export async function activate(context: vscode.ExtensionContext) {
       }
 
       const [first, ...rest] = resourceStates;
-      const resourceGroup = workspaceSCM.getResourceGroupFromResourceState(first);
+      const resourceGroup =
+        workspaceSCM.getResourceGroupFromResourceState(first);
 
       for (const resourceState of rest) {
         const stateGroup =
@@ -549,12 +550,15 @@ export async function activate(context: vscode.ExtensionContext) {
 
               let statuses: FileStatus[];
               if (scm.workingCopyResourceGroup === resourceGroup) {
+                if (!scm.status) {
+                  throw new Error("No current working copy change found");
+                }
+                const repositoryStatus = scm.status;
+
                 statuses = resourceStates.map((resourceState) => {
-                  if (!scm.status?.workingCopy) {
-                    throw new Error("No current working copy change found");
-                  }
-                  const foundStatus = scm.status.fileStatuses.find((status) =>
-                    pathEquals(status.path, resourceState.resourceUri.fsPath),
+                  const foundStatus = repositoryStatus.fileStatuses.find(
+                    (status) =>
+                      pathEquals(status.path, resourceState.resourceUri.fsPath),
                   );
                   if (!foundStatus) {
                     throw new Error(
@@ -564,13 +568,14 @@ export async function activate(context: vscode.ExtensionContext) {
                   return foundStatus;
                 });
               } else if (scm.parentResourceGroups.includes(resourceGroup)) {
+                const show = scm.parentShowResults.get(resourceGroup.id);
+                if (!show) {
+                  throw new Error(
+                    "No current parent change show result found for the resource group",
+                  );
+                }
+
                 statuses = resourceStates.map((resourceState) => {
-                  const show = scm.parentShowResults.get(resourceGroup.id);
-                  if (!show) {
-                    throw new Error(
-                      "No current parent change show result found for the resource group",
-                    );
-                  }
                   const foundStatus = show.fileStatuses.find((status) =>
                     pathEquals(status.path, resourceState.resourceUri.fsPath),
                   );
