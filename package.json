@@ -301,7 +301,7 @@
       "scm/resourceState/context": [
         {
           "command": "jj.openFileResourceState",
-          "when": "scmProvider == jj && scmResourceGroup == @",
+          "when": "scmProvider == jj",
           "group": "inline"
         },
         {
