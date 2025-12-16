@@ -1647,6 +1647,30 @@ export async function activate(context: vscode.ExtensionContext) {
       clearTimeout(pollTimeoutId);
     }),
   );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "jj.openFileInWorkingCopy",
+      async (uri: vscode.Uri) => {
+        try {
+          if (uri.scheme === "jj") {
+            uri = vscode.Uri.file(uri.path);
+          }
+
+          await vscode.commands.executeCommand(
+            "vscode.open",
+            uri,
+            {},
+            `${path.basename(uri.fsPath)}`,
+          );
+        } catch (error) {
+          vscode.window.showErrorMessage(
+            `Failed to open file${error instanceof Error ? `: ${error.message}` : ""}`,
+          );
+        }
+      },
+    ),
+  );
 }
 
 function showLoading<T extends unknown[]>(

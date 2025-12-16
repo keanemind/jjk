@@ -57,6 +57,12 @@
         "icon": "$(go-to-file)"
       },
       {
+        "command": "jj.openFileInWorkingCopy",
+        "title": "Open file in working copy",
+        "category": "Jujutsu",
+        "icon": "$(edit)"
+      },
+      {
         "command": "jj.openDiffEditor",
         "title": "Open diff",
         "category": "Jujutsu",
@@ -204,6 +210,11 @@
           "group": "navigation@1"
         },
         {
+          "command": "jj.openFileInWorkingCopy",
+          "when": "jj.reposExist && isInDiffEditor",
+          "group": "navigation@2"
+        },
+        {
           "command": "jj.openParentChange",
           "when": "jj.reposExist",
           "group": "navigation@2"
@@ -348,6 +359,10 @@
         },
         {
           "command": "jj.openDiffEditor",
+          "when": "false"
+        },
+        {
+          "command": "jj.openFileInWorkingCopy",
           "when": "false"
         },
         {
