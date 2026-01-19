@@ -24,7 +24,7 @@ async function getJJVersion(jjPath: string): Promise<string> {
     .trim();
 
   if (version.startsWith("jj")) {
-    return version;
+    return version.replace(/^jj\s*/, "");
   }
 
   throw new Error(`Failed to parse jj version from ${jjPath}: ${version}`);
@@ -94,7 +94,7 @@ async function getConfigArgs(
 
   // Determine the config option and value based on jj version
   const configOption =
-    jjVersion >= "jj 0.25.0" ? "--config-file" : "--config-toml";
+    jjVersion >= "0.25.0" ? "--config-file" : "--config-toml";
 
   if (configOption === "--config-toml") {
     try {
@@ -909,7 +909,7 @@ export class JJRepository {
     const revSeparator = "jjkඞ\n";
     const fieldSeparator = "ඞjjk";
     const summarySeparator = "@?!"; // characters that are illegal in filepaths
-    const isConflictDetectionSupported = this.jjVersion >= "jj 0.26.0";
+    const isConflictDetectionSupported = this.jjVersion >= "0.26.0";
     const templateFields = [
       "change_id",
       "commit_id",
