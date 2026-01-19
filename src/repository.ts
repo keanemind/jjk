@@ -12,6 +12,7 @@ import { JJFileSystemProvider } from "./fileSystemProvider";
 import * as os from "os";
 import * as crypto from "crypto";
 import which from "which";
+import semver from "semver";
 
 async function getJJVersion(jjPath: string): Promise<string> {
   const version = (
@@ -91,29 +92,6 @@ export function initExtensionDir(extensionUri: vscode.Uri) {
       "bin",
       fakeEditorExecutableName,
     );
-  }
-}
-
-async function getConfigArgs(
-  extensionDir: string,
-  jjVersion: string,
-): Promise<string[]> {
-  const configPath = path.join(extensionDir, "config.toml");
-
-  // Determine the config option and value based on jj version
-  const configOption =
-    jjVersion >= "0.25.0" ? "--config-file" : "--config-toml";
-
-  if (configOption === "--config-toml") {
-    try {
-      const configValue = await fs.readFile(configPath, "utf8");
-      return [configOption, configValue];
-    } catch (e) {
-      logger.error(`Failed to read config file at ${configPath}: ${String(e)}`);
-      throw e;
-    }
-  } else {
-    return [configOption, configPath];
   }
 }
 
@@ -302,7 +280,6 @@ export class WorkspaceSourceControlManager {
         {
           jjPath: Awaited<ReturnType<typeof getJJPath>>;
           jjVersion: string;
-          jjConfigArgs: string[];
           repoRoot: string;
         }
       >
@@ -341,7 +318,6 @@ export class WorkspaceSourceControlManager {
       {
         jjPath: Awaited<ReturnType<typeof getJJPath>>;
         jjVersion: string;
-        jjConfigArgs: string[];
         repoRoot: string;
       }
     >();
@@ -349,7 +325,12 @@ export class WorkspaceSourceControlManager {
       try {
         const jjPath = await getJJPath(workspaceFolder.uri.fsPath);
         const jjVersion = await getJJVersion(jjPath.filepath);
-        const jjConfigArgs = await getConfigArgs(extensionDir, jjVersion);
+
+        if (semver.lt(jjVersion, "0.26.0")) {
+          throw new Error(
+            `jj version ${jjVersion} is not supported. Please upgrade to at least jj 0.26.0.`,
+          );
+        }
 
         const repoRoot = (
           await handleCommand(
@@ -370,7 +351,6 @@ export class WorkspaceSourceControlManager {
           newRepoInfos.set(repoUri, {
             jjPath,
             jjVersion,
-            jjConfigArgs,
             repoRoot,
           });
         }
@@ -395,7 +375,6 @@ export class WorkspaceSourceControlManager {
       } else if (
         oldValue.jjVersion !== value.jjVersion ||
         oldValue.jjPath.filepath !== value.jjPath.filepath ||
-        oldValue.jjConfigArgs.join(" ") !== value.jjConfigArgs.join(" ") ||
         oldValue.repoRoot !== value.repoRoot
       ) {
         isAnyRepoChanged = true;
@@ -419,7 +398,7 @@ export class WorkspaceSourceControlManager {
       const repoSCMs: RepositorySourceControlManager[] = [];
       for (const [
         workspaceFolder,
-        { repoRoot, jjPath, jjVersion, jjConfigArgs },
+        { repoRoot, jjPath, jjVersion },
       ] of newRepoInfos.entries()) {
         logger.info(
           `Initializing jjk in workspace ${workspaceFolder}. Using ${jjVersion} at ${jjPath.filepath} (${jjPath.source}).`,
@@ -430,7 +409,6 @@ export class WorkspaceSourceControlManager {
           this.fileSystemProvider,
           jjPath.filepath,
           jjVersion,
-          jjConfigArgs,
         );
         repoSCM.onDidUpdate(
           () => {
@@ -571,14 +549,8 @@ class RepositorySourceControlManager {
     private fileSystemProvider: JJFileSystemProvider,
     jjPath: string,
     jjVersion: string,
-    jjConfigArgs: string[],
   ) {
-    this.repository = new JJRepository(
-      repositoryRoot,
-      jjPath,
-      jjVersion,
-      jjConfigArgs,
-    );
+    this.repository = new JJRepository(repositoryRoot, jjPath, jjVersion);
 
     this.sourceControl = vscode.scm.createSourceControl(
       "jj",
@@ -871,14 +843,17 @@ export class JJRepository {
     public repositoryRoot: string,
     private jjPath: string,
     private jjVersion: string,
-    private jjConfigArgs: string[],
   ) {}
 
   spawnJJ(
     args: string[],
     options: Parameters<typeof spawn>[2] & { cwd: string },
   ) {
-    return spawnJJ(this.jjPath, [...args, ...this.jjConfigArgs], options);
+    const jjConfigArgs = [
+      "--config-file",
+      path.join(extensionDir, "config.toml"),
+    ];
+    return spawnJJ(this.jjPath, [...args, ...jjConfigArgs], options);
   }
 
   spawnJJRead(
@@ -969,7 +944,6 @@ export class JJRepository {
     const revSeparator = "jjkඞ\n";
     const fieldSeparator = "ඞjjk";
     const summarySeparator = "@?!"; // characters that are illegal in filepaths
-    const isConflictDetectionSupported = this.jjVersion >= "0.26.0";
     const templateFields = [
       "change_id",
       "commit_id",
@@ -979,9 +953,7 @@ export class JJRepository {
       "description",
       "empty",
       "conflict",
-      isConflictDetectionSupported
-        ? `diff.files().map(|entry| entry.status() ++ "${summarySeparator}" ++ entry.source().path().display() ++ "${summarySeparator}" ++ entry.target().path().display() ++ "${summarySeparator}" ++ entry.target().conflict()).join("\n")`
-        : "diff.summary()",
+      `diff.files().map(|entry| entry.status() ++ "${summarySeparator}" ++ entry.source().path().display() ++ "${summarySeparator}" ++ entry.target().path().display() ++ "${summarySeparator}" ++ entry.target().conflict()).join("\n")`,
     ];
     const template =
       templateFields.join(` ++ "${fieldSeparator}" ++ `) +
@@ -1067,90 +1039,46 @@ export class JJRepository {
             ret.change.isConflict = value === "true";
             break;
           default: {
-            const changeRegex = /^(A|M|D|R|C) (.+)$/;
             for (const line of value.split("\n").filter(Boolean)) {
-              if (isConflictDetectionSupported) {
-                const [status, rawSourcePath, rawTargetPath, conflict] =
-                  line.split(summarySeparator);
-                const sourcePath = path
-                  .normalize(rawSourcePath)
-                  .replace(/\\/g, "/");
-                const targetPath = path
-                  .normalize(rawTargetPath)
-                  .replace(/\\/g, "/");
-                if (
-                  [
-                    "modified",
-                    "added",
-                    "removed",
-                    "copied",
-                    "renamed",
-                  ].includes(status)
-                ) {
-                  if (status === "renamed" || status === "copied") {
-                    ret.fileStatuses.push({
-                      type: status === "renamed" ? "R" : "C",
-                      file: path.basename(targetPath),
-                      path: path.join(this.repositoryRoot, targetPath),
-                      renamedFrom: sourcePath,
-                    });
-                  } else {
-                    ret.fileStatuses.push({
-                      type:
-                        status === "added"
-                          ? "A"
-                          : status === "removed"
-                            ? "D"
-                            : "M",
-                      file: path.basename(targetPath),
-                      path: path.join(this.repositoryRoot, targetPath),
-                    });
-                  }
-                  if (conflict === "true") {
-                    ret.conflictedFiles.add(
-                      path.join(this.repositoryRoot, targetPath),
-                    );
-                  }
+              const [status, rawSourcePath, rawTargetPath, conflict] =
+                line.split(summarySeparator);
+              const sourcePath = path
+                .normalize(rawSourcePath)
+                .replace(/\\/g, "/");
+              const targetPath = path
+                .normalize(rawTargetPath)
+                .replace(/\\/g, "/");
+              if (
+                ["modified", "added", "removed", "copied", "renamed"].includes(
+                  status,
+                )
+              ) {
+                if (status === "renamed" || status === "copied") {
+                  ret.fileStatuses.push({
+                    type: status === "renamed" ? "R" : "C",
+                    file: path.basename(targetPath),
+                    path: path.join(this.repositoryRoot, targetPath),
+                    renamedFrom: sourcePath,
+                  });
                 } else {
-                  throw new Error(
-                    `Unexpected diff custom summary line: ${line}`,
+                  ret.fileStatuses.push({
+                    type:
+                      status === "added"
+                        ? "A"
+                        : status === "removed"
+                          ? "D"
+                          : "M",
+                    file: path.basename(targetPath),
+                    path: path.join(this.repositoryRoot, targetPath),
+                  });
+                }
+                if (conflict === "true") {
+                  ret.conflictedFiles.add(
+                    path.join(this.repositoryRoot, targetPath),
                   );
                 }
               } else {
-                const changeMatch = changeRegex.exec(line);
-                if (changeMatch) {
-                  const [_, type, file] = changeMatch;
-
-                  if (type === "R" || type === "C") {
-                    const parsedPaths = parseRenamePaths(file);
-                    if (parsedPaths) {
-                      ret.fileStatuses.push({
-                        type: type,
-                        file: parsedPaths.toPath,
-                        path: path.join(
-                          this.repositoryRoot,
-                          parsedPaths.toPath,
-                        ),
-                        renamedFrom: parsedPaths.fromPath,
-                      });
-                    } else {
-                      throw new Error(
-                        `Unexpected ${type === "R" ? "rename" : "copy"} line: ${line}`,
-                      );
-                    }
-                  } else {
-                    const normalizedFile = path
-                      .normalize(file)
-                      .replace(/\\/g, "/");
-                    ret.fileStatuses.push({
-                      type: type as "A" | "M" | "D",
-                      file: normalizedFile,
-                      path: path.join(this.repositoryRoot, normalizedFile),
-                    });
-                  }
-                } else {
-                  throw new Error(`Unexpected diff summary line: ${line}`);
-                }
+                throw new Error(`Unexpected diff custom summary line: ${line}`);
               }
             }
             break;
@@ -1750,7 +1678,11 @@ export class JJRepository {
     return (
       await handleJJCommand(
         this.spawnJJ(
-          ["operation", this.jjVersion >= "0.33.0" ? "revert" : "undo", id],
+          [
+            "operation",
+            semver.gte(this.jjVersion, "0.33.0") ? "revert" : "undo",
+            id,
+          ],
           {
             timeout: 5000,
             cwd: this.repositoryRoot,
