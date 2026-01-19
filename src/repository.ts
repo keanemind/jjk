@@ -13,24 +13,21 @@ import * as crypto from "crypto";
 import which from "which";
 
 async function getJJVersion(jjPath: string): Promise<string> {
-  try {
-    const version = (
-      await handleCommand(
-        spawn(jjPath, ["version"], {
-          timeout: 5000,
-        }),
-      )
+  const version = (
+    await handleCommand(
+      spawn(jjPath, ["version"], {
+        timeout: 5000,
+      }),
     )
-      .toString()
-      .trim();
+  )
+    .toString()
+    .trim();
 
-    if (version.startsWith("jj")) {
-      return version;
-    }
-  } catch {
-    // Assume the version
+  if (version.startsWith("jj")) {
+    return version;
   }
-  return "jj 0.28.0";
+
+  throw new Error(`Failed to parse jj version from ${jjPath}: ${version}`);
 }
 
 export let extensionDir = "";
@@ -326,7 +323,9 @@ export class WorkspaceSourceControlManager {
           .toString()
           .trim();
 
-        const repoUri = vscode.Uri.file(repoRoot.replace(/^\\\\\?\\UNC\\/, "\\\\")).toString();
+        const repoUri = vscode.Uri.file(
+          repoRoot.replace(/^\\\\\?\\UNC\\/, "\\\\"),
+        ).toString();
 
         if (!newRepoInfos.has(repoUri)) {
           newRepoInfos.set(repoUri, {
@@ -437,8 +436,14 @@ export class WorkspaceSourceControlManager {
     });
   }
 
-  getRepositorySourceControlManagerFromResourceGroup(resourceGroup: vscode.SourceControlResourceGroup) {
-    return this.repoSCMs.find((repo) => repo.workingCopyResourceGroup === resourceGroup || repo.parentResourceGroups.includes(resourceGroup));
+  getRepositorySourceControlManagerFromResourceGroup(
+    resourceGroup: vscode.SourceControlResourceGroup,
+  ) {
+    return this.repoSCMs.find(
+      (repo) =>
+        repo.workingCopyResourceGroup === resourceGroup ||
+        repo.parentResourceGroups.includes(resourceGroup),
+    );
   }
 
   getResourceGroupFromResourceState(
