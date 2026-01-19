@@ -962,6 +962,27 @@ export class JJRepository {
     next: () => Promise<Show | null>;
     kill: () => void;
   } {
+    // This function does NOT pass --no-graph to jj log because it needs the changes to be ordered for graph rendering.
+    /*
+      @  start [data] end
+      ○  start [data] end
+      ○  start [data] end
+      ○  start [data] end
+      │ ○  start [data] end
+      ├─╯
+      ○  start [data] end
+      │ ○    start [data] end
+      │ ├─╮
+      │ ○ │  start [data] end
+      ├─╯ │
+      ○   │  start [data] end
+      ○   │  start [data] end
+      ├───╯
+    */
+    // Note that if we just split by "end" (revSeparator), we'd get graph symbols at the beginning. This is why we need
+    // a start sentinel.
+
+    const startSentinel = "ඞSTARTඞ";
     const revSeparator = "jjkඞ\n";
     const fieldSeparator = "ඞjjk";
     const summaryFileSeparator = "j@j@k";
@@ -978,17 +999,12 @@ export class JJRepository {
       `diff.files().map(|entry| entry.status() ++ "${summaryFileFieldSeparator}" ++ entry.source().path().display() ++ "${summaryFileFieldSeparator}" ++ entry.target().path().display() ++ "${summaryFileFieldSeparator}" ++ entry.target().conflict()).join("${summaryFileSeparator}")`,
     ];
     const template =
+      `"${startSentinel}" ++ ` +
       templateFields.join(` ++ "${fieldSeparator}" ++ `) +
       ` ++ "${revSeparator}"`;
 
     const childProcess = this.spawnJJ(
-      [
-        "log",
-        "-T",
-        template,
-        "--no-graph",
-        ...revsets.flatMap((revset) => ["-r", revset]),
-      ],
+      ["log", "-T", template, ...revsets.flatMap((revset) => ["-r", revset])],
       undefined,
       { timeout: 0 }, // no timeout
     );
@@ -1019,8 +1035,17 @@ export class JJRepository {
         buffer += chunk;
         let separatorIndex = buffer.indexOf(revSeparator);
         while (separatorIndex !== -1) {
-          const revResult = buffer.slice(0, separatorIndex);
+          const revSliceWithGraphSymbols = buffer.slice(0, separatorIndex);
           buffer = buffer.slice(separatorIndex + revSeparator.length);
+
+          const startIndex = revSliceWithGraphSymbols.indexOf(startSentinel);
+          if (startIndex === -1) {
+            throw new Error("Failed to find start sentinel in jj log output");
+          }
+          const revResult = revSliceWithGraphSymbols.slice(
+            startIndex + startSentinel.length,
+          );
+
           yield this.parseShowResult(
             revResult,
             templateFields,
