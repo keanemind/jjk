@@ -466,6 +466,15 @@
           "default": "",
           "description": "Path to the jj executable. If not set, your PATH and common locations will be searched for a jj executable.",
           "scope": "resource"
+        },
+        "jjk.fakeEditorPath": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "description": "Path to the fake editor executable. If not set, use bundled prebuilt binaries for the current platform.",
+          "scope": "resource"
         }
       }
     },
