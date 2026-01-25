@@ -911,6 +911,8 @@ export class JJRepository {
     const templateFields = [
       "change_id",
       "commit_id",
+      'if(parents, "[" ++ parents.map(|p| stringify(p.change_id()).escape_json()).join(",") ++ "]", "[]")',
+      'if(parents, "[" ++ parents.map(|p| stringify(p.commit_id()).escape_json()).join(",") ++ "]", "[]")',
       "author.name()",
       "author.email()",
       'author.timestamp().local().format("%F %H:%M:%S")',
@@ -990,6 +992,8 @@ export class JJRepository {
     const templateFields = [
       "change_id",
       "commit_id",
+      'if(parents, "[" ++ parents.map(|p| stringify(p.change_id()).escape_json()).join(",") ++ "]", "[]")',
+      'if(parents, "[" ++ parents.map(|p| stringify(p.commit_id()).escape_json()).join(",") ++ "]", "[]")',
       "author.name()",
       "author.email()",
       'author.timestamp().local().format("%F %H:%M:%S")',
@@ -1078,6 +1082,13 @@ export class JJRepository {
     summaryFileSeparator: string,
     summaryFileFieldSeparator: string,
   ): Show {
+    const parseJsonStringArray = (value: string, fieldName: string) => {
+      const parsed: unknown = JSON.parse(value);
+      if (!Array.isArray(parsed)) {
+        throw new Error(`Unexpected ${fieldName} JSON payload.`);
+      }
+      return parsed.map((item) => String(item));
+    };
     const fields = revResult.split(fieldSeparator);
     if (fields.length > templateFields.length) {
       throw new Error(
@@ -1090,6 +1101,8 @@ export class JJRepository {
       change: {
         changeId: "",
         commitId: "",
+        parentChangeIds: [],
+        parentCommitIds: [],
         description: "",
         author: {
           email: "",
@@ -1113,6 +1126,20 @@ export class JJRepository {
         case "commit_id":
           ret.change.commitId = value;
           break;
+        case 'if(parents, "[" ++ parents.map(|p| stringify(p.change_id()).escape_json()).join(",") ++ "]", "[]")': {
+          ret.change.parentChangeIds = parseJsonStringArray(
+            value,
+            "parent change ids",
+          );
+          break;
+        }
+        case 'if(parents, "[" ++ parents.map(|p| stringify(p.commit_id()).escape_json()).join(",") ++ "]", "[]")': {
+          ret.change.parentCommitIds = parseJsonStringArray(
+            value,
+            "parent commit ids",
+          );
+          break;
+        }
         case "author.name()":
           ret.change.author.name = value;
           break;
@@ -1975,6 +2002,8 @@ export interface ChangeWithDetails extends Change {
     email: string;
   };
   authoredDate: string;
+  parentChangeIds: string[];
+  parentCommitIds: string[];
 }
 
 export type RepositoryStatus = {
