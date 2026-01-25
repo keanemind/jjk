@@ -906,17 +906,18 @@ export class JJRepository {
   async showAll(revsets: string[]) {
     const revSeparator = "jjkඞ\n";
     const fieldSeparator = "ඞjjk";
-    const summarySeparator = "@?!"; // characters that are illegal in filepaths
+    const summaryFileSeparator = "j@j@k";
+    const summaryFileFieldSeparator = "@?!"; // characters that are illegal in filepaths
     const templateFields = [
       "change_id",
       "commit_id",
       "author.name()",
       "author.email()",
       'author.timestamp().local().format("%F %H:%M:%S")',
-      "description",
+      "description.escape_json()",
       "empty",
       "conflict",
-      `diff.files().map(|entry| entry.status() ++ "${summarySeparator}" ++ entry.source().path().display() ++ "${summarySeparator}" ++ entry.target().path().display() ++ "${summarySeparator}" ++ entry.target().conflict()).join("\n")`,
+      `diff.files().map(|entry| entry.status() ++ "${summaryFileFieldSeparator}" ++ entry.source().path().display() ++ "${summaryFileFieldSeparator}" ++ entry.target().path().display() ++ "${summaryFileFieldSeparator}" ++ entry.target().conflict()).join("${summaryFileSeparator}")`,
     ];
     const template =
       templateFields.join(` ++ "${fieldSeparator}" ++ `) +
@@ -951,7 +952,8 @@ export class JJRepository {
         revResult,
         templateFields,
         fieldSeparator,
-        summarySeparator,
+        summaryFileSeparator,
+        summaryFileFieldSeparator,
       ),
     );
   }
@@ -962,17 +964,18 @@ export class JJRepository {
   } {
     const revSeparator = "jjkඞ\n";
     const fieldSeparator = "ඞjjk";
-    const summarySeparator = "@?!"; // characters that are illegal in filepaths
+    const summaryFileSeparator = "j@j@k";
+    const summaryFileFieldSeparator = "@?!"; // characters that are illegal in filepaths
     const templateFields = [
       "change_id",
       "commit_id",
       "author.name()",
       "author.email()",
       'author.timestamp().local().format("%F %H:%M:%S")',
-      "description",
+      "description.escape_json()",
       "empty",
       "conflict",
-      `diff.files().map(|entry| entry.status() ++ "${summarySeparator}" ++ entry.source().path().display() ++ "${summarySeparator}" ++ entry.target().path().display() ++ "${summarySeparator}" ++ entry.target().conflict()).join("\n")`,
+      `diff.files().map(|entry| entry.status() ++ "${summaryFileFieldSeparator}" ++ entry.source().path().display() ++ "${summaryFileFieldSeparator}" ++ entry.target().path().display() ++ "${summaryFileFieldSeparator}" ++ entry.target().conflict()).join("${summaryFileSeparator}")`,
     ];
     const template =
       templateFields.join(` ++ "${fieldSeparator}" ++ `) +
@@ -1022,7 +1025,8 @@ export class JJRepository {
             revResult,
             templateFields,
             fieldSeparator,
-            summarySeparator,
+            summaryFileSeparator,
+            summaryFileFieldSeparator,
           );
           separatorIndex = buffer.indexOf(revSeparator);
         }
@@ -1046,7 +1050,8 @@ export class JJRepository {
     revResult: string,
     templateFields: string[],
     fieldSeparator: string,
-    summarySeparator: string,
+    summaryFileSeparator: string,
+    summaryFileFieldSeparator: string,
   ): Show {
     const fields = revResult.split(fieldSeparator);
     if (fields.length > templateFields.length) {
@@ -1092,8 +1097,14 @@ export class JJRepository {
         case 'author.timestamp().local().format("%F %H:%M:%S")':
           ret.change.authoredDate = value;
           break;
-        case "description":
-          ret.change.description = value;
+        case "description.escape_json()":
+          {
+            const parsed: unknown = JSON.parse(value);
+            if (typeof parsed !== "string") {
+              throw new Error("Unexpected description JSON payload.");
+            }
+            ret.change.description = parsed;
+          }
           break;
         case "empty":
           ret.change.isEmpty = value === "true";
@@ -1102,9 +1113,12 @@ export class JJRepository {
           ret.change.isConflict = value === "true";
           break;
         default: {
-          for (const line of value.split("\n").filter(Boolean)) {
-            const [status, rawSourcePath, rawTargetPath, conflict] =
-              line.split(summarySeparator);
+          for (const line of value
+            .split(summaryFileSeparator)
+            .filter(Boolean)) {
+            const [status, rawSourcePath, rawTargetPath, conflict] = line.split(
+              summaryFileFieldSeparator,
+            );
             const sourcePath = path
               .normalize(rawSourcePath)
               .replace(/\\/g, "/");
