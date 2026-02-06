@@ -1650,18 +1650,32 @@ export async function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand(
-      "jj.openFileInWorkingCopy",
-      async (uri: vscode.Uri) => {
+      "jj.openFileInWorkingCopyResourceState",
+      async (resourceState: vscode.SourceControlResourceState) => {
         try {
-          if (uri.scheme === "jj") {
-            uri = vscode.Uri.file(uri.path);
-          }
-
           await vscode.commands.executeCommand(
             "vscode.open",
-            uri,
+            vscode.Uri.file(resourceState.resourceUri.fsPath),
             {},
-            `${path.basename(uri.fsPath)}`,
+          );
+        } catch (error) {
+          vscode.window.showErrorMessage(
+            `Failed to open file${error instanceof Error ? `: ${error.message}` : ""}`,
+          );
+        }
+      },
+    ),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "jj.openFileInWorkingCopyEditor",
+      async (uri: vscode.Uri) => {
+        try {
+          await vscode.commands.executeCommand(
+            "vscode.open",
+            vscode.Uri.file(uri.fsPath),
+            {},
           );
         } catch (error) {
           vscode.window.showErrorMessage(

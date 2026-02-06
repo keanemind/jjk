@@ -57,7 +57,13 @@
         "icon": "$(go-to-file)"
       },
       {
-        "command": "jj.openFileInWorkingCopy",
+        "command": "jj.openFileInWorkingCopyEditor",
+        "title": "Open file in working copy",
+        "category": "Jujutsu",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "jj.openFileInWorkingCopyResourceState",
         "title": "Open file in working copy",
         "category": "Jujutsu",
         "icon": "$(edit)"
@@ -210,8 +216,8 @@
           "group": "navigation@1"
         },
         {
-          "command": "jj.openFileInWorkingCopy",
-          "when": "jj.reposExist && isInDiffEditor",
+          "command": "jj.openFileInWorkingCopyEditor",
+          "when": "jj.reposExist && resourceScheme == jj",
           "group": "navigation@2"
         },
         {
@@ -326,6 +332,11 @@
           "group": "inline"
         },
         {
+          "command": "jj.openFileInWorkingCopyResourceState",
+          "when": "scmProvider == jj && scmResourceGroup != @",
+          "group": "inline"
+        },
+        {
           "command": "jj.squashToWorkingCopyResourceState",
           "when": "scmProvider == jj && scmResourceGroup != @",
           "group": "inline"
@@ -362,7 +373,11 @@
           "when": "false"
         },
         {
-          "command": "jj.openFileInWorkingCopy",
+          "command": "jj.openFileInWorkingCopyEditor",
+          "when": "false"
+        },
+        {
+          "command": "jj.openFileInWorkingCopyResourceState",
           "when": "false"
         },
         {
