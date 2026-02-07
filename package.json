@@ -52,27 +52,27 @@
       },
       {
         "command": "jj.openFileEditor",
-        "title": "Open file",
+        "title": "View as file",
         "category": "Jujutsu",
-        "icon": "$(go-to-file)"
+        "icon": "$(request-changes)"
+      },
+      {
+        "command": "jj.openDiffEditor",
+        "title": "View as diff",
+        "category": "Jujutsu",
+        "icon": "$(request-changes)"
       },
       {
         "command": "jj.openFileInWorkingCopyEditor",
         "title": "Open file in working copy",
         "category": "Jujutsu",
-        "icon": "$(edit)"
+        "icon": "$(go-to-file)"
       },
       {
         "command": "jj.openFileInWorkingCopyResourceState",
         "title": "Open file in working copy",
         "category": "Jujutsu",
-        "icon": "$(edit)"
-      },
-      {
-        "command": "jj.openDiffEditor",
-        "title": "Open diff",
-        "category": "Jujutsu",
-        "icon": "$(compare-changes)"
+        "icon": "$(go-to-file)"
       },
       {
         "command": "jj.describe",
