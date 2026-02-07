@@ -52,15 +52,27 @@
       },
       {
         "command": "jj.openFileEditor",
-        "title": "Open file",
+        "title": "View as file",
+        "category": "Jujutsu",
+        "icon": "$(request-changes)"
+      },
+      {
+        "command": "jj.openDiffEditor",
+        "title": "View as diff",
+        "category": "Jujutsu",
+        "icon": "$(request-changes)"
+      },
+      {
+        "command": "jj.openFileInWorkingCopyEditor",
+        "title": "Open file in working copy",
         "category": "Jujutsu",
         "icon": "$(go-to-file)"
       },
       {
-        "command": "jj.openDiffEditor",
-        "title": "Open diff",
+        "command": "jj.openFileInWorkingCopyResourceState",
+        "title": "Open file in working copy",
         "category": "Jujutsu",
-        "icon": "$(compare-changes)"
+        "icon": "$(go-to-file)"
       },
       {
         "command": "jj.describe",
@@ -204,6 +216,11 @@
           "group": "navigation@1"
         },
         {
+          "command": "jj.openFileInWorkingCopyEditor",
+          "when": "jj.reposExist && resourceScheme == jj",
+          "group": "navigation@2"
+        },
+        {
           "command": "jj.openParentChange",
           "when": "jj.reposExist",
           "group": "navigation@2"
@@ -315,6 +332,11 @@
           "group": "inline"
         },
         {
+          "command": "jj.openFileInWorkingCopyResourceState",
+          "when": "scmProvider == jj && scmResourceGroup != @",
+          "group": "inline"
+        },
+        {
           "command": "jj.squashToWorkingCopyResourceState",
           "when": "scmProvider == jj && scmResourceGroup != @",
           "group": "inline"
@@ -348,6 +370,14 @@
         },
         {
           "command": "jj.openDiffEditor",
+          "when": "false"
+        },
+        {
+          "command": "jj.openFileInWorkingCopyEditor",
+          "when": "false"
+        },
+        {
+          "command": "jj.openFileInWorkingCopyResourceState",
           "when": "false"
         },
         {

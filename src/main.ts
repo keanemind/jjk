@@ -1647,6 +1647,44 @@ export async function activate(context: vscode.ExtensionContext) {
       clearTimeout(pollTimeoutId);
     }),
   );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "jj.openFileInWorkingCopyResourceState",
+      async (resourceState: vscode.SourceControlResourceState) => {
+        try {
+          await vscode.commands.executeCommand(
+            "vscode.open",
+            vscode.Uri.file(resourceState.resourceUri.fsPath),
+            {},
+          );
+        } catch (error) {
+          vscode.window.showErrorMessage(
+            `Failed to open file${error instanceof Error ? `: ${error.message}` : ""}`,
+          );
+        }
+      },
+    ),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "jj.openFileInWorkingCopyEditor",
+      async (uri: vscode.Uri) => {
+        try {
+          await vscode.commands.executeCommand(
+            "vscode.open",
+            vscode.Uri.file(uri.fsPath),
+            {},
+          );
+        } catch (error) {
+          vscode.window.showErrorMessage(
+            `Failed to open file${error instanceof Error ? `: ${error.message}` : ""}`,
+          );
+        }
+      },
+    ),
+  );
 }
 
 function showLoading<T extends unknown[]>(
