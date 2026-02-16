@@ -3,6 +3,18 @@
     "scopeName": "text.jj-commit",
     "patterns": [
         {
+            "comment": "diff presented at the end of the commit message when using jj describe with diff template",
+            "name": "meta.embedded.diff.jj-commit",
+            "contentName": "source.diff",
+            "begin": "(?=^diff\\ \\-\\-git)",
+            "end": "\\z",
+            "patterns": [
+                {
+                    "include": "source.diff"
+                }
+            ]
+        },
+        {
             "comment": "User supplied message",
             "name": "meta.scope.message.jj-commit",
             "begin": "^(?!JJ:)",
