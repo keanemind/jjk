@@ -474,6 +474,10 @@
           ],
           "default": null,
           "description": "Path to the fake editor executable. If not set, use bundled prebuilt binaries for the current platform.",
+        "jjk.ignoreWorkingCopy": {
+          "type": "boolean",
+          "default": false,
+          "description": "Use --ignore-working-copy for read-only commands to prevent automatic working copy snapshots. This prevents divergent changesets from passive monitoring, but modified files may not auto-update until the next manual jj command.",
           "scope": "resource"
         }
       }

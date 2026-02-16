@@ -139,6 +139,22 @@ function getCommandTimeout(
 }
 
 /**
+ * Returns ["--ignore-working-copy"] if the setting is enabled, otherwise returns an empty array.
+ * This allows the flag to be conditionally included using the spread operator.
+ */
+function getIgnoreWorkingCopyArgs(repositoryRoot: string): string[] {
+  const config = vscode.workspace.getConfiguration(
+    "jjk",
+    vscode.Uri.file(repositoryRoot),
+  );
+  const ignoreWorkingCopy = config.get<boolean>("ignoreWorkingCopy");
+  if (ignoreWorkingCopy) {
+    return ["--ignore-working-copy"];
+  }
+  return [];
+}
+
+/**
  * Gets the configured jj executable path from settings.
  * If no path is configured, searches through common installation paths before falling back to "jj".
  */
@@ -202,9 +218,9 @@ function spawnJJ(
     timeout: getCommandTimeout(options.cwd, options.timeout),
   };
 
-  logger.debug(`spawn: ${jjPath} ${args.join(" ")}`, {
-    spawnOptions: finalOptions,
-  });
+  logger.info(
+    `spawn: ${JSON.stringify([jjPath, ...args])} ${JSON.stringify({ spawnOptions: finalOptions })}`,
+  );
 
   return spawn(jjPath, args, finalOptions);
 }
@@ -324,16 +340,22 @@ export class WorkspaceSourceControlManager {
 
         const repoRoot = (
           await handleCommand(
-            spawnJJ(jjPath.filepath, ["root"], {
-              timeout: 5000,
-              cwd: workspaceFolder.uri.fsPath,
-            }),
+            spawnJJ(
+              jjPath.filepath,
+              [...getIgnoreWorkingCopyArgs(workspaceFolder.uri.fsPath), "root"],
+              {
+                timeout: 5000,
+                cwd: workspaceFolder.uri.fsPath,
+              },
+            ),
           )
         )
           .toString()
           .trim();
 
-        const repoUri = vscode.Uri.file(repoRoot.replace(/^\\\\\?\\UNC\\/, "\\\\")).toString();
+        const repoUri = vscode.Uri.file(
+          repoRoot.replace(/^\\\\\?\\UNC\\/, "\\\\"),
+        ).toString();
 
         if (!newRepoInfos.has(repoUri)) {
           newRepoInfos.set(repoUri, {
@@ -847,7 +869,16 @@ export class JJRepository {
     return (
       await handleJJCommand(
         this.spawnJJ(
-          ["operation", "log", "--limit", "1", "-T", "self.id()", "--no-graph"],
+          [
+            ...getIgnoreWorkingCopyArgs(this.repositoryRoot),
+            "operation",
+            "log",
+            "--limit",
+            "1",
+            "-T",
+            "self.id()",
+            "--no-graph",
+          ],
           {
             cwd: this.repositoryRoot,
           },
@@ -865,10 +896,13 @@ export class JJRepository {
 
     const output = (
       await handleJJCommand(
-        this.spawnJJ(["status", "--color=always"], {
-          timeout: 5000,
-          cwd: this.repositoryRoot,
-        }),
+        this.spawnJJ(
+          [...getIgnoreWorkingCopyArgs(this.repositoryRoot), "status", "--color=always"],
+          {
+            timeout: 5000,
+            cwd: this.repositoryRoot,
+          },
+        ),
       )
     ).toString();
     const status = await parseJJStatus(this.repositoryRoot, output);
@@ -885,10 +919,13 @@ export class JJRepository {
   async fileList() {
     return (
       await handleJJCommand(
-        this.spawnJJ(["file", "list"], {
-          timeout: 5000,
-          cwd: this.repositoryRoot,
-        }),
+        this.spawnJJ(
+          [...getIgnoreWorkingCopyArgs(this.repositoryRoot), "file", "list"],
+          {
+            timeout: 5000,
+            cwd: this.repositoryRoot,
+          },
+        ),
       )
     )
       .toString()
@@ -933,6 +970,7 @@ export class JJRepository {
       await handleJJCommand(
         this.spawnJJ(
           [
+            ...getIgnoreWorkingCopyArgs(this.repositoryRoot),
             "log",
             "-T",
             template,
@@ -1107,7 +1145,14 @@ export class JJRepository {
   readFile(rev: string, filepath: string) {
     return handleJJCommand(
       this.spawnJJ(
-        ["file", "show", "--revision", rev, filepathToFileset(filepath)],
+        [
+          ...getIgnoreWorkingCopyArgs(this.repositoryRoot),
+          "file",
+          "show",
+          "--revision",
+          rev,
+          filepathToFileset(filepath),
+        ],
         {
           timeout: 5000,
           cwd: this.repositoryRoot,
@@ -1474,6 +1519,7 @@ export class JJRepository {
       await handleJJCommand(
         this.spawnJJ(
           [
+            ...getIgnoreWorkingCopyArgs(this.repositoryRoot),
             "log",
             "-r",
             rev,
@@ -1581,6 +1627,7 @@ export class JJRepository {
       await handleJJCommand(
         this.spawnJJ(
           [
+            ...getIgnoreWorkingCopyArgs(this.repositoryRoot),
             "file",
             "annotate",
             "-r",
@@ -1621,13 +1668,13 @@ export class JJRepository {
       await handleJJCommand(
         this.spawnJJ(
           [
+            ...getIgnoreWorkingCopyArgs(this.repositoryRoot),
             "operation",
             "log",
             "--limit",
             "10",
             "--no-graph",
             "--at-operation=@",
-            "--ignore-working-copy",
             "-T",
             template,
           ],
@@ -1726,7 +1773,15 @@ export class JJRepository {
         // in case the file was renamed or copied. If we knew the status of the file, we could
         // pass the previous filename in addition to the current filename upon seeing a rename or copy.
         // We don't have the status though, which is why we're using `--summary` here.
-        ["diff", "--summary", "--tool", `${fakeEditorPath}`, "-r", rev],
+        [
+          ...getIgnoreWorkingCopyArgs(this.repositoryRoot),
+          "diff",
+          "--summary",
+          "--tool",
+          `${fakeEditorPath}`,
+          "-r",
+          rev,
+        ],
         {
           timeout: 10_000, // Ensure this is longer than fakeeditor's internal timeout
           cwd: this.repositoryRoot,
