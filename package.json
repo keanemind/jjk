@@ -474,6 +474,7 @@
           ],
           "default": null,
           "description": "Path to the fake editor executable. If not set, use bundled prebuilt binaries for the current platform.",
+        },
         "jjk.ignoreWorkingCopy": {
           "type": "boolean",
           "default": false,
