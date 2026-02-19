@@ -1,72 +1,72 @@
 {
-    "name": "JJ Commit Message",
-    "scopeName": "text.jj-commit",
-    "patterns": [
+  "name": "JJ Commit Message",
+  "scopeName": "text.jj-commit",
+  "patterns": [
+    {
+      "comment": "diff presented at the end of the commit message when using jj describe with diff template",
+      "name": "meta.embedded.diff.jj-commit",
+      "contentName": "source.diff",
+      "begin": "(?=^diff\\ \\-\\-git)",
+      "end": "\\z",
+      "patterns": [
         {
-            "comment": "diff presented at the end of the commit message when using jj describe with diff template",
-            "name": "meta.embedded.diff.jj-commit",
-            "contentName": "source.diff",
-            "begin": "(?=^diff\\ \\-\\-git)",
-            "end": "\\z",
-            "patterns": [
-                {
-                    "include": "source.diff"
-                }
-            ]
-        },
-        {
-            "comment": "User supplied message",
-            "name": "meta.scope.message.jj-commit",
-            "begin": "^(?!JJ:)",
-            "end": "^(?=JJ:)",
-            "patterns": [
-                {
-                    "comment": "Mark > 50 lines as deprecated, > 72 as illegal",
-                    "name": "meta.scope.subject.jj-commit",
-                    "match": "\\G.{0,50}(.{0,22}(.*))$",
-                    "captures": {
-                        "1": {
-                            "name": "invalid.deprecated.line-too-long.jj-commit"
-                        },
-                        "2": {
-                            "name": "invalid.illegal.line-too-long.jj-commit"
-                        }
-                    }
-                }
-            ]
-        },
-        {
-            "comment": "JJ supplied metadata in a number of lines starting with JJ:",
-            "name": "meta.scope.metadata.jj-commit",
-            "begin": "^(?=JJ:)",
-            "contentName": "comment.line.indicator.jj-commit",
-            "end": "^(?!JJ:)",
-            "patterns": [
-                {
-                    "match": "^JJ:\\s+((M|R) .*)$",
-                    "captures": {
-                        "1": {
-                            "name": "markup.changed.jj-commit"
-                        }
-                    }
-                },
-                {
-                    "match": "^JJ:\\s+(A .*)$",
-                    "captures": {
-                        "1": {
-                            "name": "markup.inserted.jj-commit"
-                        }
-                    }
-                },
-                {
-                    "match": "^JJ:\\s+(D .*)$",
-                    "captures": {
-                        "1": {
-                            "name": "markup.deleted.jj-commit"
-                        }
-                    }
-                }
-            ]
+          "include": "source.diff"
         }
-    ]
+      ]
+    },
+    {
+      "comment": "User supplied message",
+      "name": "meta.scope.message.jj-commit",
+      "begin": "^(?!JJ:)",
+      "end": "^(?=JJ:)",
+      "patterns": [
+        {
+          "comment": "Mark > 50 lines as deprecated, > 72 as illegal",
+          "name": "meta.scope.subject.jj-commit",
+          "match": "\\G.{0,50}(.{0,22}(.*))$",
+          "captures": {
+            "1": {
+              "name": "invalid.deprecated.line-too-long.jj-commit"
+            },
+            "2": {
+              "name": "invalid.illegal.line-too-long.jj-commit"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "comment": "JJ supplied metadata in a number of lines starting with JJ:",
+      "name": "meta.scope.metadata.jj-commit",
+      "begin": "^(?=JJ:)",
+      "contentName": "comment.line.indicator.jj-commit",
+      "end": "^(?!JJ:)",
+      "patterns": [
+        {
+          "match": "^JJ:\\s+((M|R) .*)$",
+          "captures": {
+            "1": {
+              "name": "markup.changed.jj-commit"
+            }
+          }
+        },
+        {
+          "match": "^JJ:\\s+(A .*)$",
+          "captures": {
+            "1": {
+              "name": "markup.inserted.jj-commit"
+            }
+          }
+        },
+        {
+          "match": "^JJ:\\s+(D .*)$",
+          "captures": {
+            "1": {
+              "name": "markup.deleted.jj-commit"
+            }
+          }
+        }
+      ]
+    }
+  ]
 }
