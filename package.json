@@ -3,7 +3,7 @@
   "displayName": "Jujutsu Kaizen",
   "publisher": "jjk",
   "description": "Jujutsu (jj) version control system for VS Code",
-  "icon": "./images/logo.png",
+  "icon": "images/logo.png",
   "version": "0.8.2",
   "engines": {
     "vscode": "^1.96.0"
