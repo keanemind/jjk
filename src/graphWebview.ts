@@ -87,7 +87,16 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
       switch (message.command) {
         case "editChange":
           try {
-            await this.repository.editRetryImmutable(message.changeId);
+            const config = vscode.workspace.getConfiguration("jjk");
+            const changeEditAction = config.get<string>("changeEditAction") || "edit";
+            if (changeEditAction === "new") {
+              await this.repository.new(undefined, [message.changeId]);
+            } else {
+              if (message.changeId === "zzzzzzzz") {
+                return;
+              }
+              await this.repository.editRetryImmutable(message.changeId);
+            }
           } catch (error: unknown) {
             vscode.window.showErrorMessage(
               `Failed to switch to change: ${error as string}`,
@@ -131,10 +140,14 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
     const workingCopyId = status.workingCopy.changeId;
 
     this.selectedNodes.clear();
+    const config = vscode.workspace.getConfiguration("jjk");
+    const changeEditAction = config.get<string>("changeEditAction");
+
     this.panel.webview.postMessage({
       command: "updateGraph",
       changes: changes,
       workingCopyId,
+      changeEditAction,
       preserveScroll: true,
     });
   }
