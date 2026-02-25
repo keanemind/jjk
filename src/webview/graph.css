@@ -174,3 +174,28 @@ body {
 .node-circle.highlighted .diamond-path {
     opacity: 1;
 }
+
+/* Context menu styling */
+.context-menu {
+    display: none;
+    position: absolute;
+    background-color: var(--vscode-menu-background);
+    border: 1px solid var(--vscode-menu-border);
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    z-index: 1000;
+    min-width: 120px;
+    padding: 4px 0;
+}
+
+.context-menu-item {
+    padding: 6px 20px;
+    cursor: pointer;
+    font-size: var(--vscode-font-size);
+    color: var(--vscode-menu-foreground);
+}
+
+.context-menu-item:hover {
+    background-color: var(--vscode-menu-selectionBackground);
+    color: var(--vscode-menu-selectionForeground);
+}

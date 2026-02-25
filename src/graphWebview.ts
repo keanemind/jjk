@@ -103,6 +103,22 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
             );
           }
           break;
+        case "editChangeDirect":
+          try {
+            if (message.changeId === "zzzzzzzz") {
+              return;
+            }
+            const status = await this.repository.getStatus(true);
+            if (message.changeId === status.workingCopy.changeId) {
+              return;
+            }
+            await this.repository.editRetryImmutable(message.changeId);
+          } catch (error: unknown) {
+            vscode.window.showErrorMessage(
+              `Failed to switch to change: ${error as string}`,
+            );
+          }
+          break;
         case "selectChange":
           this.selectedNodes = new Set(message.selectedNodes);
           vscode.commands.executeCommand(
