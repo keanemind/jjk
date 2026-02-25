@@ -480,6 +480,17 @@
           "default": false,
           "description": "Use --ignore-working-copy for read-only commands to prevent automatic working copy snapshots. This prevents divergent changesets from passive monitoring, but modified files may not auto-update until the next manual jj command.",
           "scope": "resource"
+        },
+        "jjk.changeEditAction": {
+          "type": "string",
+          "default": "edit",
+          "enum": ["edit", "new"],
+          "enumDescriptions": [
+            "Edits the change (jj edit)",
+            "Creates an empty change on top and switches to it (jj new)"
+          ],
+          "description": "Action to perform when clicking the edit button on a change in the graph view",
+          "scope": "resource"
         }
       }
     },

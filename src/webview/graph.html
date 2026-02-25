@@ -7,6 +7,9 @@
 </head>
 
 <body>
+    <div id="context-menu" class="context-menu">
+        <div class="context-menu-item" data-action="edit">Edit this change</div>
+    </div>
     <div id="graph">
         <svg id="connections">
             <defs id="svg-defs"></defs>
@@ -39,7 +42,7 @@
                         command: 'selectChange',
                         selectedNodes: []
                     });
-                    updateGraph(message.changes, message.workingCopyId, message.preserveScroll);
+                    updateGraph(message.changes, message.workingCopyId, message.changeEditAction, message.preserveScroll);
                     break;
             }
         });
@@ -327,7 +330,7 @@
             return [fromNode, toNode];
         }
 
-        function updateGraph(changes, workingCopyId, preserveScroll = false) {
+        function updateGraph(changes, workingCopyId, changeEditAction, preserveScroll = false) {
             // Save current scroll position only when preserveScroll is true
             const scrollTop = preserveScroll ?
                 (window.scrollY || document.documentElement.scrollTop) : 0;
@@ -374,7 +377,7 @@
                 const editButton = document.createElement('button');
                 editButton.className = 'edit-button';
                 editButton.innerHTML = '<i class="codicon codicon-log-in"></i>';
-                editButton.title = 'Edit this change';
+                editButton.title = changeEditAction === 'new' ? 'Create and edit a new empty change on top' : 'Edit this change';
                 editButton.onclick = async (e) => {
                     e.stopPropagation();
                     // Just send the edit command and let updateGraph handle the cleanup
@@ -384,8 +387,8 @@
                     });
                 };
 
-                // Hide edit button if this is the working copy or has ID "zzzzzzzz"
-                if (change.contextValue === workingCopyId || change.contextValue === "zzzzzzzz") {
+                // Hide edit button if this is the working copy, or root commit in edit mode
+                if (change.contextValue === workingCopyId || (changeEditAction === 'edit' && change.contextValue === "zzzzzzzz")) {
                     editButton.style.display = 'none';
                 }
                 node.appendChild(editButton);
@@ -431,6 +434,34 @@
                         selectedNodes: Array.from(selectedNodes)
                     });
                 };
+
+                node.addEventListener('contextmenu', (e) => {
+                    e.preventDefault();
+                    if (change.contextValue === "zzzzzzzz" || change.contextValue === currentWorkingCopyId) {
+                        return;
+                    }
+                    const contextMenu = document.getElementById('context-menu');
+                    contextMenu.dataset.changeId = change.contextValue;
+                    contextMenu.style.left = e.pageX + 'px';
+                    contextMenu.style.top = e.pageY + 'px';
+                    contextMenu.style.display = 'block';
+                });
+            });
+
+            document.addEventListener('click', () => {
+                const contextMenu = document.getElementById('context-menu');
+                contextMenu.style.display = 'none';
+            });
+
+            document.getElementById('context-menu').addEventListener('click', (e) => {
+                const contextMenu = document.getElementById('context-menu');
+                const changeId = contextMenu.dataset.changeId;
+                if (changeId && changeId !== "zzzzzzzz") {
+                    vscode.postMessage({
+                        command: 'editChangeDirect',
+                        changeId: changeId
+                    });
+                }
             });
 
             // Wait for next frame to ensure DOM is updated
