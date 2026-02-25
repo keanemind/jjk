@@ -67,7 +67,7 @@ export function eventToPromise<T>(event: Event<T>): Promise<T> {
   return new Promise<T>((c) => onceEvent(event)(c));
 }
 
-function normalizePath(path: string): string {
+export function normalizePath(path: string): string {
   // Windows & Mac are currently being handled
   // as case insensitive file systems in VS Code.
   if (isWindows || isMacintosh) {

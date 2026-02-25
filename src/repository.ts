@@ -402,6 +402,9 @@ export class WorkspaceSourceControlManager {
       }
     }
     this.repoInfos = newRepoInfos;
+    this.decorationProvider.removeStaleRepositories(
+      [...newRepoInfos.values()].map(({ repoRoot }) => repoRoot),
+    );
 
     if (isAnyRepoChanged) {
       const repoSCMs: RepositorySourceControlManager[] = [];
@@ -798,6 +801,7 @@ class RepositorySourceControlManager {
     }
 
     this.decorationProvider.onRefresh(
+      this.repositoryRoot,
       this.fileStatusesByChange,
       this.trackedFiles,
       this.conflictedFilesByChange,

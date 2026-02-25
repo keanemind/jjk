@@ -8,6 +8,7 @@ import {
 } from "vscode";
 import { FileStatus, FileStatusType } from "./repository";
 import { getParams, toJJUri } from "./uri";
+import { normalizePath } from "./utils";
 
 const colorOfType = (type: FileStatusType) => {
   switch (type) {
@@ -28,6 +29,11 @@ export class JJDecorationProvider implements FileDecorationProvider {
     this._onDidChangeDecorations.event;
   private decorations = new Map<string, FileDecoration>();
   private trackedFiles = new Set<string>();
+  private decorationsByRepository = new Map<
+    string,
+    Map<string, FileDecoration>
+  >();
+  private trackedFilesByRepository = new Map<string, Set<string>>();
   private hasData = false;
 
   /**
@@ -42,6 +48,7 @@ export class JJDecorationProvider implements FileDecorationProvider {
    * Otherwise, fires an event to notify vscode of the updated decorations.
    */
   onRefresh(
+    repositoryRoot: string,
     fileStatusesByChange: Map<string, FileStatus[]>,
     trackedFiles: Set<string>,
     conflictedFiles: Map<string, Set<string>>,
@@ -49,11 +56,11 @@ export class JJDecorationProvider implements FileDecorationProvider {
     if (process.platform === "win32") {
       trackedFiles = convertSetToLowercase(trackedFiles);
     }
-    const nextDecorations = new Map<string, FileDecoration>();
+    const nextRepositoryDecorations = new Map<string, FileDecoration>();
     for (const [changeId, fileStatuses] of fileStatusesByChange) {
       for (const fileStatus of fileStatuses) {
         const key = getKey(Uri.file(fileStatus.path).fsPath, changeId);
-        nextDecorations.set(key, {
+        nextRepositoryDecorations.set(key, {
           badge: fileStatus.type,
           tooltip: fileStatus.file,
           color: colorOfType(fileStatus.type),
@@ -63,16 +70,16 @@ export class JJDecorationProvider implements FileDecorationProvider {
     for (const [changeId, files] of conflictedFiles) {
       for (const file of files) {
         const key = getKey(Uri.file(file).fsPath, changeId);
-        const existingDecoration = nextDecorations.get(key);
+        const existingDecoration = nextRepositoryDecorations.get(key);
         if (!existingDecoration) {
-          nextDecorations.set(key, {
+          nextRepositoryDecorations.set(key, {
             badge: "!",
             color: new ThemeColor(
               "gitDecoration.conflictingResourceForeground",
             ),
           });
         } else {
-          nextDecorations.set(key, {
+          nextRepositoryDecorations.set(key, {
             ...existingDecoration,
             badge: `${existingDecoration.badge}!`,
             color: new ThemeColor(
@@ -83,58 +90,28 @@ export class JJDecorationProvider implements FileDecorationProvider {
       }
     }
 
-    const changedDecorationKeys = new Set<string>();
-    for (const [key, fileDecoration] of nextDecorations) {
-      if (
-        !this.decorations.has(key) ||
-        this.decorations.get(key)!.badge !== fileDecoration.badge
-      ) {
-        changedDecorationKeys.add(key);
+    const repositoryKey = normalizePath(repositoryRoot);
+    this.decorationsByRepository.set(repositoryKey, nextRepositoryDecorations);
+    this.trackedFilesByRepository.set(repositoryKey, trackedFiles);
+    this.refreshCombinedState();
+  }
+
+  removeStaleRepositories(repositoryRoots: Iterable<string>) {
+    const activeRepositoryKeys = new Set(
+      [...repositoryRoots].map(normalizePath),
+    );
+    let hasChanges = false;
+    for (const repositoryKey of [...this.decorationsByRepository.keys()]) {
+      if (activeRepositoryKeys.has(repositoryKey)) {
+        continue;
       }
+      this.decorationsByRepository.delete(repositoryKey);
+      this.trackedFilesByRepository.delete(repositoryKey);
+      hasChanges = true;
     }
-    for (const key of this.decorations.keys()) {
-      if (!nextDecorations.has(key)) {
-        changedDecorationKeys.add(key);
-      }
+    if (hasChanges) {
+      this.refreshCombinedState();
     }
-
-    const changedTrackedFiles = new Set<string>([
-      ...[...trackedFiles.values()].filter(
-        (file) => !this.trackedFiles.has(file),
-      ),
-      ...[...this.trackedFiles.values()].filter(
-        (file) => !trackedFiles.has(file),
-      ),
-    ]);
-
-    this.decorations = nextDecorations;
-    this.trackedFiles = trackedFiles;
-
-    if (!this.hasData) {
-      this.hasData = true;
-      // Register the provider with vscode now that we have data to show.
-      this.register(this);
-      return;
-    }
-
-    const changedUris = [
-      ...[...changedDecorationKeys.keys()].map((key) => {
-        const { fsPath, rev } = parseKey(key);
-        return toJJUri(Uri.file(fsPath), { rev });
-      }),
-      ...[...changedDecorationKeys.keys()]
-        .filter((key) => {
-          const { rev } = parseKey(key);
-          return rev === "@";
-        })
-        .map((key) => {
-          const { fsPath } = parseKey(key);
-          return Uri.file(fsPath);
-        }),
-      ...[...changedTrackedFiles.values()].map((file) => Uri.file(file)),
-    ];
-
-    this._onDidChangeDecorations.fire(changedUris);
   }
 
   provideFileDecoration(uri: Uri): FileDecoration | undefined {
@@ -164,6 +141,75 @@ export class JJDecorationProvider implements FileDecorationProvider {
       }
     }
     return this.decorations.get(key);
+  }
+
+  private refreshCombinedState() {
+    const nextDecorations = new Map<string, FileDecoration>();
+    const nextTrackedFiles = new Set<string>();
+
+    for (const repositoryDecorations of this.decorationsByRepository.values()) {
+      for (const [key, decoration] of repositoryDecorations) {
+        nextDecorations.set(key, decoration);
+      }
+    }
+    for (const repositoryTrackedFiles of this.trackedFilesByRepository.values()) {
+      for (const file of repositoryTrackedFiles) {
+        nextTrackedFiles.add(file);
+      }
+    }
+
+    const changedDecorationKeys = new Set<string>();
+    for (const [key, fileDecoration] of nextDecorations) {
+      if (
+        !this.decorations.has(key) ||
+        this.decorations.get(key)!.badge !== fileDecoration.badge
+      ) {
+        changedDecorationKeys.add(key);
+      }
+    }
+    for (const key of this.decorations.keys()) {
+      if (!nextDecorations.has(key)) {
+        changedDecorationKeys.add(key);
+      }
+    }
+
+    const changedTrackedFiles = new Set<string>([
+      ...[...nextTrackedFiles.values()].filter(
+        (file) => !this.trackedFiles.has(file),
+      ),
+      ...[...this.trackedFiles.values()].filter(
+        (file) => !nextTrackedFiles.has(file),
+      ),
+    ]);
+
+    this.decorations = nextDecorations;
+    this.trackedFiles = nextTrackedFiles;
+
+    if (!this.hasData) {
+      this.hasData = true;
+      // Register the provider with vscode now that we have data to show.
+      this.register(this);
+      return;
+    }
+
+    const changedUris = [
+      ...[...changedDecorationKeys.keys()].map((key) => {
+        const { fsPath, rev } = parseKey(key);
+        return toJJUri(Uri.file(fsPath), { rev });
+      }),
+      ...[...changedDecorationKeys.keys()]
+        .filter((key) => {
+          const { rev } = parseKey(key);
+          return rev === "@";
+        })
+        .map((key) => {
+          const { fsPath } = parseKey(key);
+          return Uri.file(fsPath);
+        }),
+      ...[...changedTrackedFiles.values()].map((file) => Uri.file(file)),
+    ];
+
+    this._onDidChangeDecorations.fire(changedUris);
   }
 }
 
