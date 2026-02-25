@@ -7,6 +7,9 @@
 </head>
 
 <body>
+    <div id="context-menu" class="context-menu">
+        <div class="context-menu-item" data-action="edit">Edit this change</div>
+    </div>
     <div id="graph">
         <svg id="connections">
             <defs id="svg-defs"></defs>
@@ -431,6 +434,34 @@
                         selectedNodes: Array.from(selectedNodes)
                     });
                 };
+
+                node.addEventListener('contextmenu', (e) => {
+                    e.preventDefault();
+                    if (change.contextValue === "zzzzzzzz" || change.contextValue === currentWorkingCopyId) {
+                        return;
+                    }
+                    const contextMenu = document.getElementById('context-menu');
+                    contextMenu.dataset.changeId = change.contextValue;
+                    contextMenu.style.left = e.pageX + 'px';
+                    contextMenu.style.top = e.pageY + 'px';
+                    contextMenu.style.display = 'block';
+                });
+            });
+
+            document.addEventListener('click', () => {
+                const contextMenu = document.getElementById('context-menu');
+                contextMenu.style.display = 'none';
+            });
+
+            document.getElementById('context-menu').addEventListener('click', (e) => {
+                const contextMenu = document.getElementById('context-menu');
+                const changeId = contextMenu.dataset.changeId;
+                if (changeId && changeId !== "zzzzzzzz") {
+                    vscode.postMessage({
+                        command: 'editChangeDirect',
+                        changeId: changeId
+                    });
+                }
             });
 
             // Wait for next frame to ensure DOM is updated
