@@ -13,24 +13,21 @@ import * as crypto from "crypto";
 import which from "which";
 
 async function getJJVersion(jjPath: string): Promise<string> {
-  try {
-    const version = (
-      await handleCommand(
-        spawn(jjPath, ["version"], {
-          timeout: 5000,
-        }),
-      )
+  const version = (
+    await handleCommand(
+      spawn(jjPath, ["version"], {
+        timeout: 5000,
+      }),
     )
-      .toString()
-      .trim();
+  )
+    .toString()
+    .trim();
 
-    if (version.startsWith("jj")) {
-      return version;
-    }
-  } catch {
-    // Assume the version
+  if (version.startsWith("jj")) {
+    return version;
   }
-  return "jj 0.28.0";
+
+  throw new Error(`Failed to parse jj version from ${jjPath}: ${version}`);
 }
 
 export let extensionDir = "";
