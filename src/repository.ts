@@ -584,11 +584,10 @@ class RepositorySourceControlManager {
     );
     this.subscriptions.push(this.workingCopyResourceGroup);
 
-    // Set up the SourceControlInputBox
-    this.sourceControl.inputBox.placeholder =
-      "Describe new change (Ctrl+Enter)";
+    const config = vscode.workspace.getConfiguration("jjk");
+    const changeEditAction = config.get<string>("changeEditAction") || "edit";
+    this.updatePlaceholderText(changeEditAction);
 
-    // Link the acceptInputCommand to the SourceControl instance
     this.sourceControl.acceptInputCommand = {
       command: "jj.new",
       title: "Create new change",
@@ -621,6 +620,13 @@ class RepositorySourceControlManager {
       undefined,
       this.subscriptions,
     );
+  }
+
+  updatePlaceholderText(changeEditAction: string) {
+    this.sourceControl.inputBox.placeholder =
+      changeEditAction === "new"
+        ? "Describe current change (Ctrl+Enter)"
+        : "Describe new change (Ctrl+Enter)";
   }
 
   async checkForUpdates() {
@@ -1209,6 +1215,29 @@ export class JJRepository {
             cwd: this.repositoryRoot,
           },
         ),
+      );
+    } catch (error) {
+      if (error instanceof Error) {
+        const match = error.message.match(/error:\s*([\s\S]+)$/i);
+        if (match) {
+          const errorMessage = match[1];
+          throw new Error(errorMessage);
+        } else {
+          throw error;
+        }
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  async commit(message?: string) {
+    try {
+      return await handleJJCommand(
+        this.spawnJJ(["commit", ...(message ? ["-m", message] : [])], {
+          timeout: 5000,
+          cwd: this.repositoryRoot,
+        }),
       );
     } catch (error) {
       if (error instanceof Error) {

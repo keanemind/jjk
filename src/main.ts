@@ -115,6 +115,14 @@ export async function activate(context: vscode.ExtensionContext) {
         await checkReposFunction(affectedFolders);
       }
     }
+    if (e.affectsConfiguration("jjk.changeEditAction")) {
+      const config = vscode.workspace.getConfiguration("jjk");
+      const changeEditAction =
+        config.get<string>("changeEditAction") || "edit";
+      for (const repoSCM of workspaceSCM.repoSCMs) {
+        repoSCM.updatePlaceholderText(changeEditAction);
+      }
+    }
   });
 
   let isInitialized = false;
@@ -374,8 +382,15 @@ export async function activate(context: vscode.ExtensionContext) {
             if (!repository) {
               throw new Error("Repository not found");
             }
+            const config = vscode.workspace.getConfiguration("jjk");
+            const changeEditAction =
+              config.get<string>("changeEditAction") || "edit";
             const message = sourceControl.inputBox.value.trim() || undefined;
-            await repository.new(message);
+            if (changeEditAction === "new") {
+              await repository.commit(message);
+            } else {
+              await repository.new(message);
+            }
             sourceControl.inputBox.value = "";
           } catch (error) {
             vscode.window.showErrorMessage(
