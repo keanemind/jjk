@@ -340,14 +340,10 @@ export class WorkspaceSourceControlManager {
 
         const repoRoot = (
           await handleCommand(
-            spawnJJ(
-              jjPath.filepath,
-              ["--ignore-working-copy", "root"],
-              {
-                timeout: 5000,
-                cwd: workspaceFolder.uri.fsPath,
-              },
-            ),
+            spawnJJ(jjPath.filepath, ["--ignore-working-copy", "root"], {
+              timeout: 5000,
+              cwd: workspaceFolder.uri.fsPath,
+            }),
           )
         )
           .toString()
@@ -875,10 +871,7 @@ export class JJRepository {
     args: string[],
     options: Parameters<typeof spawn>[2] & { cwd: string },
   ) {
-    return this.spawnJJ(
-      ["--ignore-working-copy", ...args],
-      options,
-    );
+    return this.spawnJJ(["--ignore-working-copy", ...args], options);
   }
 
   /**
@@ -1742,10 +1735,13 @@ export class JJRepository {
   async operationUndo(id: string) {
     return (
       await handleJJCommand(
-        this.spawnJJ(["operation", "undo", id], {
-          timeout: 5000,
-          cwd: this.repositoryRoot,
-        }),
+        this.spawnJJ(
+          ["operation", this.jjVersion >= "jj 0.33.0" ? "revert" : "undo", id],
+          {
+            timeout: 5000,
+            cwd: this.repositoryRoot,
+          },
+        ),
       )
     ).toString();
   }
