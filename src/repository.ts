@@ -139,16 +139,16 @@ function getCommandTimeout(
 }
 
 /**
- * Returns ["--ignore-working-copy"] if the setting is enabled, otherwise returns an empty array.
- * This allows the flag to be conditionally included using the spread operator.
+ * Returns ["--ignore-working-copy"] if pollSnapshotWorkingCopy is disabled, otherwise returns an empty array.
+ * This controls whether the poll command (getLatestOperationId) snapshots the working copy.
  */
-function getIgnoreWorkingCopyArgs(repositoryRoot: string): string[] {
+function getPollIgnoreWorkingCopyArgs(repositoryRoot: string): string[] {
   const config = vscode.workspace.getConfiguration(
     "jjk",
     vscode.Uri.file(repositoryRoot),
   );
-  const ignoreWorkingCopy = config.get<boolean>("ignoreWorkingCopy");
-  if (ignoreWorkingCopy) {
+  const pollSnapshot = config.get<boolean>("pollSnapshotWorkingCopy");
+  if (pollSnapshot === false) {
     return ["--ignore-working-copy"];
   }
   return [];
@@ -342,7 +342,7 @@ export class WorkspaceSourceControlManager {
           await handleCommand(
             spawnJJ(
               jjPath.filepath,
-              [...getIgnoreWorkingCopyArgs(workspaceFolder.uri.fsPath), "root"],
+              ["--ignore-working-copy", "root"],
               {
                 timeout: 5000,
                 cwd: workspaceFolder.uri.fsPath,
@@ -876,7 +876,7 @@ export class JJRepository {
     options: Parameters<typeof spawn>[2] & { cwd: string },
   ) {
     return this.spawnJJ(
-      [...getIgnoreWorkingCopyArgs(this.repositoryRoot), ...args],
+      ["--ignore-working-copy", ...args],
       options,
     );
   }
@@ -888,8 +888,17 @@ export class JJRepository {
   async getLatestOperationId() {
     return (
       await handleJJCommand(
-        this.spawnJJRead(
-          ["operation", "log", "--limit", "1", "-T", "self.id()", "--no-graph"],
+        this.spawnJJ(
+          [
+            ...getPollIgnoreWorkingCopyArgs(this.repositoryRoot),
+            "operation",
+            "log",
+            "--limit",
+            "1",
+            "-T",
+            "self.id()",
+            "--no-graph",
+          ],
           {
             cwd: this.repositoryRoot,
           },
