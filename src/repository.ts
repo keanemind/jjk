@@ -2,6 +2,7 @@ import path from "path";
 import * as vscode from "vscode";
 import spawn from "cross-spawn";
 import fs from "fs/promises";
+import * as fsSync from "fs";
 import { getParams, toJJUri } from "./uri";
 import type { JJDecorationProvider } from "./decorationProvider";
 import { logger } from "./logger";
@@ -136,6 +137,21 @@ function getCommandTimeout(
     return configuredTimeout;
   }
   return defaultTimeout ?? 30000;
+}
+
+/**
+ * Resolves the repo directory for a jj workspace. In primary workspaces,
+ * .jj/repo is a directory. In secondary workspaces (created via
+ * `jj workspace add`), .jj/repo is a file containing the path to the
+ * primary repo's .jj/repo directory.
+ */
+export function resolveRepoPath(workspaceRoot: string): string {
+  const jjRepoPath = path.join(workspaceRoot, ".jj", "repo");
+  if (fsSync.statSync(jjRepoPath).isFile()) {
+    const contents = fsSync.readFileSync(jjRepoPath, "utf-8");
+    return path.resolve(path.join(workspaceRoot, ".jj"), contents);
+  }
+  return jjRepoPath;
 }
 
 /**
@@ -595,9 +611,10 @@ class RepositorySourceControlManager {
       provideOriginalResource,
     };
 
+    const repoPath = resolveRepoPath(this.repositoryRoot);
     const watcherOperations = vscode.workspace.createFileSystemWatcher(
       new vscode.RelativePattern(
-        path.join(this.repositoryRoot, ".jj/repo/op_store/operations"),
+        path.join(repoPath, "op_store", "operations"),
         "*",
       ),
     );

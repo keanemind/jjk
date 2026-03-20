@@ -3,4 +3,5 @@
 
 import "./main.test";
 import "./repository.test";
+import "./resolveRepoPath.test";
 import "./fakeeditor.test";
