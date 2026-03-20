@@ -18,7 +18,7 @@ async function main() {
     const testRepoPath = await fs.mkdtemp(path.join(os.tmpdir(), "jjk-test-"));
 
     console.log(`Creating test repo in ${testRepoPath}`);
-    await execJJPromise("init --git", {
+    await execJJPromise("git init", {
       cwd: testRepoPath,
     });
 
