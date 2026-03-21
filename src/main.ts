@@ -1688,6 +1688,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   return {
     workspaceSCM,
+    uri: await import("./uri"),
   };
 }
 

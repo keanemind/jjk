@@ -6,3 +6,4 @@ import "./repository.test";
 import "./resolveRepoPath.test";
 import "./fakeeditor.test";
 import "./scm.test";
+import "./fileSystemProvider.test";
