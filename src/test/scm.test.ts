@@ -3,23 +3,8 @@ import * as vscode from "vscode";
 import * as path from "path";
 import * as fs from "fs/promises";
 import { execJJPromise } from "./utils";
+import { getExtensionAPI } from "./extensionApi";
 import type { WorkspaceSourceControlManager } from "../repository";
-
-/**
- * Get the extension's test API (the return value of activate()).
- */
-type ExtensionAPI = {
-  workspaceSCM: WorkspaceSourceControlManager;
-};
-
-async function getExtensionAPI(): Promise<ExtensionAPI> {
-  const extension = vscode.extensions.getExtension<ExtensionAPI>("jjk.jjk");
-  assert.ok(extension, "Extension not found");
-  if (!extension.isActive) {
-    return extension.activate();
-  }
-  return extension.exports;
-}
 
 suite("SCM Integration Tests", () => {
   let workspaceSCM: WorkspaceSourceControlManager;

@@ -3,22 +3,9 @@ import * as vscode from "vscode";
 import * as path from "path";
 import * as fs from "fs/promises";
 import { execJJPromise } from "./utils";
+import { getExtensionAPI } from "./extensionApi";
 import type { WorkspaceSourceControlManager } from "../repository";
 import type * as UriModule from "../uri";
-
-type ExtensionAPI = {
-  workspaceSCM: WorkspaceSourceControlManager;
-  uri: typeof UriModule;
-};
-
-async function getExtensionAPI(): Promise<ExtensionAPI> {
-  const extension = vscode.extensions.getExtension<ExtensionAPI>("jjk.jjk");
-  assert.ok(extension, "Extension not found");
-  if (!extension.isActive) {
-    return extension.activate();
-  }
-  return extension.exports;
-}
 
 const THREE_MINUTES = 1000 * 60 * 3;
 

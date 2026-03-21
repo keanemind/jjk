@@ -3,8 +3,7 @@ import * as path from "path";
 import * as os from "os";
 import * as fs from "fs";
 import { execPromise } from "./utils";
-import { fakeEditorPath, initExtensionDir } from "../repository";
-import * as vscode from "vscode";
+import { getExtensionAPI } from "./extensionApi";
 import { ExecException, spawn } from "child_process";
 
 // Helper to check if a process is running
@@ -22,7 +21,12 @@ function isExecException(e: unknown): e is ExecException {
 }
 
 suite("fakeeditor", () => {
-  initExtensionDir(vscode.extensions.getExtension("jjk.jjk")!.extensionUri);
+  let fakeEditorPath: string;
+
+  suiteSetup(async () => {
+    ({ fakeEditorPath } = (await getExtensionAPI()).repository);
+    assert.notStrictEqual(fakeEditorPath, "", "Expected fakeEditorPath");
+  });
 
   test("fails when JJ_FAKEEDITOR_SIGNAL_DIR is missing", async () => {
     await assert.rejects(
