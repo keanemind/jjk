@@ -1685,6 +1685,10 @@ export async function activate(context: vscode.ExtensionContext) {
       },
     ),
   );
+
+  return {
+    workspaceSCM,
+  };
 }
 
 function showLoading<T extends unknown[]>(
