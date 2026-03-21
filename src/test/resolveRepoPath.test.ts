@@ -2,10 +2,15 @@ import * as assert from "assert";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { resolveRepoPath } from "../repository";
+import { getExtensionAPI } from "./extensionApi";
 
 suite("resolveRepoPath", () => {
   let tmpDir: string;
+  let resolveRepoPath: (workspaceRoot: string) => string;
+
+  suiteSetup(async () => {
+    ({ resolveRepoPath } = (await getExtensionAPI()).repository);
+  });
 
   setup(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jjk-test-"));

@@ -1,7 +1,15 @@
 import * as assert from "assert";
-import { parseRenamePaths } from "../repository"; // Adjust path as needed
+import { getExtensionAPI } from "./extensionApi";
 
 suite("parseRenamePaths", () => {
+  let parseRenamePaths: (
+    file: string,
+  ) => { fromPath: string; toPath: string } | null;
+
+  suiteSetup(async () => {
+    ({ parseRenamePaths } = (await getExtensionAPI()).repository);
+  });
+
   test("should handle rename with no prefix or suffix", () => {
     const input = "{old => new}";
     const expected = {
