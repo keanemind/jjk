@@ -62,4 +62,22 @@ export default tseslint.config(
       semi: "warn",
     },
   },
+  {
+    files: ["src/test/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["../*"],
+              allowTypeImports: true,
+              message:
+                "Test files must not runtime-import extension source modules (they are in a separate bundle). Use the extension API from activate() instead, or `import type` for type-only imports.",
+            },
+          ],
+        },
+      ],
+    },
+  },
 );
