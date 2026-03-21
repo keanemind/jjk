@@ -36,7 +36,7 @@ export class JJFileSystemProvider implements FileSystemProvider {
     this._onDidChangeFile.event;
 
   private changedRepositoryRoots = new Set<string>();
-  private cache = new Map<string, CacheRow>();
+  cache = new Map<string, CacheRow>();
   private mtime = Date.now();
   private disposables: Disposable[] = [];
 
@@ -80,14 +80,14 @@ export class JJFileSystemProvider implements FileSystemProvider {
     this.changedRepositoryRoots.clear();
   }
 
-  private cleanup(): void {
+  cleanup(): void {
     const now = new Date().getTime();
     const cache = new Map<string, CacheRow>();
 
     for (const row of this.cache.values()) {
       const path = row.uri.fsPath;
       const isOpen = workspace.textDocuments
-        .filter((d) => d.uri.scheme === "file")
+        .filter((d) => ["file", "jj"].includes(d.uri.scheme))
         .some((d) => pathEquals(d.uri.fsPath, path));
 
       if (isOpen || now - row.timestamp < THREE_MINUTES) {
