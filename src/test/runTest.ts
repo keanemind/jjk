@@ -5,38 +5,63 @@ import os from "os";
 import { runTests } from "@vscode/test-electron";
 import { execJJPromise } from "./utils";
 
+async function createJJRepo(prefix: string): Promise<string> {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
+  await execJJPromise("git init", { cwd: dir });
+  return dir;
+}
+
 async function main() {
   try {
-    // The folder containing the Extension Manifest package.json
-    // Passed to `--extensionDevelopmentPath`
     const extensionDevelopmentPath = path.resolve(__dirname, "../../");
-
-    // The path to the extension test runner script (output from esbuild)
-    // Passed to --extensionTestsPath
     const extensionTestsPath = path.resolve(__dirname, "./runner.js");
 
-    const testRepoPath = await fs.mkdtemp(path.join(os.tmpdir(), "jjk-test-"));
+    // Run 1: single-folder mode
+    {
+      const testRepoPath = await createJJRepo("jjk-test-single-");
+      const userDataDir = await fs.mkdtemp(
+        path.join(os.tmpdir(), "jjk-test-userdata-"),
+      );
 
-    console.log(`Creating test repo in ${testRepoPath}`);
-    await execJJPromise("git init", {
-      cwd: testRepoPath,
-    });
+      console.log(
+        `\n=== Run 1: single-folder mode ===\nRepo: ${testRepoPath}\n`,
+      );
+      await runTests({
+        extensionDevelopmentPath,
+        extensionTestsPath,
+        launchArgs: [testRepoPath, `--user-data-dir=${userDataDir}`],
+      });
+    }
 
-    // Use a fresh user-data dir per run so workspace state doesn't
-    // accumulate across test runs (e.g. folders added by updateWorkspaceFolders)
-    const userDataDir = await fs.mkdtemp(
-      path.join(os.tmpdir(), "jjk-test-userdata-"),
-    );
+    // Run 2: multi-folder mode
+    {
+      const testRepoPath = await createJJRepo("jjk-test-multi-");
+      // Second folder is NOT a jj repo, so existing tests still see 1 repoSCM
+      const extraFolder = await fs.mkdtemp(
+        path.join(os.tmpdir(), "jjk-test-extra-"),
+      );
+      const userDataDir = await fs.mkdtemp(
+        path.join(os.tmpdir(), "jjk-test-userdata-"),
+      );
 
-    // Download VS Code, unzip it and run the integration test
-    await runTests({
-      extensionDevelopmentPath,
-      extensionTestsPath,
-      launchArgs: [
-        testRepoPath,
-        `--user-data-dir=${userDataDir}`,
-      ],
-    });
+      // .code-workspace file lives in the extra folder, not inside the jj repo
+      const workspaceFile = path.join(extraFolder, "test.code-workspace");
+      await fs.writeFile(
+        workspaceFile,
+        JSON.stringify({
+          folders: [{ path: testRepoPath }, { path: extraFolder }],
+        }),
+      );
+
+      console.log(
+        `\n=== Run 2: multi-folder mode ===\nRepo: ${testRepoPath}\nExtra: ${extraFolder}\nWorkspace: ${workspaceFile}\n`,
+      );
+      await runTests({
+        extensionDevelopmentPath,
+        extensionTestsPath,
+        launchArgs: [workspaceFile, `--user-data-dir=${userDataDir}`],
+      });
+    }
   } catch (err) {
     console.error(err);
     console.error("Failed to run tests");
