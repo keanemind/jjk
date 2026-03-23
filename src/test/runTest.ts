@@ -22,11 +22,20 @@ async function main() {
       cwd: testRepoPath,
     });
 
+    // Use a fresh user-data dir per run so workspace state doesn't
+    // accumulate across test runs (e.g. folders added by updateWorkspaceFolders)
+    const userDataDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), "jjk-test-userdata-"),
+    );
+
     // Download VS Code, unzip it and run the integration test
     await runTests({
       extensionDevelopmentPath,
       extensionTestsPath,
-      launchArgs: [testRepoPath],
+      launchArgs: [
+        testRepoPath,
+        `--user-data-dir=${userDataDir}`,
+      ],
     });
   } catch (err) {
     console.error(err);
