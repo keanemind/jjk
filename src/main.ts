@@ -597,6 +597,22 @@ export async function activate(context: vscode.ExtensionContext) {
                   : []),
               ]);
 
+              const basenames = paths.map((p) => path.basename(p));
+              const buttonLabel =
+                paths.length === 1
+                  ? "Discard File"
+                  : `Discard All ${paths.length} Files`;
+              const confirm = await vscode.window.showWarningMessage(
+                paths.length === 1
+                  ? `Are you sure you want to discard changes in '${basenames[0]}'?`
+                  : `Are you sure you want to discard ALL changes in ${paths.length} files?\n\nThis is IRREVERSIBLE!\nYour current working set will be FOREVER LOST if you proceed.`,
+                { modal: true },
+                buttonLabel,
+              );
+              if (confirm !== buttonLabel) {
+                return;
+              }
+
               await repository.restoreRetryImmutable(resourceGroup.id, paths);
             } catch (error) {
               vscode.window.showErrorMessage(
@@ -903,6 +919,26 @@ export async function activate(context: vscode.ExtensionContext) {
               if (!repository) {
                 throw new Error("Repository not found");
               }
+
+              const files = resourceGroup.resourceStates;
+              const basenames = files.map((f) =>
+                path.basename(f.resourceUri.fsPath),
+              );
+              const buttonLabel =
+                files.length === 1
+                  ? "Discard File"
+                  : `Discard All ${files.length} Files`;
+              const confirm = await vscode.window.showWarningMessage(
+                files.length === 1
+                  ? `Are you sure you want to discard changes in '${basenames[0]}'?`
+                  : `Are you sure you want to discard ALL changes in ${files.length} files?\n\nThis is IRREVERSIBLE!\nYour current working set will be FOREVER LOST if you proceed.`,
+                { modal: true },
+                buttonLabel,
+              );
+              if (confirm !== buttonLabel) {
+                return;
+              }
+
               await repository.restoreRetryImmutable(resourceGroup.id);
             } catch (error) {
               vscode.window.showErrorMessage(
