@@ -984,11 +984,22 @@ export async function activate(context: vscode.ExtensionContext) {
                 throw new Error("Resource group was not found in the SCM");
               }
 
+              // Capture the exact restore target before showing the modal. The SCM
+              // view can refresh while the confirmation is open, and restoring the
+              // whole group after that refresh could discard a different set of
+              // files than the user actually approved.
+              const paths = statuses.flatMap((status) => [
+                status.path,
+                ...(status.renamedFrom !== undefined
+                  ? [status.renamedFrom]
+                  : []),
+              ]);
+
               if (!(await confirmRestoreStatuses(statuses))) {
                 return;
               }
 
-              await repository.restoreRetryImmutable(resourceGroup.id);
+              await repository.restoreRetryImmutable(resourceGroup.id, paths);
             } catch (error) {
               vscode.window.showErrorMessage(
                 `Failed to restore${error instanceof Error ? `: ${error.message}` : ""}`,
