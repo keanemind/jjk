@@ -28,6 +28,7 @@
       let hoveredNode = null;
       let hoverHideTimer = null;
       let hoverShowTimer = null;
+      const hoverShowDelayMs = 700;
 
       window.addEventListener("message", (event) => {
         const message = event.data;
@@ -61,7 +62,7 @@
             break;
           case "changeDetails":
             if (message.changeId) {
-              changeDetailsCache.set(message.changeId, message.fullDescription);
+              changeDetailsCache.set(message.changeId, message.details);
               if (
                 hoveredNode &&
                 hoveredNode.dataset.changeId === message.changeId &&
@@ -70,8 +71,9 @@
                 const hoveredChange = JSON.parse(
                   hoveredNode.dataset.changePayload || "{}",
                 );
-                hoveredChange.fullDescription =
-                  message.fullDescription || hoveredChange.fullDescription;
+                if (message.details?.fullDescription) {
+                  hoveredChange.fullDescription = message.details.fullDescription;
+                }
                 hoveredNode.dataset.changePayload = JSON.stringify(hoveredChange);
                 renderHoverCard(hoveredChange, hoveredNode);
               }
@@ -259,6 +261,26 @@
         return button;
       }
 
+      function buildHoverActionButton(label, title, onClick, icon) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "hover-action-button";
+        button.title = title;
+        button.setAttribute("aria-label", label);
+        if (icon) {
+          button.classList.add("icon-only");
+          button.innerHTML = `<i class="codicon ${icon}"></i>`;
+        } else {
+          button.textContent = label;
+        }
+        button.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onClick();
+        });
+        return button;
+      }
+
       function appendHoverField(grid, label, valueBuilder) {
         const row = document.createElement("div");
         row.className = "hover-field-row";
@@ -274,6 +296,30 @@
         row.appendChild(value);
 
         grid.appendChild(row);
+      }
+
+      function formatChangeStats(stats) {
+        if (!stats || !stats.total) {
+          return "";
+        }
+
+        const parts = [`${stats.total} file${stats.total === 1 ? "" : "s"} changed`];
+        if (stats.modified) {
+          parts.push(`${stats.modified} modified`);
+        }
+        if (stats.added) {
+          parts.push(`${stats.added} added`);
+        }
+        if (stats.removed) {
+          parts.push(`${stats.removed} removed`);
+        }
+        if (stats.renamed) {
+          parts.push(`${stats.renamed} renamed`);
+        }
+        if (stats.copied) {
+          parts.push(`${stats.copied} copied`);
+        }
+        return parts.join(" • ");
       }
 
       function isSpecialRefName(refName) {
@@ -331,26 +377,35 @@
         if (hoverShowTimer) {
           clearTimeout(hoverShowTimer);
         }
+        // The graph sits in a narrow sidebar, so wait long enough that pointer travel across
+        // adjacent rows does not constantly trigger accidental hover cards.
         hoverShowTimer = setTimeout(() => {
           hoverShowTimer = null;
           renderHoverCard(change, node);
-        }, 300);
+        }, hoverShowDelayMs);
       }
 
       function positionHoverCard(node) {
         const nodeRect = node.getBoundingClientRect();
         const graphRect = document.getElementById("graph").getBoundingClientRect();
+        const textContent =
+          node.querySelector(".text-content") || node;
+        const textRect = textContent.getBoundingClientRect();
         const cardWidth = hoverCard.offsetWidth || 0;
         const cardHeight = hoverCard.offsetHeight || 0;
-        const preferredRight = nodeRect.right - graphRect.left + 12;
-        const preferredLeft = nodeRect.left - graphRect.left - cardWidth - 12;
+        // Anchor from the text column instead of the graph lane so the left-side circles remain
+        // targetable while the hover is open.
+        const preferredRight = textRect.left - graphRect.left + 16;
+        const preferredLeft = textRect.right - graphRect.left - cardWidth - 16;
         const maxLeft = graphRect.width - cardWidth - 8;
         const left =
           preferredRight + cardWidth <= graphRect.width - 8
             ? preferredRight
             : Math.max(8, Math.min(preferredLeft, maxLeft));
-        const preferredTop = nodeRect.top - graphRect.top - 4;
-        const maxTop = graphRect.height - cardHeight - 8;
+        const preferredTop = nodeRect.bottom - graphRect.top - 6;
+        const viewportHeight =
+          window.innerHeight || document.documentElement.clientHeight;
+        const maxTop = viewportHeight - graphRect.top - cardHeight - 8;
         const top = Math.max(
           8,
           Math.min(preferredTop, Math.max(8, maxTop)),
@@ -375,6 +430,36 @@
               ),
             );
             value.append(buildCopyButton(change.commitId, "commit ID"));
+            if (change.contextValue) {
+              if (change.contextValue !== "zzzzzzzz") {
+                value.append(
+                  buildHoverActionButton(
+                    "Edit this change",
+                    "Edit this change",
+                    () => {
+                      vscode.postMessage({
+                        command: "editChange",
+                        changeId: change.contextValue,
+                      });
+                    },
+                    "codicon-edit",
+                  ),
+                );
+              }
+              value.append(
+                buildHoverActionButton(
+                  "New change",
+                  "Create and edit a new change with this revision as its parent",
+                  () => {
+                    vscode.postMessage({
+                      command: "newChangeFrom",
+                      changeId: change.contextValue,
+                    });
+                  },
+                  "codicon-git-branch-create",
+                ),
+              );
+            }
           });
         }
 
@@ -416,41 +501,52 @@
           });
         }
 
-        if (change.refName) {
-          appendHoverField(headerFields, "Ref", (value) => {
-            value.append(
-              buildMetaPill(
-                change.refName,
-                `ref-name${isSpecialRefName(change.refName) ? " special-ref" : " bookmark-ref"}`,
-              ),
-            );
-          });
-        }
-
-        if (change.isEmpty || change.isConflict) {
-          appendHoverField(headerFields, "Status", (value) => {
-            if (change.isEmpty) {
-              value.append(buildMetaPill("empty", "status-pill empty"));
-            }
-            if (change.isConflict) {
-              value.append(buildMetaPill("conflict", "status-pill conflict"));
-            }
-          });
-        }
-
         hoverCard.appendChild(headerFields);
 
         // Reuse any fetched detail data so moving back onto the same node does not re-request
         // `jj show`, but still fall back to the compact row text before the detail round-trip
         // completes.
-        const cachedDescription = changeDetailsCache.get(change.contextValue);
+        const cachedDetails = changeDetailsCache.get(change.contextValue);
+        const statsText = formatChangeStats(cachedDetails?.stats);
+        if (statsText) {
+          const stats = document.createElement("div");
+          stats.className = "hover-stats";
+          stats.textContent = statsText;
+          hoverCard.appendChild(stats);
+        }
         const hoverDescription =
-          cachedDescription || change.fullDescription || change.description;
+          cachedDetails?.fullDescription ||
+          change.fullDescription ||
+          change.description;
         if (hoverDescription) {
           const description = document.createElement("div");
           description.className = `hover-description${change.hasDescription ? "" : " placeholder"}`;
           description.textContent = hoverDescription;
           hoverCard.appendChild(description);
+        }
+
+        if (change.refName || change.isEmpty || change.isConflict) {
+          const footer = document.createElement("div");
+          footer.className = "hover-footer";
+
+          if (change.refName) {
+            footer.append(
+              buildMetaPill(
+                change.refName,
+                `ref-name${isSpecialRefName(change.refName) ? " special-ref" : " bookmark-ref"}`,
+              ),
+            );
+          }
+
+          if (change.isEmpty) {
+            footer.append(buildMetaPill("empty", "status-pill empty"));
+          }
+
+          if (change.isConflict) {
+            footer.append(buildMetaPill("conflict", "status-pill conflict"));
+          }
+
+          hoverCard.appendChild(footer);
         }
 
         hoverCard.hidden = false;
@@ -815,29 +911,6 @@
 
           textContent.append(summaryLine);
           node.appendChild(textContent);
-
-          // Create and append edit button
-          const editButton = document.createElement("button");
-          editButton.className = "edit-button";
-          editButton.innerHTML = '<i class="codicon codicon-log-in"></i>';
-          editButton.title = "Edit this change";
-          editButton.onclick = async (e) => {
-            e.stopPropagation();
-            // Just send the edit command and let updateGraph handle the cleanup
-            await vscode.postMessage({
-              command: "editChange",
-              changeId: change.contextValue,
-            });
-          };
-
-          // Hide edit button if this is the working copy or has ID "zzzzzzzz"
-          if (
-            change.contextValue === workingCopyId ||
-            change.contextValue === "zzzzzzzz"
-          ) {
-            editButton.style.display = "none";
-          }
-          node.appendChild(editButton);
           nodesContainer.appendChild(node);
 
           // Create circle and add it to SVG after node is in DOM
@@ -897,6 +970,14 @@
               command: "selectChange",
               selectedNodes: Array.from(selectedNodes),
             });
+
+            cancelHideHoverCard();
+            if (hoverShowTimer) {
+              clearTimeout(hoverShowTimer);
+              hoverShowTimer = null;
+            }
+            highlightConnectedNodes(node, true);
+            renderHoverCard(change, node);
           };
         });
 
