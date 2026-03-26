@@ -137,4 +137,22 @@ suite("parseJJLog", () => {
     assert.strictEqual(node.hasDescription, false);
     assert.strictEqual(node.description, "No description set");
   });
+
+  test("preserves the full multi-line description for hover details", () => {
+    const output = `@  nxxvmutx joshka@users.noreply.github.com 2026-03-26 12:58:52 eaf68a4c
+│  Add graph popup
+│
+│  Keep the row compact.
+│  Show the body only in the hover.
+`;
+
+    const [node] = parseJJLog(output);
+
+    assert.ok(node);
+    assert.strictEqual(node.description, "Add graph popup");
+    assert.strictEqual(
+      node.fullDescription,
+      "Add graph popup\n\nKeep the row compact.\nShow the body only in the hover.",
+    );
+  });
 });

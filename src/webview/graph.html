@@ -19,14 +19,21 @@
       const vscode = acquireVsCodeApi();
       let selectedNodes = new Set();
       let currentWorkingCopyId;
+      let visibleChangeIds = [];
+      let visibleCommitIds = [];
+      const changeDetailsCache = new Map();
       const graphLaneStep = 10;
       const graphLanePadding = 6;
       const hoverCard = document.getElementById("hover-card");
+      let hoveredNode = null;
+      let hoverHideTimer = null;
+      let hoverShowTimer = null;
 
       window.addEventListener("message", (event) => {
         const message = event.data;
         switch (message.command) {
           case "updateGraph":
+            changeDetailsCache.clear();
             selectedNodes.clear();
             document.querySelectorAll(".change-node").forEach((n) => {
               n.classList.remove("selected", "highlighted", "dimmed");
@@ -51,6 +58,24 @@
               message.workingCopyId,
               message.preserveScroll,
             );
+            break;
+          case "changeDetails":
+            if (message.changeId) {
+              changeDetailsCache.set(message.changeId, message.fullDescription);
+              if (
+                hoveredNode &&
+                hoveredNode.dataset.changeId === message.changeId &&
+                !hoverCard.hidden
+              ) {
+                const hoveredChange = JSON.parse(
+                  hoveredNode.dataset.changePayload || "{}",
+                );
+                hoveredChange.fullDescription =
+                  message.fullDescription || hoveredChange.fullDescription;
+                hoveredNode.dataset.changePayload = JSON.stringify(hoveredChange);
+                renderHoverCard(hoveredChange, hoveredNode);
+              }
+            }
             break;
         }
       });
@@ -205,17 +230,54 @@
         return pill;
       }
 
-      function isSpecialRefName(refName) {
-        return /^(?:[a-z_][a-z0-9_-]*)\(\)$/i.test(refName);
+      function buildCopyButton(value, label) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "hover-copy-button";
+        button.title = `Copy ${label}`;
+        button.setAttribute("aria-label", `Copy ${label}`);
+        button.innerHTML = '<i class="codicon codicon-copy"></i>';
+        button.addEventListener("click", async (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          try {
+            await navigator.clipboard.writeText(value);
+          } catch {
+            const selection = window.getSelection();
+            const range = document.createRange();
+            const temp = document.createElement("span");
+            temp.textContent = value;
+            hoverCard.appendChild(temp);
+            range.selectNodeContents(temp);
+            selection?.removeAllRanges();
+            selection?.addRange(range);
+            document.execCommand("copy");
+            selection?.removeAllRanges();
+            temp.remove();
+          }
+        });
+        return button;
       }
 
-      function getDisplayRefName(refName) {
-        if (!refName || isSpecialRefName(refName)) {
-          return refName;
-        }
+      function appendHoverField(grid, label, valueBuilder) {
+        const row = document.createElement("div");
+        row.className = "hover-field-row";
 
-        const parts = refName.split("/");
-        return parts[parts.length - 1] || refName;
+        const key = document.createElement("span");
+        key.className = "hover-field-key";
+        key.textContent = `${label}:`;
+        row.appendChild(key);
+
+        const value = document.createElement("div");
+        value.className = "hover-field-value";
+        valueBuilder(value);
+        row.appendChild(value);
+
+        grid.appendChild(row);
+      }
+
+      function isSpecialRefName(refName) {
+        return /^(?:[a-z_][a-z0-9_-]*)\(\)$/i.test(refName);
       }
 
       function getShortDate(timestamp) {
@@ -233,101 +295,179 @@
       }
 
       function clearHoverCard() {
+        if (hoverShowTimer) {
+          clearTimeout(hoverShowTimer);
+          hoverShowTimer = null;
+        }
+        if (hoverHideTimer) {
+          clearTimeout(hoverHideTimer);
+          hoverHideTimer = null;
+        }
+        if (hoveredNode) {
+          highlightConnectedNodes(hoveredNode, false);
+        }
         hoverCard.hidden = true;
         hoverCard.innerHTML = "";
+        hoveredNode = null;
+      }
+
+      function scheduleHideHoverCard() {
+        if (hoverHideTimer) {
+          clearTimeout(hoverHideTimer);
+        }
+        hoverHideTimer = setTimeout(() => {
+          clearHoverCard();
+        }, 80);
+      }
+
+      function cancelHideHoverCard() {
+        if (hoverHideTimer) {
+          clearTimeout(hoverHideTimer);
+          hoverHideTimer = null;
+        }
+      }
+
+      function scheduleShowHoverCard(change, node) {
+        if (hoverShowTimer) {
+          clearTimeout(hoverShowTimer);
+        }
+        hoverShowTimer = setTimeout(() => {
+          hoverShowTimer = null;
+          renderHoverCard(change, node);
+        }, 300);
       }
 
       function positionHoverCard(node) {
         const nodeRect = node.getBoundingClientRect();
         const graphRect = document.getElementById("graph").getBoundingClientRect();
-        const maxWidth = 420;
-        const left = Math.min(
-          nodeRect.left - graphRect.left + 16,
-          window.innerWidth - graphRect.left - maxWidth - 16,
+        const cardWidth = hoverCard.offsetWidth || 0;
+        const cardHeight = hoverCard.offsetHeight || 0;
+        const preferredRight = nodeRect.right - graphRect.left + 12;
+        const preferredLeft = nodeRect.left - graphRect.left - cardWidth - 12;
+        const maxLeft = graphRect.width - cardWidth - 8;
+        const left =
+          preferredRight + cardWidth <= graphRect.width - 8
+            ? preferredRight
+            : Math.max(8, Math.min(preferredLeft, maxLeft));
+        const preferredTop = nodeRect.top - graphRect.top - 4;
+        const maxTop = graphRect.height - cardHeight - 8;
+        const top = Math.max(
+          8,
+          Math.min(preferredTop, Math.max(8, maxTop)),
         );
-        const preferredTop = nodeRect.top - graphRect.top - 8;
-        hoverCard.style.left = `${Math.max(8, left)}px`;
-        hoverCard.style.top = `${Math.max(8, preferredTop)}px`;
+        hoverCard.style.left = `${left}px`;
+        hoverCard.style.top = `${top}px`;
       }
 
       function renderHoverCard(change, node) {
         hoverCard.innerHTML = "";
 
-        const header = document.createElement("div");
-        header.className = "hover-header";
+        const headerFields = document.createElement("div");
+        headerFields.className = "hover-field-grid";
 
-        const author = document.createElement("div");
-        author.className = "hover-author";
-        author.textContent = change.authorDisplay || change.author || "Unknown author";
-        header.appendChild(author);
-
-        if (change.timestamp) {
-          const timestamp = document.createElement("div");
-          timestamp.className = "hover-timestamp";
-          timestamp.textContent = change.timestamp;
-          header.appendChild(timestamp);
+        if (change.commitId) {
+          appendHoverField(headerFields, "Commit ID", (value) => {
+            value.append(
+              buildSegmentedId(
+                change.commitId,
+                "commit-id",
+                getUniquePrefixLength(change.commitId, visibleCommitIds, 1),
+              ),
+            );
+            value.append(buildCopyButton(change.commitId, "commit ID"));
+          });
         }
 
-        hoverCard.appendChild(header);
+        if (change.changeId) {
+          appendHoverField(headerFields, "Change ID", (value) => {
+            value.append(
+              buildSegmentedId(
+                change.changeId,
+                "change-id",
+                getUniquePrefixLength(change.changeId, visibleChangeIds, 1),
+              ),
+            );
+            value.append(buildCopyButton(change.changeId, "change ID"));
+          });
+        }
 
-        if (change.description) {
+        if (change.authorDisplay || change.author) {
+          appendHoverField(headerFields, "Author", (value) => {
+            const author = document.createElement("span");
+            author.className = "hover-author";
+            author.textContent = change.authorDisplay || change.author;
+            value.append(author);
+
+            if (change.author) {
+              const email = document.createElement("span");
+              email.className = "hover-email";
+              email.textContent = `<${change.author}>`;
+              value.append(email);
+            }
+          });
+        }
+
+        if (change.timestamp) {
+          appendHoverField(headerFields, "Timestamp", (value) => {
+            const timestamp = document.createElement("span");
+            timestamp.className = "hover-timestamp";
+            timestamp.textContent = change.timestamp;
+            value.append(timestamp);
+          });
+        }
+
+        if (change.refName) {
+          appendHoverField(headerFields, "Ref", (value) => {
+            value.append(
+              buildMetaPill(
+                change.refName,
+                `ref-name${isSpecialRefName(change.refName) ? " special-ref" : " bookmark-ref"}`,
+              ),
+            );
+          });
+        }
+
+        if (change.isEmpty || change.isConflict) {
+          appendHoverField(headerFields, "Status", (value) => {
+            if (change.isEmpty) {
+              value.append(buildMetaPill("empty", "status-pill empty"));
+            }
+            if (change.isConflict) {
+              value.append(buildMetaPill("conflict", "status-pill conflict"));
+            }
+          });
+        }
+
+        hoverCard.appendChild(headerFields);
+
+        // Reuse any fetched detail data so moving back onto the same node does not re-request
+        // `jj show`, but still fall back to the compact row text before the detail round-trip
+        // completes.
+        const cachedDescription = changeDetailsCache.get(change.contextValue);
+        const hoverDescription =
+          cachedDescription || change.fullDescription || change.description;
+        if (hoverDescription) {
           const description = document.createElement("div");
           description.className = `hover-description${change.hasDescription ? "" : " placeholder"}`;
-          description.textContent = change.description;
+          description.textContent = hoverDescription;
           hoverCard.appendChild(description);
         }
 
-        const statusRow = document.createElement("div");
-        statusRow.className = "hover-status-row";
-        if (change.refName) {
-          const refPill = buildMetaPill(
-            change.refName,
-            `ref-name${isSpecialRefName(change.refName) ? " special-ref" : " bookmark-ref"}`,
-          );
-          statusRow.appendChild(refPill);
-        }
-        if (change.isEmpty) {
-          statusRow.appendChild(buildMetaPill("empty", "status-pill empty"));
-        }
-        if (change.isConflict) {
-          statusRow.appendChild(buildMetaPill("conflict", "status-pill conflict"));
-        }
-        if (statusRow.childElementCount > 0) {
-          hoverCard.appendChild(statusRow);
-        }
-
-        const metaTable = document.createElement("div");
-        metaTable.className = "hover-meta-table";
-
-        const addMetaRow = (label, value, className = "") => {
-          if (!value) {
-            return;
-          }
-          const row = document.createElement("div");
-          row.className = "hover-meta-row";
-
-          const key = document.createElement("span");
-          key.className = "hover-meta-key";
-          key.textContent = label;
-          row.appendChild(key);
-
-          const val = document.createElement("span");
-          val.className = `hover-meta-value ${className}`.trim();
-          val.textContent = value;
-          row.appendChild(val);
-          metaTable.appendChild(row);
-        };
-
-        addMetaRow("Change", change.changeId, "change-id");
-        addMetaRow("Commit", change.commitId, "commit-id");
-        addMetaRow("Email", change.author, "hover-email");
-
-        if (metaTable.childElementCount > 0) {
-          hoverCard.appendChild(metaTable);
-        }
-
         hoverCard.hidden = false;
+        hoveredNode = node;
         positionHoverCard(node);
+
+        if (
+          change.contextValue &&
+          !changeDetailsCache.has(change.contextValue)
+        ) {
+          // Hover details are fetched lazily because they include the full description body, which
+          // is intentionally omitted from the compact graph log template.
+          vscode.postMessage({
+            command: "requestChangeDetails",
+            changeId: change.contextValue,
+          });
+        }
       }
 
       function updateConnections() {
@@ -584,6 +724,8 @@
         const commitIds = changes
           .filter((candidate) => !candidate.isElided && candidate.commitId)
           .map((candidate) => candidate.commitId);
+        visibleChangeIds = changeIds;
+        visibleCommitIds = commitIds;
 
         changes.forEach((change) => {
           if (change.isElided) {
@@ -601,6 +743,7 @@
           node.dataset.parentIds = JSON.stringify(change.parentChangeIds || []);
           node.dataset.branchType = change.branchType;
           node.dataset.symbolColumn = String(change.symbolColumn || 0);
+          node.dataset.changePayload = JSON.stringify(change);
 
           // Create text content container
           const textContent = document.createElement("div");
@@ -630,7 +773,7 @@
 
           if (change.refName) {
             const refPill = buildMetaPill(
-              getDisplayRefName(change.refName),
+              change.refName,
               `ref-name${isSpecialRefName(change.refName) ? " special-ref" : " bookmark-ref"}`,
             );
             refPill.title = change.refName;
@@ -724,13 +867,13 @@
 
           // Add hover handlers
           node.addEventListener("mouseenter", () => {
+            cancelHideHoverCard();
             highlightConnectedNodes(node, true);
-            renderHoverCard(change, node);
+            scheduleShowHoverCard(change, node);
           });
 
           node.addEventListener("mouseleave", () => {
-            highlightConnectedNodes(node, false);
-            clearHoverCard();
+            scheduleHideHoverCard();
           });
 
           node.addEventListener("mousemove", () => {
@@ -810,6 +953,7 @@
       // Update the resize handler
       let resizeTimeout;
       window.addEventListener("resize", () => {
+        clearHoverCard();
         clearTimeout(resizeTimeout);
         resizeTimeout = setTimeout(() => {
           requestAnimationFrame(() => {
@@ -817,6 +961,18 @@
             updateCirclePositions();
           });
         }, 2);
+      });
+
+      window.addEventListener("scroll", () => {
+        clearHoverCard();
+      });
+
+      hoverCard.addEventListener("mouseenter", () => {
+        cancelHideHoverCard();
+      });
+
+      hoverCard.addEventListener("mouseleave", () => {
+        scheduleHideHoverCard();
       });
 
       // Signal that the webview is ready
