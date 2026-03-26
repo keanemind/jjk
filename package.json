@@ -319,17 +319,17 @@
         {
           "command": "jj.openFileResourceState",
           "when": "scmProvider == jj && scmResourceGroup == @",
-          "group": "inline"
+          "group": "inline@1"
         },
         {
           "command": "jj.restoreResourceState",
           "when": "scmProvider == jj",
-          "group": "inline"
+          "group": "inline@2"
         },
         {
           "command": "jj.squashToParentResourceState",
           "when": "scmProvider == jj && scmResourceGroup == @",
-          "group": "inline"
+          "group": "inline@3"
         },
         {
           "command": "jj.openFileInWorkingCopyResourceState",
@@ -339,7 +339,7 @@
         {
           "command": "jj.squashToWorkingCopyResourceState",
           "when": "scmProvider == jj && scmResourceGroup != @",
-          "group": "inline"
+          "group": "inline@3"
         }
       ],
       "scm/resourceFolder/context": [

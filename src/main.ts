@@ -527,6 +527,49 @@ export async function activate(context: vscode.ExtensionContext) {
       return resourceGroup;
     }
 
+    /**
+     * Mirrors Git's tracked-file discard confirmation so destructive SCM actions
+     * in this view retain the same safety expectations users already see in
+     * VS Code's built-in source control UI.
+     *
+     * Jujutsu diverges from Git's warning copy for multi-file discard. This
+     * command runs `jj restore`, so the change is recoverable from the operation
+     * log even though it is still easy to trigger accidentally from the SCM view.
+     *
+     * The dialog is driven from resolved `FileStatus` values rather than the raw
+     * resource selections because the restore command needs status metadata to:
+     * - distinguish deleted files, which Git phrases as "restore"
+     * - preserve rename safety by restoring both the current and previous paths
+     * - compute multi-file wording from the actual tracked file set being restored
+     */
+    async function confirmRestoreStatuses(statuses: FileStatus[]) {
+      const allResourcesDeleted = statuses.every((status) => status.type === "D");
+
+      const message = allResourcesDeleted
+        ? statuses.length === 1
+          ? `Are you sure you want to restore '${path.basename(statuses[0].path)}'?`
+          : `Are you sure you want to restore ALL ${statuses.length} files?`
+        : statuses.length === 1
+          ? `Are you sure you want to discard changes in '${path.basename(statuses[0].path)}'?`
+          : `Are you sure you want to discard ALL changes in ${statuses.length} files?\n\nThis will update the current change with jj restore. You can recover the previous state from the operation log if needed.`;
+
+      const primaryAction = allResourcesDeleted
+        ? statuses.length === 1
+          ? "Restore File"
+          : `Restore All ${statuses.length} Files`
+        : statuses.length === 1
+          ? "Discard File"
+          : `Discard All ${statuses.length} Files`;
+
+      const selection = await vscode.window.showWarningMessage(
+        message,
+        { modal: true },
+        primaryAction,
+      );
+
+      return selection === primaryAction;
+    }
+
     context.subscriptions.push(
       vscode.commands.registerCommand(
         "jj.restoreResourceState",
@@ -548,6 +591,9 @@ export async function activate(context: vscode.ExtensionContext) {
                 throw new Error("SCM not found for resource group");
               }
 
+              // Resolve the selected resources back to repository statuses before
+              // prompting so the confirmation reflects the exact tracked paths the
+              // restore operation will pass to `jj restore`.
               let statuses: FileStatus[];
               if (scm.workingCopyResourceGroup === resourceGroup) {
                 if (!scm.status) {
@@ -590,12 +636,18 @@ export async function activate(context: vscode.ExtensionContext) {
                 throw new Error("Resource group was not found in the SCM");
               }
 
+              // Renames need both paths restored together. Discarding only the new
+              // path would leave the move half-applied from jj's perspective.
               const paths = statuses.flatMap((status) => [
                 status.path,
                 ...(status.renamedFrom !== undefined
                   ? [status.renamedFrom]
                   : []),
               ]);
+
+              if (!(await confirmRestoreStatuses(statuses))) {
+                return;
+              }
 
               await repository.restoreRetryImmutable(resourceGroup.id, paths);
             } catch (error) {
@@ -903,6 +955,39 @@ export async function activate(context: vscode.ExtensionContext) {
               if (!repository) {
                 throw new Error("Repository not found");
               }
+              const scm =
+                workspaceSCM.getRepositorySourceControlManagerFromResourceGroup(
+                  resourceGroup,
+                );
+              if (!scm) {
+                throw new Error("SCM not found for resource group");
+              }
+
+              // Group-level discard confirms against the current file statuses
+              // instead of the rendered group label so the message stays aligned
+              // with Git's "N files" wording and deleted-file restore behavior.
+              let statuses: FileStatus[];
+              if (scm.workingCopyResourceGroup === resourceGroup) {
+                if (!scm.status) {
+                  throw new Error("No current working copy change found");
+                }
+                statuses = scm.status.fileStatuses;
+              } else if (scm.parentResourceGroups.includes(resourceGroup)) {
+                const show = scm.parentShowResults.get(resourceGroup.id);
+                if (!show) {
+                  throw new Error(
+                    "No current parent change show result found for the resource group",
+                  );
+                }
+                statuses = show.fileStatuses;
+              } else {
+                throw new Error("Resource group was not found in the SCM");
+              }
+
+              if (!(await confirmRestoreStatuses(statuses))) {
+                return;
+              }
+
               await repository.restoreRetryImmutable(resourceGroup.id);
             } catch (error) {
               vscode.window.showErrorMessage(
