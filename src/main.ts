@@ -3,6 +3,7 @@ import path from "path";
 import "./repository";
 import {
   initExtensionDir,
+  getRestorePaths,
   provideOriginalResource,
   WorkspaceSourceControlManager,
 } from "./repository";
@@ -636,14 +637,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 throw new Error("Resource group was not found in the SCM");
               }
 
-              // Renames need both paths restored together. Discarding only the new
-              // path would leave the move half-applied from jj's perspective.
-              const paths = statuses.flatMap((status) => [
-                status.path,
-                ...(status.renamedFrom !== undefined
-                  ? [status.renamedFrom]
-                  : []),
-              ]);
+              const paths = getRestorePaths(statuses);
 
               if (!(await confirmRestoreStatuses(statuses))) {
                 return;
@@ -988,12 +982,7 @@ export async function activate(context: vscode.ExtensionContext) {
               // view can refresh while the confirmation is open, and restoring the
               // whole group after that refresh could discard a different set of
               // files than the user actually approved.
-              const paths = statuses.flatMap((status) => [
-                status.path,
-                ...(status.renamedFrom !== undefined
-                  ? [status.renamedFrom]
-                  : []),
-              ]);
+              const paths = getRestorePaths(statuses);
 
               if (!(await confirmRestoreStatuses(statuses))) {
                 return;

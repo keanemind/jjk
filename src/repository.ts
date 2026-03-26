@@ -2046,6 +2046,22 @@ export type FileStatus = {
   renamedFrom?: string;
 };
 
+/**
+ * Expands the `jj restore` target for a confirmed set of file statuses.
+ *
+ * Renames restore both sides so the move is undone as one operation. Copies do
+ * not: their source path is an independent tracked file that may carry
+ * unrelated edits the user did not select or confirm for discard.
+ */
+export function getRestorePaths(statuses: FileStatus[]): string[] {
+  return statuses.flatMap((status) => [
+    status.path,
+    ...(status.type === "R" && status.renamedFrom !== undefined
+      ? [status.renamedFrom]
+      : []),
+  ]);
+}
+
 export interface Change {
   changeId: string;
   commitId: string;
