@@ -14,10 +14,14 @@
       </svg>
       <div id="nodes"></div>
     </div>
+    <div id="hover-card" hidden></div>
     <script>
       const vscode = acquireVsCodeApi();
       let selectedNodes = new Set();
       let currentWorkingCopyId;
+      const graphLaneStep = 10;
+      const graphLanePadding = 6;
+      const hoverCard = document.getElementById("hover-card");
 
       window.addEventListener("message", (event) => {
         const message = event.data;
@@ -78,9 +82,15 @@
         const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
         g.setAttribute("class", "node-circle");
 
-        const radius = change.contextValue === workingCopyId ? "7" : "5";
+        const isWorkingCopy = change.contextValue === workingCopyId;
+        const radius = isWorkingCopy ? "7" : "5";
+
+        if (isWorkingCopy) {
+          g.classList.add("working-copy-circle");
+        }
 
         if (change.branchType === "◆") {
+          g.classList.add("immutable-circle");
           // Create diamond shape
           const diamond = document.createElementNS(
             "http://www.w3.org/2000/svg",
@@ -108,32 +118,216 @@
           g.appendChild(circle);
         }
 
-        // Add heart for working copy (unchanged)
-        if (change.contextValue === workingCopyId) {
-          const pathData =
-            "M377.406,160.981c-5.083-48.911-31.093-92.52-73.184-122.854C259.004,5.538,200.457-6.936,147.603,4.807  C97.354,15.971,53.256,48.312,26.571,93.491C-0.122,138.731-7.098,192.982,7.436,242.39c7.832,26.66,21.729,51.712,40.15,72.51  c18.594,20.972,41.904,37.722,67.472,48.459c23.579,9.888,48.628,14.797,73.653,14.797c34.128-0.001,68.115-9.121,97.949-27.098  l-21.092-35.081c-40.578,24.451-90.887,28.029-134.652,9.66c-40.283-16.96-71.759-52.383-84.211-94.761  c-11.336-38.595-5.846-81.093,15.125-116.586c20.922-35.467,55.426-60.801,94.622-69.533c41.644-9.225,87.948,0.669,123.857,26.566  c32.502,23.394,52.497,56.769,56.363,93.907c2.515,23.979,0.31,42.891-6.526,56.226c-14.487,28.192-35.526,28.36-43.873,27.132  c-0.283-0.041-0.476-0.082-0.65-0.117c-2.396-3.709-2.091-17.489-1.974-23.473c0.044-2.332,0.084-4.572,0.084-6.664v-112.06h-31.349  c-3.998-3.278-8.225-6.251-12.674-8.921c-17.076-10.159-36.858-15.552-57.255-15.552c-29.078,0-56.408,10.597-76.896,29.824  c-32.537,30.543-42.63,80.689-24.551,122.023c8.578,19.62,23.065,35.901,41.876,47.066c17.611,10.434,38.182,15.972,59.47,15.972  c24.394,0,46.819-6.735,64.858-19.492c1.915-1.342,3.813-2.79,5.626-4.233c6.431,8.805,15.811,14.4,27.464,16.114  c16.149,2.408,32.299-0.259,46.784-7.668c16.453-8.419,29.715-22.311,39.439-41.271C377.209,219.346,380.778,193.46,377.406,160.981  z M242.33,224.538c-0.891,1.283-2.229,2.907-2.961,3.803c-0.599,0.778-1.151,1.46-1.643,2.073  c-3.868,4.982-8.597,9.48-14.113,13.374c-11.26,7.943-25.152,11.964-41.257,11.964c-28.968,0-53.462-14.75-63.846-38.544  c-11.258-25.69-5.071-56.854,15.035-75.692c12.7-11.95,30.538-18.784,48.911-18.784c13.028,0,25.56,3.375,36.268,9.788  c6.831,4.072,12.861,9.337,17.9,15.719c0.497,0.613,1.082,1.322,1.724,2.094c0.952,1.135,2.812,3.438,3.981,5.092V224.538z";
-          const bounds = getPathBounds(pathData);
-
-          const path = document.createElementNS(
+        if (isWorkingCopy) {
+          const marker = document.createElementNS(
             "http://www.w3.org/2000/svg",
-            "path",
+            "text",
           );
-          path.setAttribute("d", pathData);
-          path.setAttribute("class", "heart-path");
-
-          const heartSize = 10;
-          const scale = heartSize / bounds.width;
-          const translateX = -bounds.x * scale + (12 - heartSize) / 2;
-          const translateY = -bounds.y * scale + (12 - heartSize) / 2;
-
-          path.setAttribute(
-            "transform",
-            `scale(${scale}) translate(${translateX / scale}, ${translateY / scale})`,
-          );
-          g.appendChild(path);
+          marker.setAttribute("x", "6");
+          marker.setAttribute("y", "8.5");
+          marker.setAttribute("text-anchor", "middle");
+          marker.setAttribute("class", "working-copy-marker");
+          marker.textContent = "@";
+          g.appendChild(marker);
         }
 
         return g;
+      }
+
+      function getUniquePrefixLength(value, values, minimumLength = 1) {
+        if (!value) {
+          return 0;
+        }
+
+        for (let length = minimumLength; length <= value.length; length++) {
+          const prefix = value.slice(0, length);
+          const isUnique = values.every((otherValue) => {
+            return otherValue === value || !otherValue.startsWith(prefix);
+          });
+          if (isUnique) {
+            return length;
+          }
+        }
+
+        return value.length;
+      }
+
+      function buildSegmentedId(id, className, uniqueLength) {
+        const wrapper = document.createElement("span");
+        wrapper.className = `segmented-id ${className}`;
+        wrapper.dataset.fullId = id;
+
+        const shortLength = Math.max(4, uniqueLength);
+        const shortUniqueLength = Math.min(uniqueLength, shortLength);
+        const shortSpan = document.createElement("span");
+        shortSpan.className = "id-short";
+        const shortUniqueSpan = document.createElement("span");
+        shortUniqueSpan.className = "id-unique";
+        shortUniqueSpan.textContent = id.slice(0, shortUniqueLength);
+        shortSpan.appendChild(shortUniqueSpan);
+        if (shortUniqueLength < shortLength) {
+          const shortRemainderSpan = document.createElement("span");
+          shortRemainderSpan.className = "id-remainder";
+          shortRemainderSpan.textContent = id.slice(shortUniqueLength, shortLength);
+          shortSpan.appendChild(shortRemainderSpan);
+        }
+        wrapper.appendChild(shortSpan);
+
+        const uniqueSpan = document.createElement("span");
+        uniqueSpan.className = "id-unique id-full";
+        uniqueSpan.textContent = id.slice(0, uniqueLength);
+        wrapper.appendChild(uniqueSpan);
+
+        if (uniqueLength < id.length) {
+          const remainderSpan = document.createElement("span");
+          remainderSpan.className = "id-remainder id-full";
+          remainderSpan.textContent = id.slice(uniqueLength);
+          wrapper.appendChild(remainderSpan);
+        }
+
+        return wrapper;
+      }
+
+      function buildMetaText(text, className) {
+        const meta = document.createElement("span");
+        meta.className = `meta-text ${className}`;
+        meta.textContent = text;
+        return meta;
+      }
+
+      function buildMetaPill(text, className) {
+        const pill = document.createElement("span");
+        pill.className = `meta-pill ${className}`;
+        const pillLabel = document.createElement("span");
+        pillLabel.className = "meta-pill-label";
+        pillLabel.textContent = text;
+        pill.appendChild(pillLabel);
+        return pill;
+      }
+
+      function isSpecialRefName(refName) {
+        return /^(?:[a-z_][a-z0-9_-]*)\(\)$/i.test(refName);
+      }
+
+      function getDisplayRefName(refName) {
+        if (!refName || isSpecialRefName(refName)) {
+          return refName;
+        }
+
+        const parts = refName.split("/");
+        return parts[parts.length - 1] || refName;
+      }
+
+      function getShortDate(timestamp) {
+        if (!timestamp) {
+          return "";
+        }
+        return timestamp.split(" ")[0] || timestamp;
+      }
+
+      function buildStatusText(text, className) {
+        const status = document.createElement("span");
+        status.className = `status-text ${className}`;
+        status.textContent = text;
+        return status;
+      }
+
+      function clearHoverCard() {
+        hoverCard.hidden = true;
+        hoverCard.innerHTML = "";
+      }
+
+      function positionHoverCard(node) {
+        const nodeRect = node.getBoundingClientRect();
+        const graphRect = document.getElementById("graph").getBoundingClientRect();
+        const maxWidth = 420;
+        const left = Math.min(
+          nodeRect.left - graphRect.left + 16,
+          window.innerWidth - graphRect.left - maxWidth - 16,
+        );
+        const preferredTop = nodeRect.top - graphRect.top - 8;
+        hoverCard.style.left = `${Math.max(8, left)}px`;
+        hoverCard.style.top = `${Math.max(8, preferredTop)}px`;
+      }
+
+      function renderHoverCard(change, node) {
+        hoverCard.innerHTML = "";
+
+        const header = document.createElement("div");
+        header.className = "hover-header";
+
+        const author = document.createElement("div");
+        author.className = "hover-author";
+        author.textContent = change.authorDisplay || change.author || "Unknown author";
+        header.appendChild(author);
+
+        if (change.timestamp) {
+          const timestamp = document.createElement("div");
+          timestamp.className = "hover-timestamp";
+          timestamp.textContent = change.timestamp;
+          header.appendChild(timestamp);
+        }
+
+        hoverCard.appendChild(header);
+
+        if (change.description) {
+          const description = document.createElement("div");
+          description.className = `hover-description${change.hasDescription ? "" : " placeholder"}`;
+          description.textContent = change.description;
+          hoverCard.appendChild(description);
+        }
+
+        const statusRow = document.createElement("div");
+        statusRow.className = "hover-status-row";
+        if (change.refName) {
+          const refPill = buildMetaPill(
+            change.refName,
+            `ref-name${isSpecialRefName(change.refName) ? " special-ref" : " bookmark-ref"}`,
+          );
+          statusRow.appendChild(refPill);
+        }
+        if (change.isEmpty) {
+          statusRow.appendChild(buildMetaPill("empty", "status-pill empty"));
+        }
+        if (change.isConflict) {
+          statusRow.appendChild(buildMetaPill("conflict", "status-pill conflict"));
+        }
+        if (statusRow.childElementCount > 0) {
+          hoverCard.appendChild(statusRow);
+        }
+
+        const metaTable = document.createElement("div");
+        metaTable.className = "hover-meta-table";
+
+        const addMetaRow = (label, value, className = "") => {
+          if (!value) {
+            return;
+          }
+          const row = document.createElement("div");
+          row.className = "hover-meta-row";
+
+          const key = document.createElement("span");
+          key.className = "hover-meta-key";
+          key.textContent = label;
+          row.appendChild(key);
+
+          const val = document.createElement("span");
+          val.className = `hover-meta-value ${className}`.trim();
+          val.textContent = value;
+          row.appendChild(val);
+          metaTable.appendChild(row);
+        };
+
+        addMetaRow("Change", change.changeId, "change-id");
+        addMetaRow("Commit", change.commitId, "commit-id");
+        addMetaRow("Email", change.author, "hover-email");
+
+        if (metaTable.childElementCount > 0) {
+          hoverCard.appendChild(metaTable);
+        }
+
+        hoverCard.hidden = false;
+        positionHoverCard(node);
       }
 
       function updateConnections() {
@@ -148,24 +342,34 @@
 
         const nodeMap = new Map();
         nodes.forEach((node, i) => {
-          const rawParentIds = node.dataset.parentIds;
           nodeMap.set(node.dataset.changeId, node);
         });
 
         nodes.forEach((node, index) => {
-          const rawParentIds = node.dataset.parentIds;
           const parentIds = JSON.parse(node.dataset.parentIds || "[]");
           const nodeRect = node.getBoundingClientRect();
+          const currentColumn = Number(node.dataset.symbolColumn || "0");
 
           // Convert to SVG coordinates with vertical centering
-          const currentX = nodeRect.left - svgRect.left + 6;
+          const currentX =
+            nodeRect.left -
+            svgRect.left +
+            graphLanePadding +
+            currentColumn * graphLaneStep;
           const currentY = nodeRect.top - svgRect.top + nodeRect.height / 2;
 
           parentIds.forEach((parentId, index) => {
             const parentNode = nodeMap.get(parentId);
             if (parentNode) {
               const parentRect = parentNode.getBoundingClientRect();
-              const parentX = parentRect.left - svgRect.left + 6;
+              const parentColumn = Number(
+                parentNode.dataset.symbolColumn || "0",
+              );
+              const parentX =
+                parentRect.left -
+                svgRect.left +
+                graphLanePadding +
+                parentColumn * graphLaneStep;
               const parentY =
                 parentRect.top - svgRect.top + parentRect.height / 2;
 
@@ -174,6 +378,8 @@
                 "path",
               );
               path.setAttribute("class", "connection-line");
+              path.dataset.fromChangeId = node.dataset.changeId;
+              path.dataset.toChangeId = parentId;
 
               const isLatestParent = index === 0;
               const isAdjacent = !Array.from(nodes).some((otherNode) => {
@@ -186,11 +392,7 @@
                 );
               });
 
-              if (
-                isLatestParent &&
-                Math.abs(currentX - parentX) < 5 &&
-                isAdjacent
-              ) {
+              if (isLatestParent && currentColumn === parentColumn && isAdjacent) {
                 // Vertical line for adjacent nodes
                 path.setAttribute(
                   "d",
@@ -200,16 +402,16 @@
                             `,
                 );
               } else {
-                // Curved line for other connections
+                // Route through each revision's own symbol column so merges and forks keep the
+                // same overall shape as jj's CLI graph.
                 const midY = (currentY + parentY) / 2;
-                const offset = (index - (parentIds.length - 1) / 2) * 10;
-                const controlX = currentX + offset + 20;
                 path.setAttribute(
                   "d",
                   `
                                 M ${currentX} ${currentY}
-                                Q ${controlX} ${midY}
-                                ${parentX} ${parentY}
+                                L ${currentX} ${midY}
+                                L ${parentX} ${midY}
+                                L ${parentX} ${parentY}
                             `,
                 );
               }
@@ -341,60 +543,15 @@
         }
       }
 
-      // Helper function to find nodes connected by a line
       function findConnectedNodes(line, nodes) {
-        const pathD = line.getAttribute("d");
-        const svgRect = document
-          .getElementById("connections")
-          .getBoundingClientRect();
-
-        // Get start point (M command)
-        const startMatch = pathD.match(/M\s*([\d.-]+)\s*([\d.-]+)/);
-        if (!startMatch) return [null, null];
-        const startX = parseFloat(startMatch[1]);
-        const startY = parseFloat(startMatch[2]);
-
-        // Get end point - handle both L (line) and Q (quadratic curve) commands
-        let endMatch;
-        if (pathD.includes("L")) {
-          // Linear path
-          endMatch = pathD.match(/L\s*([\d.-]+)\s*([\d.-]+)/);
-        } else if (pathD.includes("Q")) {
-          // Quadratic curve - get the end point (last two numbers)
-          const numbers = pathD.match(
-            /Q\s*([\d.-]+)\s*([\d.-]+)\s*([\d.-]+)\s*([\d.-]+)/,
-          );
-          if (numbers) {
-            endMatch = [null, numbers[3], numbers[4]];
-          }
-        }
-        if (!endMatch) return [null, null];
-
-        const endX = parseFloat(endMatch[1]);
-        const endY = parseFloat(endMatch[2]);
-
-        // Use a slightly larger tolerance for curved paths
-        const tolerance = 2;
-
-        const fromNode = Array.from(nodes).find((node) => {
-          const rect = node.getBoundingClientRect();
-          const nodeX = rect.left - svgRect.left + 6;
-          const nodeY = rect.top - svgRect.top + rect.height / 2;
-          return (
-            Math.abs(startX - nodeX) < tolerance &&
-            Math.abs(startY - nodeY) < tolerance
-          );
-        });
-
-        const toNode = Array.from(nodes).find((node) => {
-          const rect = node.getBoundingClientRect();
-          const nodeX = rect.left - svgRect.left + 6;
-          const nodeY = rect.top - svgRect.top + rect.height / 2;
-          return (
-            Math.abs(endX - nodeX) < tolerance &&
-            Math.abs(endY - nodeY) < tolerance
-          );
-        });
+        const fromId = line.dataset.fromChangeId;
+        const toId = line.dataset.toChangeId;
+        const fromNode = Array.from(nodes).find(
+          (node) => node.dataset.changeId === fromId,
+        );
+        const toNode = Array.from(nodes).find(
+          (node) => node.dataset.changeId === toId,
+        );
 
         return [fromNode, toNode];
       }
@@ -410,43 +567,110 @@
         nodesContainer.innerHTML = "";
         circlesContainer.innerHTML = "";
 
-        // Calculate maximum curve offset needed
-        let maxParentCount = 0;
-        changes.forEach((change) => {
-          if (change.parentChangeIds) {
-            maxParentCount = Math.max(
-              maxParentCount,
-              change.parentChangeIds.length,
-            );
-          }
-        });
-
-        // Calculate the maximum offset any curve will need
-        const maxOffset = (maxParentCount - 1) * 2 + 5;
-        // Set CSS variable for curve offset
+        const maxSymbolColumn = changes.reduce((max, change) => {
+          return Math.max(max, Number(change.symbolColumn || 0));
+        }, 0);
+        // Size the graph lane gutter from the parsed symbol columns so side branches can widen the
+        // SVG without changing the two-line text row layout.
+        const graphWidth = graphLanePadding * 2 + (maxSymbolColumn + 1) * graphLaneStep;
         document.documentElement.style.setProperty(
-          "--curve-offset",
-          `${maxOffset}px`,
+          "--graph-width",
+          `${graphWidth}px`,
         );
 
+        const changeIds = changes
+          .filter((candidate) => !candidate.isElided && candidate.changeId)
+          .map((candidate) => candidate.changeId);
+        const commitIds = changes
+          .filter((candidate) => !candidate.isElided && candidate.commitId)
+          .map((candidate) => candidate.commitId);
+
         changes.forEach((change) => {
+          if (change.isElided) {
+            const truncationRow = document.createElement("div");
+            truncationRow.className = "truncation-row";
+            truncationRow.textContent = "~ Older revisions hidden";
+            nodesContainer.appendChild(truncationRow);
+            return;
+          }
+
           if (!change.contextValue) return;
           const node = document.createElement("div");
           node.className = "change-node";
           node.dataset.changeId = change.contextValue;
           node.dataset.parentIds = JSON.stringify(change.parentChangeIds || []);
           node.dataset.branchType = change.branchType;
+          node.dataset.symbolColumn = String(change.symbolColumn || 0);
 
           // Create text content container
           const textContent = document.createElement("div");
           textContent.className = "text-content";
-          const nodeLabel = document.createElement("div");
-          nodeLabel.textContent = change.label;
-          textContent.append(nodeLabel);
-          const nodeDescription = document.createElement("div");
-          nodeDescription.className = "description";
-          nodeDescription.textContent = change.description;
-          textContent.append(nodeDescription);
+
+          const metaLine = document.createElement("div");
+          metaLine.className = "meta-line";
+
+          const metaPrimary = document.createElement("div");
+          metaPrimary.className = "meta-primary";
+
+          metaPrimary.append(
+            buildSegmentedId(
+              change.changeId,
+              "change-id",
+              getUniquePrefixLength(change.changeId, changeIds, 1),
+            ),
+          );
+
+          const author = document.createElement("span");
+          author.className = "author";
+          author.textContent = change.authorDisplay || "";
+
+          if (author.textContent) {
+            metaPrimary.append(author);
+          }
+
+          if (change.refName) {
+            const refPill = buildMetaPill(
+              getDisplayRefName(change.refName),
+              `ref-name${isSpecialRefName(change.refName) ? " special-ref" : " bookmark-ref"}`,
+            );
+            refPill.title = change.refName;
+            metaPrimary.append(refPill);
+          }
+
+          metaLine.append(metaPrimary);
+
+          const commitIdField = document.createElement("div");
+          commitIdField.className = "meta-commit";
+          commitIdField.append(
+            buildSegmentedId(
+              change.commitId,
+              "commit-id commit-id-field",
+              getUniquePrefixLength(change.commitId, commitIds, 1),
+            ),
+          );
+          metaLine.append(commitIdField);
+
+          textContent.append(metaLine);
+
+          const summaryLine = document.createElement("div");
+          summaryLine.className = "summary-line";
+
+          if (change.isEmpty) {
+            summaryLine.append(buildMetaPill("empty", "status-pill empty"));
+          }
+
+          if (change.isConflict) {
+            summaryLine.append(buildMetaPill("conflict", "status-pill conflict"));
+          }
+
+          if (change.description) {
+            const nodeDescription = document.createElement("span");
+            nodeDescription.className = `description${change.hasDescription ? "" : " placeholder"}`;
+            nodeDescription.textContent = change.description;
+            summaryLine.append(nodeDescription);
+          }
+
+          textContent.append(summaryLine);
           node.appendChild(textContent);
 
           // Create and append edit button
@@ -487,7 +711,12 @@
           const svgRect = document
             .getElementById("connections")
             .getBoundingClientRect();
-          const x = nodeRect.left - svgRect.left;
+          const x =
+            nodeRect.left -
+            svgRect.left +
+            graphLanePadding +
+            Number(change.symbolColumn || 0) * graphLaneStep -
+            6;
           const y = nodeRect.top - svgRect.top + nodeRect.height / 2 - 6; // -6 to account for circle radius
 
           circle.setAttribute("transform", `translate(${x}, ${y})`);
@@ -496,10 +725,18 @@
           // Add hover handlers
           node.addEventListener("mouseenter", () => {
             highlightConnectedNodes(node, true);
+            renderHoverCard(change, node);
           });
 
           node.addEventListener("mouseleave", () => {
             highlightConnectedNodes(node, false);
+            clearHoverCard();
+          });
+
+          node.addEventListener("mousemove", () => {
+            if (!hoverCard.hidden) {
+              positionHoverCard(node);
+            }
           });
 
           node.onclick = (e) => {
@@ -544,6 +781,7 @@
         nodes.forEach((node) => {
           const nodeRect = node.getBoundingClientRect();
           const contextValue = node.dataset.changeId;
+          const symbolColumn = Number(node.dataset.symbolColumn || "0");
 
           const g = createCircle(
             {
@@ -554,7 +792,8 @@
           );
 
           // Position the circle group
-          const x = nodeRect.left - svgRect.left;
+          const x =
+            nodeRect.left - svgRect.left + graphLanePadding + symbolColumn * graphLaneStep - 6;
           const y = nodeRect.top - svgRect.top + nodeRect.height / 2 - 6;
           g.setAttribute("transform", `translate(${x}, ${y})`);
 

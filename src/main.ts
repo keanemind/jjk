@@ -1690,6 +1690,7 @@ export async function activate(context: vscode.ExtensionContext) {
     workspaceSCM,
     uri: await import("./uri"),
     repository: await import("./repository"),
+    graphWebview: await import("./graphWebview"),
   };
 }
 

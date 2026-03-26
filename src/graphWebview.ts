@@ -10,24 +10,56 @@ type Message = {
 };
 
 export class ChangeNode {
-  label: string;
+  // The parser keeps row metadata decomposed so the webview can lay out jj-style columns without
+  // having to reverse-engineer a preformatted label string.
   description: string;
   tooltip: string;
   contextValue: string;
   parentChangeIds?: string[];
   branchType?: string;
+  changeId: string;
+  commitId: string;
+  author: string;
+  authorDisplay: string;
+  timestamp: string;
+  refName: string;
+  isEmpty: boolean;
+  isConflict: boolean;
+  hasDescription: boolean;
+  isElided: boolean;
+  symbolColumn: number;
   constructor(
-    label: string,
     description: string,
     tooltip: string,
     contextValue: string,
+    changeId: string,
+    commitId: string,
+    author: string,
+    authorDisplay: string,
+    timestamp: string,
+    refName: string,
+    isEmpty: boolean,
+    isConflict: boolean,
+    hasDescription: boolean,
+    isElided: boolean,
+    symbolColumn: number,
     parentChangeIds?: string[],
     branchType?: string,
   ) {
-    this.label = label;
     this.description = description;
     this.tooltip = tooltip;
     this.contextValue = contextValue;
+    this.changeId = changeId;
+    this.commitId = commitId;
+    this.author = author;
+    this.authorDisplay = authorDisplay;
+    this.timestamp = timestamp;
+    this.refName = refName;
+    this.isEmpty = isEmpty;
+    this.isConflict = isConflict;
+    this.hasDescription = hasDescription;
+    this.isElided = isElided;
+    this.symbolColumn = symbolColumn;
     this.parentChangeIds = parentChangeIds;
     this.branchType = branchType;
   }
@@ -181,6 +213,8 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
   private async getChangeNodesWithParents(
     changeNodes: ChangeNode[],
   ): Promise<ChangeNode[]> {
+    // The visible log template does not include explicit parent IDs, so fetch a second compact map
+    // keyed by the same short change IDs that the graph rows render.
     const output = await this.repository.log(
       "::", // get all changes
       `
@@ -246,10 +280,20 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
     return a.every((nodeA, index) => {
       const nodeB = b[index];
       return (
-        nodeA.label === nodeB.label &&
         nodeA.tooltip === nodeB.tooltip &&
         nodeA.description === nodeB.description &&
-        nodeA.contextValue === nodeB.contextValue
+        nodeA.contextValue === nodeB.contextValue &&
+        nodeA.changeId === nodeB.changeId &&
+        nodeA.commitId === nodeB.commitId &&
+        nodeA.author === nodeB.author &&
+        nodeA.authorDisplay === nodeB.authorDisplay &&
+        nodeA.timestamp === nodeB.timestamp &&
+        nodeA.refName === nodeB.refName &&
+        nodeA.isEmpty === nodeB.isEmpty &&
+        nodeA.isConflict === nodeB.isConflict &&
+        nodeA.hasDescription === nodeB.hasDescription &&
+        nodeA.isElided === nodeB.isElided &&
+        nodeA.symbolColumn === nodeB.symbolColumn
       );
     });
   }
@@ -260,58 +304,176 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
 }
 
 export function parseJJLog(output: string): ChangeNode[] {
+  // The graph uses a text `jj log` template instead of a structured API. Parse it once here so the
+  // renderer can work with explicit row fields and lane coordinates.
   const lines = output.split("\n");
   const changeNodes: ChangeNode[] = [];
+  const timestampPattern = /\b\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\b/;
+  const commitIdPattern = /(?:^|\s)([a-f0-9]{8,})$/i;
+  const rootPattern =
+    /^([^a-zA-Z0-9(]*)([@○◆])\s+([a-z0-9]{8,})\s+(root\(\))\s+([a-f0-9]{8,})$/i;
 
-  for (let i = 0; i < lines.length; i += 2) {
-    const oddLine = lines[i];
-    let evenLine = lines[i + 1] || "";
+  const stripGraphPrefix = (line: string) =>
+    line.replace(/^[^a-zA-Z0-9(~]+/, "").trim();
 
-    let changeId = "";
-    if (i % 2 === 0) {
-      // Check if the line is odd-numbered (0-based index, so 0, 2, 4... are odd lines)
-      const match = oddLine.match(/\b([a-zA-Z0-9]+)\b/); // Match the first group of alphanumeric characters
-      if (match) {
-        changeId = match[1];
-      }
+  const getSymbolColumn = (line: string, branchType?: string) =>
+    branchType ? Math.max(0, line.indexOf(branchType)) : 0;
+
+  const getAuthorDisplay = (author: string) => {
+    if (!author.includes("@")) {
+      return author;
+    }
+    const localPart = author.slice(0, author.indexOf("@"));
+    return localPart || author;
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const headerLine = lines[i]?.trimEnd();
+    if (!headerLine) {
+      continue;
     }
 
-    // Match the first alphanumeric character or opening parenthesis and everything after it
-    const match = evenLine.match(/([a-zA-Z0-9(].*)/);
-    const description = match ? match[1] : "";
-
-    // Remove the description from the even line
-    if (description) {
-      evenLine = evenLine.replace(description, "");
+    const elidedLine = stripGraphPrefix(headerLine);
+    if (elidedLine === "~" || elidedLine === "~  (elided revisions)") {
+      changeNodes.push(
+        new ChangeNode(
+          "Older revisions hidden",
+          "Older revisions are hidden by the current jj log limit.",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          false,
+          false,
+          false,
+          true,
+          getSymbolColumn(headerLine, "~"),
+          undefined,
+          "~",
+        ),
+      );
+      continue;
     }
 
-    const emailMatch = oddLine.match(
-      /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/,
-    );
-    const timestampMatch = oddLine.match(
-      /\b\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\b/,
-    );
-    const symbolsMatch = oddLine.match(/^[^a-zA-Z0-9(]+/);
-    const commitIdMatch = oddLine.match(/([a-zA-Z0-9]{8})$/);
+    // The compact row layout only reserves one summary line below the metadata line.
+    let descriptionLine = "";
+    const nextLine = lines[i + 1]?.trimEnd() ?? "";
+    if (nextLine && !timestampPattern.test(nextLine)) {
+      descriptionLine = stripGraphPrefix(nextLine);
+      i++;
+    }
 
-    // Add this: Find first occurrence of @, ○, or ◆
-    const branchTypeMatch = symbolsMatch
-      ? symbolsMatch[0].match(/[@○◆]/)
-      : null;
+    const isEmpty = descriptionLine.includes("(empty)");
+    const isConflict = descriptionLine.includes("(conflict)");
+    const cleanedDescription = descriptionLine
+      .replace(/\(empty\)\s*/g, "")
+      .replace(/\(conflict\)\s*/g, "")
+      .trim();
+    const hasDescription =
+      cleanedDescription.length > 0 &&
+      cleanedDescription !== "(no description set)";
+    const description = hasDescription
+      ? cleanedDescription
+      : "(no description set)";
+
+    const rootMatch = headerLine.match(rootPattern);
+    if (rootMatch) {
+      const [, , branchType, changeId, refName, commitId] = rootMatch;
+      const symbolColumn = getSymbolColumn(headerLine, branchType);
+      const normalizedDescription = hasDescription ? description : "";
+
+      changeNodes.push(
+        new ChangeNode(
+          normalizedDescription,
+          `Change: ${changeId}\nCommit: ${commitId}\nRef: ${refName}${
+            isEmpty ? "\nStatus: empty" : ""
+          }`,
+          changeId,
+          changeId,
+          commitId,
+          "",
+          "",
+          "",
+          refName,
+          isEmpty,
+          false,
+          normalizedDescription.length > 0,
+          false,
+          symbolColumn,
+          undefined,
+          branchType,
+        ),
+      );
+      continue;
+    }
+
+    if (!timestampPattern.test(headerLine)) {
+      continue;
+    }
+
+    const timestampMatch = headerLine.match(timestampPattern);
+    if (!timestampMatch || timestampMatch.index === undefined) {
+      continue;
+    }
+
+    const beforeTimestamp = headerLine.slice(0, timestampMatch.index).trimEnd();
+    const afterTimestamp = headerLine
+      .slice(timestampMatch.index + timestampMatch[0].length)
+      .trim();
+
+    const changeIdMatch = beforeTimestamp.match(/([a-z0-9]{8,})\s+(\S+)$/i);
+    const commitIdMatch = afterTimestamp.match(commitIdPattern);
+    const symbolsMatch = headerLine.match(/^[^a-zA-Z0-9(]+/);
+    const branchTypeMatch = symbolsMatch ? symbolsMatch[0].match(/[@○◆]/) : null;
+
+    if (!changeIdMatch || !commitIdMatch || commitIdMatch.index === undefined) {
+      continue;
+    }
+
+    const changeId = changeIdMatch[1];
+    const author = changeIdMatch[2];
+    const timestamp = timestampMatch[0];
     const branchType = branchTypeMatch ? branchTypeMatch[0] : undefined;
-    const formattedLine = `${description}${changeId === "zzzzzzzz" ? "root()" : ""} • ${changeId} • ${commitIdMatch ? commitIdMatch[0] : ""}`;
+    const commitId = commitIdMatch[1];
+    const symbolColumn = getSymbolColumn(headerLine, branchType);
+    const refName = afterTimestamp
+      .slice(0, commitIdMatch.index)
+      .trim()
+      .replace(/\s+/g, " ");
+    const tooltipLines = [
+      `${author} • ${timestamp}`,
+      `Change: ${changeId}`,
+      `Commit: ${commitId}`,
+      refName ? `Ref: ${refName}` : "",
+      isEmpty ? "Status: empty" : "",
+      isConflict ? "Status: conflict" : "",
+      hasDescription ? `Description: ${description}` : "Description: (no description set)",
+    ].filter(Boolean);
 
-    // Create a ChangeNode for the odd line with the appended description
     changeNodes.push(
       new ChangeNode(
-        formattedLine,
-        `${emailMatch ? emailMatch[0] : ""} ${timestampMatch ? timestampMatch[0] : ""}`,
+        description,
+        tooltipLines.join("\n"),
         changeId,
         changeId,
+        commitId,
+        author,
+        getAuthorDisplay(author),
+        timestamp,
+        refName,
+        isEmpty,
+        isConflict,
+        hasDescription,
+        false,
+        symbolColumn,
         undefined,
         branchType,
       ),
     );
   }
+
   return changeNodes;
 }
