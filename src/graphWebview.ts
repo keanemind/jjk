@@ -9,6 +9,28 @@ type Message = {
   selectedNodes?: string[];
 };
 
+function buildChangeStats(
+  fileStatuses: Array<{ type: string }>,
+): {
+  total: number;
+  added: number;
+  modified: number;
+  removed: number;
+  renamed: number;
+  copied: number;
+} {
+  // Keep the hover payload aggregation in one place so the message contract stays aligned with the
+  // webview formatter when new file-status kinds are added.
+  return {
+    total: fileStatuses.length,
+    added: fileStatuses.filter((file) => file.type === "A").length,
+    modified: fileStatuses.filter((file) => file.type === "M").length,
+    removed: fileStatuses.filter((file) => file.type === "D").length,
+    renamed: fileStatuses.filter((file) => file.type === "R").length,
+    copied: fileStatuses.filter((file) => file.type === "C").length,
+  };
+}
+
 export class ChangeNode {
   // The parser keeps row metadata decomposed so the webview can lay out jj-style columns without
   // having to reverse-engineer a preformatted label string.
@@ -160,26 +182,13 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
             // Keep the list rows cheap to render by fetching the full description only when the
             // user asks for hover details on a specific change.
             const showResult = await this.repository.show(message.changeId);
-            const stats = {
-              total: showResult.fileStatuses.length,
-              added: showResult.fileStatuses.filter((file) => file.type === "A")
-                .length,
-              modified: showResult.fileStatuses.filter((file) => file.type === "M")
-                .length,
-              removed: showResult.fileStatuses.filter((file) => file.type === "D")
-                .length,
-              renamed: showResult.fileStatuses.filter((file) => file.type === "R")
-                .length,
-              copied: showResult.fileStatuses.filter((file) => file.type === "C")
-                .length,
-            };
             this.panel?.webview.postMessage({
               command: "changeDetails",
               changeId: message.changeId,
               details: {
                 fullDescription:
                   showResult.change.description || "(no description set)",
-                stats,
+                stats: buildChangeStats(showResult.fileStatuses),
               },
             });
           } catch {
