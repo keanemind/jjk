@@ -22,6 +22,9 @@
       let visibleChangeIds = [];
       let visibleCommitIds = [];
       const changeDetailsCache = new Map();
+      // Rich per-row state lives in JS rather than serialized DOM attributes. The map is rebuilt on
+      // every `updateGraph()` call, so it never outlives the current render.
+      const rowDataByChangeId = new Map();
       const graphLaneStep = 10;
       const graphLanePadding = 6;
       const hoverCard = document.getElementById("hover-card");
@@ -63,18 +66,13 @@
           case "changeDetails":
             if (message.changeId) {
               changeDetailsCache.set(message.changeId, message.details);
-              if (
-                hoveredNode &&
-                hoveredNode.dataset.changeId === message.changeId &&
-                !hoverCard.hidden
-              ) {
-                const hoveredChange = JSON.parse(
-                  hoveredNode.dataset.changePayload || "{}",
-                );
+              if (hoveredNode?.dataset.changeId === message.changeId && !hoverCard.hidden) {
+                // Update the current render's row snapshot so subsequent hover redraws can reuse
+                // the fetched description without another DOM serialization round-trip.
+                const hoveredChange = rowDataByChangeId.get(message.changeId);
                 if (message.details?.fullDescription) {
                   hoveredChange.fullDescription = message.details.fullDescription;
                 }
-                hoveredNode.dataset.changePayload = JSON.stringify(hoveredChange);
                 renderHoverCard(hoveredChange, hoveredNode);
               }
             }
@@ -384,6 +382,16 @@
         );
       }
 
+      function getRowData(changeId) {
+        return rowDataByChangeId.get(changeId);
+      }
+
+      function getParentIds(node) {
+        // Parent IDs are part of the render-scoped row state so callers can read them without
+        // reparsing JSON from `dataset`.
+        return getRowData(node.dataset.changeId)?.parentChangeIds || [];
+      }
+
       function appendHoverAuthorField(headerFields, change) {
         if (!change.authorDisplay && !change.author) {
           return;
@@ -641,7 +649,7 @@
         });
 
         nodes.forEach((node, index) => {
-          const parentIds = JSON.parse(node.dataset.parentIds || "[]");
+          const parentIds = getParentIds(node);
           const { nodeRect, y: currentY } = getNodeCenter(node, svgRect);
           const currentColumn = Number(node.dataset.symbolColumn || "0");
 
@@ -717,11 +725,11 @@
 
         if (highlight) {
           const nodeId = nodeElement.dataset.changeId;
-          const parentIds = JSON.parse(nodeElement.dataset.parentIds || "[]");
+          const parentIds = getParentIds(nodeElement);
 
           // Find child nodes (nodes that have this node as a parent)
           const childNodes = Array.from(nodes).filter((node) => {
-            const nodeParentIds = JSON.parse(node.dataset.parentIds || "[]");
+            const nodeParentIds = getParentIds(node);
             return nodeParentIds.includes(nodeId);
           });
           const childIds = childNodes.map((node) => node.dataset.changeId);
@@ -853,6 +861,8 @@
         const circlesContainer = document.getElementById("node-circles");
         nodesContainer.innerHTML = "";
         circlesContainer.innerHTML = "";
+        // Rebuild row state together with the DOM so refresh stays the single source of truth.
+        rowDataByChangeId.clear();
 
         const maxSymbolColumn = changes.reduce((max, change) => {
           return Math.max(max, Number(change.symbolColumn || 0));
@@ -887,10 +897,11 @@
           const node = document.createElement("div");
           node.className = "change-node";
           node.dataset.changeId = change.contextValue;
-          node.dataset.parentIds = JSON.stringify(change.parentChangeIds || []);
           node.dataset.branchType = change.branchType;
           node.dataset.symbolColumn = String(change.symbolColumn || 0);
-          node.dataset.changePayload = JSON.stringify(change);
+          // Store a shallow snapshot for hover/highlight logic; the DOM only keeps scalar lookup
+          // fields that are convenient for selectors and event targeting.
+          rowDataByChangeId.set(change.contextValue, { ...change });
 
           // Create text content container
           const textContent = document.createElement("div");
