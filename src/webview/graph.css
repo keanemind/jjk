@@ -446,6 +446,44 @@ body {
   }
 }
 
+.action-buttons {
+  opacity: 0;
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  z-index: 2;
+}
+
+/* Row action styling */
+.action-button {
+  background: none;
+  border: none;
+  color: var(--vscode-button-foreground);
+  cursor: pointer;
+  padding: 2px 6px;
+  font-size: 0.9em;
+  border-radius: 3px;
+}
+
+.change-node:hover .action-buttons {
+  opacity: 1;
+}
+
+.action-button:hover {
+  background-color: var(--vscode-button-secondaryHoverBackground);
+}
+
+.action-button .codicon {
+  color: var(--vscode-icon-foreground);
+}
+
+.action-button:hover .codicon {
+  color: var(--vscode-button-secondaryForeground);
+}
 /* Node circle styling */
 .node-circle {
   min-width: 12px;

@@ -977,6 +977,7 @@
 
           textContent.append(summaryLine);
           node.appendChild(textContent);
+          node.appendChild(createNodeActions(change, workingCopyId));
           nodesContainer.appendChild(node);
 
           // Create circle and add it to SVG after node is in DOM
@@ -1051,6 +1052,55 @@
             window.scrollTo(0, scrollTop);
           }
         });
+      }
+
+      function createNodeActions(change, workingCopyId) {
+        const actions = document.createElement("div");
+        actions.className = "action-buttons";
+
+        const openChangesButton = document.createElement("button");
+        openChangesButton.className = "action-button open-changes-button";
+        openChangesButton.innerHTML =
+          '<i class="codicon codicon-diff-multiple"></i>';
+        openChangesButton.title = "Open Changes";
+        openChangesButton.onclick = async (e) => {
+          e.stopPropagation();
+          await vscode.postMessage({
+            command: "openChanges",
+            // The working copy graph row uses the current change ID for display, but the
+            // extension command expects "@" to open the live working-tree diff.
+            changeId:
+              change.contextValue === workingCopyId ? "@" : change.contextValue,
+          });
+        };
+
+        if (change.contextValue === "zzzzzzzz") {
+          openChangesButton.style.display = "none";
+        }
+        actions.appendChild(openChangesButton);
+
+        const editButton = document.createElement("button");
+        editButton.className = "action-button edit-button";
+        editButton.innerHTML = '<i class="codicon codicon-log-in"></i>';
+        editButton.title = "Edit this change";
+        editButton.onclick = async (e) => {
+          e.stopPropagation();
+          // Just send the edit command and let updateGraph handle the cleanup
+          await vscode.postMessage({
+            command: "editChange",
+            changeId: change.contextValue,
+          });
+        };
+
+        if (
+          change.contextValue === workingCopyId ||
+          change.contextValue === "zzzzzzzz"
+        ) {
+          editButton.style.display = "none";
+        }
+        actions.appendChild(editButton);
+
+        return actions;
       }
 
       function updateCirclePositions() {

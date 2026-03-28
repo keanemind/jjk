@@ -26,6 +26,141 @@ import {
 import { match } from "arktype";
 import { getActiveTextEditorDiff, pathEquals } from "./utils";
 
+/**
+ * Builds the multi-diff editor title used by graph row actions.
+ *
+ * The working copy row keeps a stable leading label while still surfacing the current
+ * change and commit IDs, so the tab matches the source control view without hiding the
+ * revision information users rely on to orient themselves.
+ */
+function getOpenChangeTitle(
+  label: string,
+  changeId: string,
+  commitId: string,
+  description: string,
+) {
+  const metadata = `[${changeId.substring(0, 8)}] • ${commitId.substring(0, 8)}`;
+  return description ? `${label} ${metadata} - ${description}` : `${label} ${metadata}`;
+}
+
+/**
+ * Maps a JJ file status entry to the original and modified resources expected by
+ * VS Code's multi-diff editor.
+ *
+ * Added and deleted files omit one side entirely, while renamed files resolve the
+ * original side from `renamedFrom` so the diff shows the full file move instead of
+ * comparing the new path against itself. The original side always uses
+ * `diffOriginalRev` so JJ can supply the correct diff baseline, including merge
+ * changes whose left side is not just the first parent. A modified revision of `@`
+ * still targets the live working tree rather than a historical `jj:` URI.
+ */
+function getMultiDiffUrisForFileStatus(
+  repository: JJRepository,
+  fileStatus: FileStatus,
+  originalRev: string | undefined,
+  modifiedRev: string | undefined,
+) {
+  const originalPath = fileStatus.renamedFrom
+    ? path.join(repository.repositoryRoot, fileStatus.renamedFrom)
+    : fileStatus.path;
+  const originalUri =
+    originalRev
+      ? toJJUri(vscode.Uri.file(originalPath), {
+          diffOriginalRev: originalRev,
+        })
+      : undefined;
+  const modifiedUri =
+    modifiedRev === "@"
+      ? vscode.Uri.file(fileStatus.path)
+      : modifiedRev
+        ? toJJUri(vscode.Uri.file(fileStatus.path), { rev: modifiedRev })
+        : undefined;
+
+  switch (fileStatus.type) {
+    case "A":
+      return {
+        originalUri: undefined,
+        modifiedUri,
+      };
+    case "D":
+      return {
+        originalUri,
+        modifiedUri: undefined,
+      };
+    default:
+      return {
+        originalUri,
+        modifiedUri,
+      };
+  }
+}
+
+/**
+ * Describes the full-repository diff that should be opened for a graph or SCM row.
+ *
+ * `originalRev` is the revision whose diff baseline should feed the left-hand resources
+ * through `diffOriginalRev`, while `modifiedRev` names the right-hand revision or live
+ * working tree to display. For the working copy, both selectors are `@`, but they are
+ * interpreted differently on each side of the multi-diff. `multiDiffSourceId` controls
+ * editor identity so working-copy reopens can produce a fresh editor input after the
+ * snapshot changes.
+ */
+type ChangeDiffTarget = {
+  title: string;
+  originalRev: string | undefined;
+  modifiedRev: string;
+  multiDiffSourceId: string;
+  fileStatuses: FileStatus[];
+};
+
+/**
+ * Resolves a graph or SCM row ID into the revision pair and file list needed for a
+ * full multi-diff editor.
+ *
+ * The working copy is a special case: it uses `getStatus(true)` so the right-hand side
+ * stays attached to the live workspace contents while the left-hand side resolves
+ * through `diffOriginalRev: "@"`. Historical changes use the change ID as the diff
+ * baseline too, which preserves JJ's multi-parent diff semantics instead of flattening
+ * merges to the first parent. The returned `multiDiffSourceId` is intentionally less
+ * stable for the working copy: it uses the current commit ID so reopening after new
+ * edits yields a fresh multi-diff input instead of reusing the previous snapshot tab.
+ */
+async function resolveChangeDiffTarget(
+  repository: JJRepository,
+  changeId: string,
+): Promise<ChangeDiffTarget> {
+  if (changeId === "@") {
+    // Keep the working copy view tied to the live tree instead of a frozen snapshot.
+    const status = await repository.getStatus(true);
+    return {
+      title: getOpenChangeTitle(
+        "Working Copy",
+        status.workingCopy.changeId,
+        status.workingCopy.commitId,
+        status.workingCopy.description,
+      ),
+      originalRev: "@",
+      modifiedRev: "@",
+      multiDiffSourceId: status.workingCopy.commitId,
+      fileStatuses: status.fileStatuses,
+    };
+  }
+
+  const show = await repository.show(changeId);
+  return {
+    title: getOpenChangeTitle(
+      show.change.changeId.substring(0, 8),
+      show.change.changeId,
+      show.change.commitId,
+      show.change.description,
+    ),
+    originalRev: show.change.changeId,
+    modifiedRev: show.change.changeId,
+    multiDiffSourceId: show.change.changeId,
+    fileStatuses: show.fileStatuses,
+  };
+}
+
 export async function activate(context: vscode.ExtensionContext) {
   const outputChannel = vscode.window.createOutputChannel("Jujutsu Kaizen", {
     log: true,
@@ -363,6 +498,85 @@ export async function activate(context: vscode.ExtensionContext) {
     if (vscode.window.activeTextEditor) {
       void handleDidChangeActiveTextEditor(vscode.window.activeTextEditor);
     }
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand(
+        "jj.openChangeDiff",
+        async (repositoryRoot: string, changeId: string) => {
+          try {
+            const repository = workspaceSCM.repoSCMs.find(
+              (repoSCM) => repoSCM.repositoryRoot === repositoryRoot,
+            )?.repository;
+            if (!repository) {
+              throw new Error("Repository not found");
+            }
+
+            const changeDiffTarget = await resolveChangeDiffTarget(
+              repository,
+              changeId,
+            );
+
+            if (changeDiffTarget.fileStatuses.length === 0) {
+              vscode.window.showInformationMessage("No changes to open.");
+              return;
+            }
+
+            // Match the Git graph behavior by opening the whole change in one multi-diff editor.
+            const resources = changeDiffTarget.fileStatuses.map((fileStatus) =>
+              getMultiDiffUrisForFileStatus(
+                repository,
+                fileStatus,
+                changeDiffTarget.originalRev,
+                changeDiffTarget.modifiedRev,
+              ),
+            );
+
+            const multiDiffSourceUri = vscode.Uri.from({
+              scheme: "jj-graph-change",
+              path: `${repository.repositoryRoot}/${changeDiffTarget.multiDiffSourceId}`,
+            });
+
+            await vscode.commands.executeCommand(
+              "_workbench.openMultiDiffEditor",
+              {
+                multiDiffSourceUri,
+                title: changeDiffTarget.title,
+                resources,
+              },
+            );
+          } catch (error) {
+            vscode.window.showErrorMessage(
+              `Failed to open changes${error instanceof Error ? `: ${error.message}` : ""}`,
+            );
+          }
+        },
+      ),
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand(
+        "jj.openResourceGroupChanges",
+        async (resourceGroup: vscode.SourceControlResourceGroup) => {
+          try {
+            const repository =
+              workspaceSCM.getRepositoryFromResourceGroup(resourceGroup);
+            if (!repository) {
+              throw new Error("Repository not found");
+            }
+
+            await vscode.commands.executeCommand(
+              "jj.openChangeDiff",
+              repository.repositoryRoot,
+              resourceGroup.id,
+            );
+          } catch (error) {
+            vscode.window.showErrorMessage(
+              `Failed to open changes${error instanceof Error ? `: ${error.message}` : ""}`,
+            );
+          }
+        },
+      ),
+    );
 
     context.subscriptions.push(
       vscode.commands.registerCommand(

@@ -117,6 +117,12 @@
         "icon": "$(sign-in)"
       },
       {
+        "command": "jj.openResourceGroupChanges",
+        "title": "Open Changes",
+        "category": "Jujutsu",
+        "icon": "$(diff-multiple)"
+      },
+      {
         "command": "jj.restoreResourceState",
         "title": "Discard changes",
         "category": "Jujutsu",
@@ -290,29 +296,34 @@
       ],
       "scm/resourceGroup/context": [
         {
+          "command": "jj.openResourceGroupChanges",
+          "when": "scmProvider == jj",
+          "group": "inline@0"
+        },
+        {
           "command": "jj.describe",
           "when": "scmProvider == jj",
-          "group": "inline"
+          "group": "inline@1"
         },
         {
           "command": "jj.squashToParentResourceGroup",
           "when": "scmProvider == jj && scmResourceGroup == @",
-          "group": "inline"
+          "group": "inline@2"
         },
         {
           "command": "jj.squashToWorkingCopyResourceGroup",
           "when": "scmProvider == jj && scmResourceGroup != @",
-          "group": "inline"
+          "group": "inline@2"
         },
         {
           "command": "jj.restoreResourceGroup",
           "when": "scmProvider == jj",
-          "group": "inline"
+          "group": "inline@3"
         },
         {
           "command": "jj.editResourceGroup",
           "when": "scmProvider == jj && scmResourceGroup != @",
-          "group": "inline"
+          "group": "inline@4"
         }
       ],
       "scm/resourceState/context": [
@@ -410,6 +421,10 @@
         },
         {
           "command": "jj.restoreResourceGroup",
+          "when": "false"
+        },
+        {
+          "command": "jj.openResourceGroupChanges",
           "when": "false"
         },
         {
