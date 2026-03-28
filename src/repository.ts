@@ -413,34 +413,49 @@ export class WorkspaceSourceControlManager {
     );
 
     if (isAnyRepoChanged) {
-      const repoSCMs: RepositorySourceControlManager[] = [];
-      for (const [
-        workspaceFolder,
-        { repoRoot, jjPath, jjVersion },
-      ] of newRepoInfos.entries()) {
-        logger.info(
-          `Initializing jjk in workspace ${workspaceFolder}. Using ${jjVersion} at ${jjPath.filepath} (${jjPath.source}).`,
-        );
-        const repoSCM = new RepositorySourceControlManager(
-          repoRoot,
-          this.decorationProvider,
-          this.fileSystemProvider,
-          jjPath.filepath,
-          jjVersion,
-        );
-        repoSCM.onDidUpdate(
-          () => {
-            this._onDidRepoUpdate.fire({ repoSCM });
-          },
-          undefined,
-          repoSCM.subscriptions,
-        );
-        repoSCMs.push(repoSCM);
+      const existingByUri = new Map<string, RepositorySourceControlManager>();
+      for (const repoSCM of this.repoSCMs) {
+        const uri = vscode.Uri.file(repoSCM.repositoryRoot).toString();
+        existingByUri.set(uri, repoSCM);
       }
 
-      for (const repoSCM of this.repoSCMs) {
-        repoSCM.dispose();
+      for (const [uri, repoSCM] of existingByUri) {
+        if (!newRepoInfos.has(uri)) {
+          logger.info(`Removing repo: ${uri}`);
+          repoSCM.dispose();
+        }
       }
+
+      const repoSCMs: RepositorySourceControlManager[] = [];
+      for (const [
+        repoUri,
+        { repoRoot, jjPath, jjVersion },
+      ] of newRepoInfos.entries()) {
+        const existing = existingByUri.get(repoUri);
+        if (existing) {
+          repoSCMs.push(existing);
+        } else {
+          logger.info(
+            `Initializing jjk in workspace ${repoUri}. Using ${jjVersion} at ${jjPath.filepath} (${jjPath.source}).`,
+          );
+          const repoSCM = new RepositorySourceControlManager(
+            repoRoot,
+            this.decorationProvider,
+            this.fileSystemProvider,
+            jjPath.filepath,
+            jjVersion,
+          );
+          repoSCM.onDidUpdate(
+            () => {
+              this._onDidRepoUpdate.fire({ repoSCM });
+            },
+            undefined,
+            repoSCM.subscriptions,
+          );
+          repoSCMs.push(repoSCM);
+        }
+      }
+
       this.repoSCMs = repoSCMs;
     }
     return isAnyRepoChanged;
