@@ -3,6 +3,7 @@
 
 import "./main.test";
 import "./repository.test";
+import "./graphWebview.test";
 import "./resolveRepoPath.test";
 import "./fakeeditor.test";
 import "./scm.test";
