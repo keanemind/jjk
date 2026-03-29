@@ -5,13 +5,27 @@
   "tasks": [
     {
       "label": "watch",
-      "dependsOn": ["npm: watch:tsc", "npm: watch:esbuild"],
+      "dependsOn": [
+        "npm: build:fakeeditor",
+        "npm: watch:tsc",
+        "npm: watch:esbuild"
+      ],
+      "dependsOrder": "sequence",
       "presentation": {
         "reveal": "never"
       },
       "group": {
         "kind": "build",
         "isDefault": true
+      }
+    },
+    {
+      "type": "npm",
+      "script": "build:fakeeditor",
+      "group": "build",
+      "label": "npm: build:fakeeditor",
+      "presentation": {
+        "reveal": "never"
       }
     },
     {
