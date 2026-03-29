@@ -138,6 +138,33 @@ suite("parseJJLog", () => {
     assert.strictEqual(node.description, "No description set");
   });
 
+  test("parses conflicted changes", () => {
+    const output = `@  nwwlprqr email@example.com 2026-03-28 03:31:26 jjk-ws-1@ e8b9a26d (conflict)
+│  (empty) (no description set)
+×    ysqrxsnm email@example.com 2026-03-19 21:53:44 197d5812 (conflict)
+├─╮  more testing
+○ │  qtoqzoqk email@example.com 2026-03-19 21:53:44 f305fe54
+│ │  (empty) (no description set)
+`;
+
+    const nodes = parseJJLog(output);
+
+    assert.strictEqual(nodes.length, 3);
+
+    assert.strictEqual(nodes[0].changeId, "nwwlprqr");
+    assert.strictEqual(nodes[0].isConflict, true);
+    assert.strictEqual(nodes[0].commitId, "e8b9a26d");
+    assert.strictEqual(nodes[0].branchType, "@");
+
+    assert.strictEqual(nodes[1].changeId, "ysqrxsnm");
+    assert.strictEqual(nodes[1].isConflict, true);
+    assert.strictEqual(nodes[1].commitId, "197d5812");
+
+    assert.strictEqual(nodes[2].changeId, "qtoqzoqk");
+    assert.strictEqual(nodes[2].isConflict, false);
+    assert.strictEqual(nodes[2].commitId, "f305fe54");
+  });
+
   test("preserves the full multi-line description for hover details", () => {
     const output = `@  nxxvmutx joshka@users.noreply.github.com 2026-03-26 12:58:52 eaf68a4c
 │  Add graph popup
