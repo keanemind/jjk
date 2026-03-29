@@ -13,6 +13,117 @@ body {
   padding: 4px 0 8px 8px;
 }
 
+#hover-card {
+  position: absolute;
+  z-index: 20;
+  max-width: min(520px, calc(100vw - 32px));
+  min-width: min(360px, calc(100vw - 48px));
+  padding: 10px 12px;
+  border: 1px solid
+    var(--vscode-editorHoverWidget-border, var(--vscode-widget-border));
+  border-radius: 5px;
+  background: var(
+    --vscode-editorHoverWidget-background,
+    var(--vscode-sideBar-background)
+  );
+  box-shadow: var(--vscode-widget-shadow, 0 8px 24px rgba(0, 0, 0, 0.36));
+  color: var(--vscode-editorHoverWidget-foreground, var(--vscode-foreground));
+  pointer-events: auto;
+  user-select: text;
+}
+
+.hover-field-grid {
+  display: grid;
+  gap: 4px;
+}
+
+.hover-field-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+}
+
+.hover-field-key {
+  color: var(--vscode-descriptionForeground);
+  white-space: nowrap;
+}
+
+.hover-field-value {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.hover-field-value .meta-pill,
+.hover-field-value .segmented-id {
+  flex: 0 0 auto;
+}
+
+.hover-field-value .meta-pill {
+  max-width: none;
+}
+
+.hover-field-value .meta-pill-label {
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.hover-author {
+  font-size: 1em;
+  font-weight: 600;
+  color: var(--vscode-terminal-ansiYellow);
+}
+
+.hover-timestamp {
+  color: var(--vscode-charts-blue);
+  white-space: nowrap;
+}
+
+.hover-description {
+  line-height: 1.35;
+  font-size: 1em;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid
+    var(--vscode-editorHoverWidget-border, rgba(255, 255, 255, 0.08));
+}
+
+.hover-description.placeholder {
+  color: var(--vscode-terminal-ansiGreen);
+}
+
+.hover-email {
+  color: var(--vscode-descriptionForeground);
+  word-break: break-all;
+  user-select: text;
+}
+
+.hover-copy-button {
+  opacity: 0;
+  background: none;
+  border: none;
+  color: var(--vscode-icon-foreground);
+  cursor: pointer;
+  padding: 0;
+  margin-left: 2px;
+  line-height: 1;
+  border-radius: 3px;
+}
+
+.hover-field-row:hover .hover-copy-button,
+.hover-copy-button:focus-visible {
+  opacity: 1;
+}
+
+.hover-copy-button:hover {
+  color: var(--vscode-textLink-foreground);
+}
+
 #connections {
   position: absolute;
   top: 0;
@@ -61,7 +172,7 @@ body {
 .change-node.selected {
   background-color: var(--vscode-list-activeSelectionBackground);
   color: var(--vscode-list-activeSelectionForeground);
-  border-color: var(--vscode-focusBorder);
+  border-color: transparent;
 }
 
 /* Dimming and highlighting effects */
@@ -164,22 +275,15 @@ body {
   line-height: 1.25;
   border: 1px solid transparent;
   white-space: nowrap;
-  max-width: 18ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
 }
 
 .meta-pill-label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .meta-pill.ref-name {
-  flex: 0 1 auto;
-  max-width: min(24ch, 38cqw);
+  flex: 0 0 auto;
 }
 
 .meta-pill.bookmark-ref {
