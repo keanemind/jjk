@@ -357,6 +357,131 @@
         hoveredNode = null;
       }
 
+      function getTextContentRect(node) {
+        // Hover positioning is anchored from the text block rather than the graph lane so the
+        // circles remain clickable while the card is visible.
+        return (node.querySelector(".text-content") || node).getBoundingClientRect();
+      }
+
+      function getNodeCenter(node, svgRect) {
+        // The line and circle renderers both work in SVG coordinates, so centralize the DOM-to-SVG
+        // conversion instead of repeating slightly different formulas.
+        const nodeRect = node.getBoundingClientRect();
+        return {
+          nodeRect,
+          y: nodeRect.top - svgRect.top + nodeRect.height / 2,
+        };
+      }
+
+      function getLaneX(nodeRect, svgRect, symbolColumn) {
+        // jj lane routing is column-based, so keep the X calculation in one helper to make the
+        // connection and circle renderers share the same horizontal anchor.
+        return (
+          nodeRect.left -
+          svgRect.left +
+          graphLanePadding +
+          Number(symbolColumn || 0) * graphLaneStep
+        );
+      }
+
+      function appendHoverAuthorField(headerFields, change) {
+        if (!change.authorDisplay && !change.author) {
+          return;
+        }
+
+        // The compact row only shows the display name; the hover expands to the full
+        // display-name-plus-email representation for copyable detail.
+        appendHoverField(headerFields, "Author", (value) => {
+          const author = document.createElement("span");
+          author.className = "hover-author";
+          author.textContent = change.authorDisplay || change.author;
+          value.append(author);
+
+          if (change.author) {
+            const email = document.createElement("span");
+            email.className = "hover-email";
+            email.textContent = `<${change.author}>`;
+            value.append(email);
+          }
+        });
+      }
+
+      function appendHoverTimestampField(headerFields, change) {
+        if (!change.timestamp) {
+          return;
+        }
+
+        // Keep timestamp rendering in a dedicated helper so hover header fields remain easy to
+        // reorder without touching the shared field-row construction.
+        appendHoverField(headerFields, "Timestamp", (value) => {
+          const timestamp = document.createElement("span");
+          timestamp.className = "hover-timestamp";
+          timestamp.textContent = change.timestamp;
+          value.append(timestamp);
+        });
+      }
+
+      function appendHoverDescription(change, cachedDetails) {
+        // Prefer lazily fetched details, then fall back to the parser-provided description fields
+        // so the hover remains useful before the `jj show` round-trip completes.
+        const hoverDescription =
+          cachedDetails?.fullDescription ||
+          change.fullDescription ||
+          change.description;
+        if (!hoverDescription) {
+          return;
+        }
+
+        const description = document.createElement("div");
+        description.className = `hover-description${change.hasDescription ? "" : " placeholder"}`;
+        description.textContent = hoverDescription;
+        hoverCard.appendChild(description);
+      }
+
+      function appendHoverFooter(change) {
+        if (!change.refName && !change.isEmpty && !change.isConflict) {
+          return;
+        }
+
+        // Refs and status belong to the change as a whole rather than the field/value metadata, so
+        // keep them grouped in a footer instead of repeating more labeled rows.
+        const footer = document.createElement("div");
+        footer.className = "hover-footer";
+
+        if (change.refName) {
+          footer.append(
+            buildMetaPill(
+              change.refName,
+              `ref-name${isSpecialRefName(change.refName) ? " special-ref" : " bookmark-ref"}`,
+            ),
+          );
+        }
+
+        if (change.isEmpty) {
+          footer.append(buildMetaPill("empty", "status-pill empty"));
+        }
+
+        if (change.isConflict) {
+          footer.append(buildMetaPill("conflict", "status-pill conflict"));
+        }
+
+        hoverCard.appendChild(footer);
+      }
+
+      function requestHoverDetailsIfNeeded(change) {
+        if (
+          change.contextValue &&
+          !changeDetailsCache.has(change.contextValue)
+        ) {
+          // Hover details are fetched lazily because they include the full description body, which
+          // is intentionally omitted from the compact graph log template.
+          vscode.postMessage({
+            command: "requestChangeDetails",
+            changeId: change.contextValue,
+          });
+        }
+      }
+
       function scheduleHideHoverCard() {
         if (hoverHideTimer) {
           clearTimeout(hoverHideTimer);
@@ -388,9 +513,7 @@
       function positionHoverCard(node) {
         const nodeRect = node.getBoundingClientRect();
         const graphRect = document.getElementById("graph").getBoundingClientRect();
-        const textContent =
-          node.querySelector(".text-content") || node;
-        const textRect = textContent.getBoundingClientRect();
+        const textRect = getTextContentRect(node);
         const cardWidth = hoverCard.offsetWidth || 0;
         const cardHeight = hoverCard.offsetHeight || 0;
         // Anchor from the text column instead of the graph lane so the left-side circles remain
@@ -476,30 +599,8 @@
           });
         }
 
-        if (change.authorDisplay || change.author) {
-          appendHoverField(headerFields, "Author", (value) => {
-            const author = document.createElement("span");
-            author.className = "hover-author";
-            author.textContent = change.authorDisplay || change.author;
-            value.append(author);
-
-            if (change.author) {
-              const email = document.createElement("span");
-              email.className = "hover-email";
-              email.textContent = `<${change.author}>`;
-              value.append(email);
-            }
-          });
-        }
-
-        if (change.timestamp) {
-          appendHoverField(headerFields, "Timestamp", (value) => {
-            const timestamp = document.createElement("span");
-            timestamp.className = "hover-timestamp";
-            timestamp.textContent = change.timestamp;
-            value.append(timestamp);
-          });
-        }
+        appendHoverAuthorField(headerFields, change);
+        appendHoverTimestampField(headerFields, change);
 
         hoverCard.appendChild(headerFields);
 
@@ -514,56 +615,14 @@
           stats.textContent = statsText;
           hoverCard.appendChild(stats);
         }
-        const hoverDescription =
-          cachedDetails?.fullDescription ||
-          change.fullDescription ||
-          change.description;
-        if (hoverDescription) {
-          const description = document.createElement("div");
-          description.className = `hover-description${change.hasDescription ? "" : " placeholder"}`;
-          description.textContent = hoverDescription;
-          hoverCard.appendChild(description);
-        }
-
-        if (change.refName || change.isEmpty || change.isConflict) {
-          const footer = document.createElement("div");
-          footer.className = "hover-footer";
-
-          if (change.refName) {
-            footer.append(
-              buildMetaPill(
-                change.refName,
-                `ref-name${isSpecialRefName(change.refName) ? " special-ref" : " bookmark-ref"}`,
-              ),
-            );
-          }
-
-          if (change.isEmpty) {
-            footer.append(buildMetaPill("empty", "status-pill empty"));
-          }
-
-          if (change.isConflict) {
-            footer.append(buildMetaPill("conflict", "status-pill conflict"));
-          }
-
-          hoverCard.appendChild(footer);
-        }
+        appendHoverDescription(change, cachedDetails);
+        appendHoverFooter(change);
 
         hoverCard.hidden = false;
         hoveredNode = node;
         positionHoverCard(node);
 
-        if (
-          change.contextValue &&
-          !changeDetailsCache.has(change.contextValue)
-        ) {
-          // Hover details are fetched lazily because they include the full description body, which
-          // is intentionally omitted from the compact graph log template.
-          vscode.postMessage({
-            command: "requestChangeDetails",
-            changeId: change.contextValue,
-          });
-        }
+        requestHoverDetailsIfNeeded(change);
       }
 
       function updateConnections() {
@@ -583,31 +642,23 @@
 
         nodes.forEach((node, index) => {
           const parentIds = JSON.parse(node.dataset.parentIds || "[]");
-          const nodeRect = node.getBoundingClientRect();
+          const { nodeRect, y: currentY } = getNodeCenter(node, svgRect);
           const currentColumn = Number(node.dataset.symbolColumn || "0");
 
           // Convert to SVG coordinates with vertical centering
-          const currentX =
-            nodeRect.left -
-            svgRect.left +
-            graphLanePadding +
-            currentColumn * graphLaneStep;
-          const currentY = nodeRect.top - svgRect.top + nodeRect.height / 2;
+          const currentX = getLaneX(nodeRect, svgRect, currentColumn);
 
           parentIds.forEach((parentId, index) => {
             const parentNode = nodeMap.get(parentId);
             if (parentNode) {
-              const parentRect = parentNode.getBoundingClientRect();
+              const { nodeRect: parentRect, y: parentY } = getNodeCenter(
+                parentNode,
+                svgRect,
+              );
               const parentColumn = Number(
                 parentNode.dataset.symbolColumn || "0",
               );
-              const parentX =
-                parentRect.left -
-                svgRect.left +
-                graphLanePadding +
-                parentColumn * graphLaneStep;
-              const parentY =
-                parentRect.top - svgRect.top + parentRect.height / 2;
+              const parentX = getLaneX(parentRect, svgRect, parentColumn);
 
               const path = document.createElementNS(
                 "http://www.w3.org/2000/svg",
@@ -927,12 +978,7 @@
           const svgRect = document
             .getElementById("connections")
             .getBoundingClientRect();
-          const x =
-            nodeRect.left -
-            svgRect.left +
-            graphLanePadding +
-            Number(change.symbolColumn || 0) * graphLaneStep -
-            6;
+          const x = getLaneX(nodeRect, svgRect, change.symbolColumn) - 6;
           const y = nodeRect.top - svgRect.top + nodeRect.height / 2 - 6; // -6 to account for circle radius
 
           circle.setAttribute("transform", `translate(${x}, ${y})`);
@@ -1016,8 +1062,7 @@
           );
 
           // Position the circle group
-          const x =
-            nodeRect.left - svgRect.left + graphLanePadding + symbolColumn * graphLaneStep - 6;
+          const x = getLaneX(nodeRect, svgRect, symbolColumn) - 6;
           const y = nodeRect.top - svgRect.top + nodeRect.height / 2 - 6;
           g.setAttribute("transform", `translate(${x}, ${y})`);
 
