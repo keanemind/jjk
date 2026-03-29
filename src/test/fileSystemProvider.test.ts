@@ -85,4 +85,173 @@ suite("JJFileSystemProvider", () => {
       "Cache entry for an open jj:// document should survive cleanup",
     );
   });
+
+  test("diffOriginalRev reads directly from the original revision first", async function () {
+    const testFilePath = path.join(repoRoot, "deleted-file.txt");
+    const expected = Buffer.from("before delete\n");
+    let getDiffOriginalCalls = 0;
+
+    // Deleted files should resolve through `<rev>-` immediately. If this test
+    // reaches getDiffOriginal(), the provider skipped the cheap path.
+    const repository = {
+      readFile(rev: string, filepath: string): Promise<Uint8Array> {
+        assert.strictEqual(rev, "@-");
+        assert.strictEqual(filepath, testFilePath);
+        return Promise.resolve(expected);
+      },
+      getDiffOriginal(): Promise<Buffer | undefined> {
+        getDiffOriginalCalls += 1;
+        return Promise.resolve(Buffer.from("unexpected\n"));
+      },
+    };
+
+    const provider = workspaceSCM.fileSystemProvider;
+    const originalGetRepositoryFromUri = workspaceSCM.getRepositoryFromUri.bind(
+      workspaceSCM,
+    );
+
+    workspaceSCM.getRepositoryFromUri = () => repository as never;
+    try {
+      const data = await provider.readFile(
+        toJJUri(vscode.Uri.file(testFilePath), { diffOriginalRev: "@" }),
+      );
+      assert.deepStrictEqual(Buffer.from(data), expected);
+      assert.strictEqual(
+        getDiffOriginalCalls,
+        0,
+        "Expected direct readFile() to satisfy deleted-file reads",
+      );
+    } finally {
+      workspaceSCM.getRepositoryFromUri = originalGetRepositoryFromUri;
+    }
+  });
+
+  test("diffOriginalRev reads renamed content from the parent commit", async function () {
+    const renamedFilePath = path.join(repoRoot, "renamed-file.txt");
+    const originalFilePath = path.join(repoRoot, "old-name.txt");
+    const expected = Buffer.from("before rename\n");
+    let getDiffOriginalCalls = 0;
+    const readCalls: { rev: string; filepath: string }[] = [];
+
+    // Renames cannot be read from `<rev>-` at the new path, so the provider
+    // must use `show(rev)` metadata to map back to the old path in the parent.
+    const repository = {
+      repositoryRoot: repoRoot,
+      readFile(rev: string, filepath: string): Promise<Uint8Array> {
+        readCalls.push({ rev, filepath });
+        if (rev === "@-") {
+          return Promise.reject(new Error("No such path"));
+        }
+        assert.strictEqual(rev, "parent-1");
+        assert.strictEqual(filepath, originalFilePath);
+        return Promise.resolve(expected);
+      },
+      show() {
+        return Promise.resolve({
+          change: { parentCommitIds: ["parent-1"] },
+          fileStatuses: [
+            {
+              path: renamedFilePath,
+              renamedFrom: "old-name.txt",
+            },
+          ],
+        });
+      },
+      getDiffOriginal(rev: string, filepath: string): Promise<Buffer> {
+        getDiffOriginalCalls += 1;
+        assert.strictEqual(rev, "@");
+        assert.strictEqual(filepath, renamedFilePath);
+        return Promise.resolve(expected);
+      },
+    };
+
+    const provider = workspaceSCM.fileSystemProvider;
+    const originalGetRepositoryFromUri = workspaceSCM.getRepositoryFromUri.bind(
+      workspaceSCM,
+    );
+
+    workspaceSCM.getRepositoryFromUri = () => repository as never;
+    try {
+      const data = await provider.readFile(
+        toJJUri(vscode.Uri.file(renamedFilePath), { diffOriginalRev: "@" }),
+      );
+      assert.deepStrictEqual(Buffer.from(data), expected);
+      assert.deepStrictEqual(readCalls, [
+        { rev: "@-", filepath: renamedFilePath },
+        { rev: "parent-1", filepath: originalFilePath },
+      ]);
+      assert.strictEqual(getDiffOriginalCalls, 0);
+    } finally {
+      workspaceSCM.getRepositoryFromUri = originalGetRepositoryFromUri;
+    }
+  });
+
+  test(
+    "diffOriginalRev resolves renamed content across multiple parents",
+    async function () {
+      const renamedFilePath = path.join(repoRoot, "renamed-merge-file.txt");
+      const originalFilePath = path.join(repoRoot, "a.txt");
+      const expected = Buffer.from("before rename\n");
+      let getDiffOriginalCalls = 0;
+      const readCalls: { rev: string; filepath: string }[] = [];
+
+      // In merge commits, `@-` can be ambiguous. The provider should still
+      // resolve the rename by probing each concrete parent commit from
+      // `show(rev)` before falling back to diff extraction.
+      const repository = {
+        repositoryRoot: repoRoot,
+        readFile(rev: string, filepath: string): Promise<Uint8Array> {
+          readCalls.push({ rev, filepath });
+          if (rev === "@-") {
+            return Promise.reject(
+              new Error("Revset `@-` resolved to more than one revision"),
+            );
+          }
+          if (rev === "parent-1") {
+            return Promise.reject(new Error("No such path"));
+          }
+          assert.strictEqual(rev, "parent-2");
+          assert.strictEqual(filepath, originalFilePath);
+          return Promise.resolve(expected);
+        },
+        show() {
+          return Promise.resolve({
+            change: { parentCommitIds: ["parent-1", "parent-2"] },
+            fileStatuses: [
+              {
+                path: renamedFilePath,
+                renamedFrom: "a.txt",
+              },
+            ],
+          });
+        },
+        getDiffOriginal(rev: string, filepath: string): Promise<Buffer> {
+          getDiffOriginalCalls += 1;
+          assert.strictEqual(rev, "@");
+          assert.strictEqual(filepath, renamedFilePath);
+          return Promise.resolve(expected);
+        },
+      };
+
+      const provider = workspaceSCM.fileSystemProvider;
+      const originalGetRepositoryFromUri =
+        workspaceSCM.getRepositoryFromUri.bind(workspaceSCM);
+
+      workspaceSCM.getRepositoryFromUri = () => repository as never;
+      try {
+        const data = await provider.readFile(
+          toJJUri(vscode.Uri.file(renamedFilePath), { diffOriginalRev: "@" }),
+        );
+        assert.deepStrictEqual(Buffer.from(data), expected);
+        assert.deepStrictEqual(readCalls, [
+          { rev: "@-", filepath: renamedFilePath },
+          { rev: "parent-1", filepath: originalFilePath },
+          { rev: "parent-2", filepath: originalFilePath },
+        ]);
+        assert.strictEqual(getDiffOriginalCalls, 0);
+      } finally {
+        workspaceSCM.getRepositoryFromUri = originalGetRepositoryFromUri;
+      }
+    },
+  );
 });
