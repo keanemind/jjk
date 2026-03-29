@@ -1,5 +1,6 @@
 import * as assert from "assert";
 import { getExtensionAPI } from "./extensionApi";
+import type { ChangeNode } from "../graphWebview";
 
 suite("parseJJLog", () => {
   let parseJJLog: typeof import("../graphWebview").parseJJLog;
@@ -13,7 +14,7 @@ suite("parseJJLog", () => {
 │  (empty) Match graph metadata to jj log
 │ ○  prrwzkws joshka@users.noreply.github.com 2026-03-26 12:58:52 joshka/discard-confirmation-safety 21d41297
 │ │  Do not restore copy sources
-◆  ysouttnr keanemind@gmail.com 2026-03-23 16:50:41 main 0dc3706d
+◆  ysouttnr email@example.com 2026-03-23 16:50:41 main 0dc3706d
 │  fix lint errors introduced by the new rule in the rest of the tests (#222)
 ◆  zzzzzzzz root() 00000000
 ~  (elided revisions)
@@ -23,77 +24,105 @@ suite("parseJJLog", () => {
 
     assert.strictEqual(nodes.length, 5);
 
-    assert.deepStrictEqual(
-      nodes.map((node) => ({
-        branchType: node.branchType,
-        changeId: node.changeId,
-        commitId: node.commitId,
-        author: node.author,
-        authorDisplay: node.authorDisplay,
-        refName: node.refName,
-        description: node.description,
-        isEmpty: node.isEmpty,
-        isElided: node.isElided,
-      })),
-      [
+    const expecteds = [
+      {
+        branchType: "@",
+        changeId: "xwqpumyo",
+        commitId: "132eedbf",
+        author: "joshka@users.noreply.github.com",
+        authorDisplay: "joshka",
+        refName: "",
+        description: "Match graph metadata to jj log",
+        hasDescription: true,
+        isEmpty: true,
+        isElided: false,
+      },
+      {
+        branchType: "○",
+        changeId: "prrwzkws",
+        commitId: "21d41297",
+        author: "joshka@users.noreply.github.com",
+        authorDisplay: "joshka",
+        refName: "joshka/discard-confirmation-safety",
+        description: "Do not restore copy sources",
+        hasDescription: true,
+        isEmpty: false,
+        isElided: false,
+      },
+      {
+        branchType: "◆",
+        changeId: "ysouttnr",
+        commitId: "0dc3706d",
+        author: "email@example.com",
+        authorDisplay: "email",
+        refName: "main",
+        description:
+          "fix lint errors introduced by the new rule in the rest of the tests (#222)",
+        hasDescription: true,
+        isEmpty: false,
+        isElided: false,
+      },
+      {
+        branchType: "◆",
+        changeId: "zzzzzzzz",
+        commitId: "00000000",
+        author: "",
+        authorDisplay: "",
+        refName: "root()",
+        description: "", // root is a special case where we don't display (no description set)
+        hasDescription: false,
+        isEmpty: false,
+        isElided: false,
+      },
+      {
+        branchType: "~",
+        changeId: "",
+        commitId: "",
+        author: "",
+        authorDisplay: "",
+        refName: "",
+        description: "Older revisions hidden",
+        hasDescription: false,
+        isEmpty: false,
+        isElided: true,
+      },
+    ] satisfies Partial<ChangeNode>[];
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i];
+      const expected = expecteds[i];
+      if (i === 3) {
+        console.log(
+          JSON.stringify({
+            branchType: node.branchType,
+            changeId: node.changeId,
+            commitId: node.commitId,
+            author: node.author,
+            authorDisplay: node.authorDisplay,
+            refName: node.refName,
+            description: node.description,
+            hasDescription: node.hasDescription,
+            isEmpty: node.isEmpty,
+            isElided: node.isElided,
+          }),
+        );
+      }
+      assert.deepStrictEqual(
         {
-          branchType: "@",
-          changeId: "xwqpumyo",
-          commitId: "132eedbf",
-          author: "joshka@users.noreply.github.com",
-          authorDisplay: "joshka",
-          refName: "",
-          description: "Match graph metadata to jj log",
-          isEmpty: true,
-          isElided: false,
-        },
-        {
-          branchType: "○",
-          changeId: "prrwzkws",
-          commitId: "21d41297",
-          author: "joshka@users.noreply.github.com",
-          authorDisplay: "joshka",
-          refName: "joshka/discard-confirmation-safety",
-          description: "Do not restore copy sources",
-          isEmpty: false,
-          isElided: false,
-        },
-        {
-          branchType: "◆",
-          changeId: "ysouttnr",
-          commitId: "0dc3706d",
-          author: "keanemind@gmail.com",
-          authorDisplay: "keanemind",
-          refName: "main",
-          description:
-            "fix lint errors introduced by the new rule in the rest of the tests (#222)",
-          isEmpty: false,
-          isElided: false,
-        },
-        {
-          branchType: "◆",
-          changeId: "zzzzzzzz",
-          commitId: "00000000",
-          author: "",
-          authorDisplay: "",
-          refName: "root()",
-          description: "No description set",
-          isEmpty: false,
-          isElided: false,
-        },
-        {
-          branchType: "~",
-          changeId: "",
-          commitId: "",
-          author: "",
-          authorDisplay: "",
-          refName: "",
-          description: "Older revisions hidden",
-          isEmpty: false,
-          isElided: true,
-        },
-      ],
-    );
+          branchType: node.branchType,
+          changeId: node.changeId,
+          commitId: node.commitId,
+          author: node.author,
+          authorDisplay: node.authorDisplay,
+          refName: node.refName,
+          description: node.description,
+          hasDescription: node.hasDescription,
+          isEmpty: node.isEmpty,
+          isElided: node.isElided,
+        } satisfies Partial<ChangeNode>,
+        expected,
+        `Node ${i} does not match expected`,
+      );
+    }
   });
 
   test("tracks jj graph columns for branch layout", () => {
@@ -135,7 +164,7 @@ suite("parseJJLog", () => {
     assert.ok(node);
     assert.strictEqual(node.isEmpty, true);
     assert.strictEqual(node.hasDescription, false);
-    assert.strictEqual(node.description, "No description set");
+    assert.strictEqual(node.description, "(no description set)");
   });
 
   test("parses conflicted changes", () => {
