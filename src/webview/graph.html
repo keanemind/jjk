@@ -697,15 +697,19 @@
                             `,
                 );
               } else {
-                // Route through each revision's own symbol column so merges and forks keep the
-                // same overall shape as jj's CLI graph.
-                const midY = (currentY + parentY) / 2;
+                // Bend close to the child node so the vertical segment at the
+                // child's column stays short and doesn't bleed through unrelated
+                // branches that share the same column.
+                const bendY = Math.min(
+                  currentY + nodeRect.height,
+                  (currentY + parentY) / 2,
+                );
                 path.setAttribute(
                   "d",
                   `
                                 M ${currentX} ${currentY}
-                                L ${currentX} ${midY}
-                                L ${parentX} ${midY}
+                                L ${currentX} ${bendY}
+                                L ${parentX} ${bendY}
                                 L ${parentX} ${parentY}
                             `,
                 );
