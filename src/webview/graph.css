@@ -51,7 +51,7 @@ body {
 
 .hover-field-value {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
   min-width: 0;
   flex-wrap: wrap;
@@ -97,30 +97,64 @@ body {
   color: var(--vscode-terminal-ansiGreen);
 }
 
+.hover-stats {
+  margin-top: 10px;
+  color: var(--vscode-descriptionForeground);
+}
+
 .hover-email {
   color: var(--vscode-descriptionForeground);
   word-break: break-all;
   user-select: text;
 }
 
+.hover-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
 .hover-copy-button {
-  opacity: 0;
   background: none;
   border: none;
   color: var(--vscode-icon-foreground);
   cursor: pointer;
-  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px;
   margin-left: 2px;
   line-height: 1;
   border-radius: 3px;
-}
-
-.hover-field-row:hover .hover-copy-button,
-.hover-copy-button:focus-visible {
-  opacity: 1;
+  flex: 0 0 auto;
 }
 
 .hover-copy-button:hover {
+  color: var(--vscode-textLink-foreground);
+}
+
+.hover-action-button {
+  background: none;
+  border: none;
+  color: var(--vscode-icon-foreground);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px;
+  margin-left: 2px;
+  line-height: 1;
+  border-radius: 3px;
+  flex: 0 0 auto;
+}
+
+.hover-action-button.icon-only {
+  min-width: 16px;
+}
+
+.hover-action-button:hover {
   color: var(--vscode-textLink-foreground);
 }
 
@@ -178,36 +212,52 @@ body {
 /* Dimming and highlighting effects */
 .node-circle.dimmed circle,
 .node-circle.dimmed .heart-path {
-  opacity: 0.1;
+  opacity: 0.45;
 }
 
 .node-circle.highlighted circle,
 .node-circle.highlighted .heart-path {
-  opacity: 1;
+  opacity: 0.95;
 }
 
 .connection-line.dimmed {
-  opacity: 0.1;
+  opacity: 0.4;
 }
 
 .connection-line.highlighted {
-  opacity: 1;
+  opacity: 0.95;
 }
 
 /* Child connection styling */
 .connection-line.highlighted.child-connection {
-  stroke: #4caf50;
+  stroke: color-mix(
+    in srgb,
+    var(--vscode-charts-blue) 82%,
+    var(--vscode-terminal-ansiGreen) 18%
+  );
 }
 
 /* Regular child node styling */
 .node-circle.child-node circle {
-  fill: #4caf50;
-  stroke: #4caf50;
+  fill: color-mix(
+    in srgb,
+    var(--vscode-charts-blue) 82%,
+    var(--vscode-terminal-ansiGreen) 18%
+  );
+  stroke: color-mix(
+    in srgb,
+    var(--vscode-charts-blue) 82%,
+    var(--vscode-terminal-ansiGreen) 18%
+  );
 }
 
 /* Diamond-specific child node styling */
 .node-circle.child-node .diamond-path {
-  fill: #4caf50;
+  fill: color-mix(
+    in srgb,
+    var(--vscode-charts-blue) 82%,
+    var(--vscode-terminal-ansiGreen) 18%
+  );
 }
 
 /* Text content styling */
@@ -289,8 +339,6 @@ body {
 .meta-pill.bookmark-ref {
   color: #b180d7;
   background: color-mix(in srgb, #b180d7 14%, transparent);
-  padding-left: 0;
-  padding-right: 0;
 }
 
 .meta-pill.special-ref {
@@ -398,39 +446,6 @@ body {
   }
 }
 
-/* Edit button styling */
-.edit-button {
-  opacity: 0;
-  position: absolute;
-  top: 50%;
-  right: 6px;
-  transform: translateY(-50%);
-  background: none;
-  border: none;
-  color: var(--vscode-button-foreground);
-  cursor: pointer;
-  padding: 2px 6px;
-  font-size: 0.9em;
-  border-radius: 3px;
-  z-index: 2;
-}
-
-.change-node:hover .edit-button {
-  opacity: 1;
-}
-
-.edit-button:hover {
-  background-color: var(--vscode-button-secondaryHoverBackground);
-}
-
-.edit-button .codicon {
-  color: var(--vscode-icon-foreground);
-}
-
-.edit-button:hover .codicon {
-  color: var(--vscode-button-secondaryForeground);
-}
-
 /* Node circle styling */
 .node-circle {
   min-width: 12px;
@@ -472,9 +487,9 @@ body {
 
 /* Add dimming effects for diamond paths */
 .node-circle.dimmed .diamond-path {
-  opacity: 0.1;
+  opacity: 0.45;
 }
 
 .node-circle.highlighted .diamond-path {
-  opacity: 1;
+  opacity: 0.95;
 }

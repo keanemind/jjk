@@ -132,6 +132,18 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
             );
           }
           break;
+        case "newChangeFrom":
+          if (!message.changeId) {
+            break;
+          }
+          try {
+            await this.repository.new(undefined, [message.changeId]);
+          } catch (error: unknown) {
+            vscode.window.showErrorMessage(
+              `Failed to create change${error instanceof Error ? `: ${error.message}` : ""}`,
+            );
+          }
+          break;
         case "selectChange":
           this.selectedNodes = new Set(message.selectedNodes ?? []);
           vscode.commands.executeCommand(
@@ -148,17 +160,33 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
             // Keep the list rows cheap to render by fetching the full description only when the
             // user asks for hover details on a specific change.
             const showResult = await this.repository.show(message.changeId);
+            const stats = {
+              total: showResult.fileStatuses.length,
+              added: showResult.fileStatuses.filter((file) => file.type === "A")
+                .length,
+              modified: showResult.fileStatuses.filter((file) => file.type === "M")
+                .length,
+              removed: showResult.fileStatuses.filter((file) => file.type === "D")
+                .length,
+              renamed: showResult.fileStatuses.filter((file) => file.type === "R")
+                .length,
+              copied: showResult.fileStatuses.filter((file) => file.type === "C")
+                .length,
+            };
             this.panel?.webview.postMessage({
               command: "changeDetails",
               changeId: message.changeId,
-              fullDescription:
-                showResult.change.description || "(no description set)",
+              details: {
+                fullDescription:
+                  showResult.change.description || "(no description set)",
+                stats,
+              },
             });
           } catch {
             this.panel?.webview.postMessage({
               command: "changeDetails",
               changeId: message.changeId,
-              fullDescription: undefined,
+              details: undefined,
             });
           }
           break;

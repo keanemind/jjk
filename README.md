@@ -35,6 +35,9 @@ Here's what you can do so far:
   ![restore](images/restore.png)
 - Browse and navigate revision history  
   <img src="images/edit.gif" width="50%" alt="revision history">
+- Inspect the Source Control Graph with commit metadata, full commit
+  messages, change stats, and quick hover actions for editing or
+  creating a follow-up change
 - Create merge changes  
   <img src="images/merge.gif" width="50%" alt="revision history">
 
