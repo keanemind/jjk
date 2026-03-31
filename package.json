@@ -6,7 +6,8 @@
   "icon": "images/logo.png",
   "version": "0.9.3",
   "engines": {
-    "vscode": "^1.96.0"
+    "vscode": "^1.96.0",
+    "npm": ">=11.10.0"
   },
   "categories": [
     "SCM Providers"
