@@ -66,12 +66,16 @@
           case "changeDetails":
             if (message.changeId) {
               changeDetailsCache.set(message.changeId, message.details);
-              if (hoveredNode?.dataset.changeId === message.changeId && !hoverCard.hidden) {
+              if (
+                hoveredNode?.dataset.changeId === message.changeId &&
+                !hoverCard.hidden
+              ) {
                 // Update the current render's row snapshot so subsequent hover redraws can reuse
                 // the fetched description without another DOM serialization round-trip.
                 const hoveredChange = rowDataByChangeId.get(message.changeId);
                 if (message.details?.fullDescription) {
-                  hoveredChange.fullDescription = message.details.fullDescription;
+                  hoveredChange.fullDescription =
+                    message.details.fullDescription;
                 }
                 renderHoverCard(hoveredChange, hoveredNode);
               }
@@ -193,7 +197,10 @@
         if (shortUniqueLength < shortLength) {
           const shortRemainderSpan = document.createElement("span");
           shortRemainderSpan.className = "id-remainder";
-          shortRemainderSpan.textContent = id.slice(shortUniqueLength, shortLength);
+          shortRemainderSpan.textContent = id.slice(
+            shortUniqueLength,
+            shortLength,
+          );
           shortSpan.appendChild(shortRemainderSpan);
         }
         wrapper.appendChild(shortSpan);
@@ -301,7 +308,9 @@
           return "";
         }
 
-        const parts = [`${stats.total} file${stats.total === 1 ? "" : "s"} changed`];
+        const parts = [
+          `${stats.total} file${stats.total === 1 ? "" : "s"} changed`,
+        ];
         if (stats.modified) {
           parts.push(`${stats.modified} modified`);
         }
@@ -358,7 +367,9 @@
       function getTextContentRect(node) {
         // Hover positioning is anchored from the text block rather than the graph lane so the
         // circles remain clickable while the card is visible.
-        return (node.querySelector(".text-content") || node).getBoundingClientRect();
+        return (
+          node.querySelector(".text-content") || node
+        ).getBoundingClientRect();
       }
 
       function getNodeCenter(node, svgRect) {
@@ -520,7 +531,9 @@
 
       function positionHoverCard(node) {
         const nodeRect = node.getBoundingClientRect();
-        const graphRect = document.getElementById("graph").getBoundingClientRect();
+        const graphRect = document
+          .getElementById("graph")
+          .getBoundingClientRect();
         const textRect = getTextContentRect(node);
         const cardWidth = hoverCard.offsetWidth || 0;
         const cardHeight = hoverCard.offsetHeight || 0;
@@ -537,10 +550,7 @@
         const viewportHeight =
           window.innerHeight || document.documentElement.clientHeight;
         const maxTop = viewportHeight - graphRect.top - cardHeight - 8;
-        const top = Math.max(
-          8,
-          Math.min(preferredTop, Math.max(8, maxTop)),
-        );
+        const top = Math.max(8, Math.min(preferredTop, Math.max(8, maxTop)));
         hoverCard.style.left = `${left}px`;
         hoverCard.style.top = `${top}px`;
       }
@@ -687,7 +697,11 @@
                 );
               });
 
-              if (isLatestParent && currentColumn === parentColumn && isAdjacent) {
+              if (
+                isLatestParent &&
+                currentColumn === parentColumn &&
+                isAdjacent
+              ) {
                 // Vertical line for adjacent nodes
                 path.setAttribute(
                   "d",
@@ -873,7 +887,8 @@
         }, 0);
         // Size the graph lane gutter from the parsed symbol columns so side branches can widen the
         // SVG without changing the two-line text row layout.
-        const graphWidth = graphLanePadding * 2 + (maxSymbolColumn + 1) * graphLaneStep;
+        const graphWidth =
+          graphLanePadding * 2 + (maxSymbolColumn + 1) * graphLaneStep;
         document.documentElement.style.setProperty(
           "--graph-width",
           `${graphWidth}px`,
@@ -965,7 +980,9 @@
           }
 
           if (change.isConflict) {
-            summaryLine.append(buildMetaPill("conflict", "status-pill conflict"));
+            summaryLine.append(
+              buildMetaPill("conflict", "status-pill conflict"),
+            );
           }
 
           if (change.description) {

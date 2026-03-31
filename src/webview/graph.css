@@ -351,11 +351,7 @@ body {
 }
 
 .meta-pill.status-pill.empty {
-  color: color-mix(
-    in srgb,
-    var(--vscode-terminal-ansiGreen) 45%,
-    transparent
-  );
+  color: color-mix(in srgb, var(--vscode-terminal-ansiGreen) 45%, transparent);
   background: color-mix(
     in srgb,
     var(--vscode-terminal-ansiGreen) 7%,
