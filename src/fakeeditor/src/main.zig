@@ -17,10 +17,14 @@ const c = @cImport({
 const POLLING_INTERVAL_MS: u64 = 50;
 const TOTAL_TIMEOUT_MS: u64 = 5000;
 
-// Helper function to check if a process exists on Windows
-fn parentProcessExistsWindows(parent_pid: c.DWORD) !bool {
-    const stderr = std.io.getStdErr().writer();
+fn flushAndExit(stdout: *std.Io.Writer, stderr: *std.Io.Writer, code: u8) noreturn {
+    stdout.flush() catch {};
+    stderr.flush() catch {};
+    std.process.exit(code);
+}
 
+// Helper function to check if a process exists on Windows
+fn parentProcessExistsWindows(parent_pid: c.DWORD, stderr: *std.Io.Writer) !bool {
     const hParentProcess = c.OpenProcess(c.SYNCHRONIZE, 0, parent_pid);
     if (hParentProcess == null) {
         // If we can't open the process, it might have already exited or we lack permissions.
@@ -44,9 +48,7 @@ fn parentProcessExistsWindows(parent_pid: c.DWORD) !bool {
 }
 
 // Helper function to get parent PID on Windows
-fn getParentPidWindows() !c.DWORD {
-    const stderr = std.io.getStdErr().writer();
-
+fn getParentPidWindows(stderr: *std.Io.Writer) !c.DWORD {
     const current_pid = c.GetCurrentProcessId();
     const hSnapshot = c.CreateToolhelp32Snapshot(c.TH32CS_SNAPPROCESS, 0);
     if (hSnapshot == c.INVALID_HANDLE_VALUE) {
@@ -83,8 +85,12 @@ fn getParentPidWindows() !c.DWORD {
 }
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
-    const stderr = std.io.getStdErr().writer();
+    var stdout_buffer: [1024]u8 = undefined;
+    var stderr_buffer: [1024]u8 = undefined;
+    var stdout_writer = std.fs.File.stdout().writer(stdout_buffer[0..]);
+    var stderr_writer = std.fs.File.stderr().writer(stderr_buffer[0..]);
+    const stdout = &stdout_writer.interface;
+    const stderr = &stderr_writer.interface;
     const allocator = std.heap.page_allocator;
 
     const pid = switch (builtin.os.tag) {
@@ -109,17 +115,18 @@ pub fn main() !void {
     const envVarName = "JJ_FAKEEDITOR_SIGNAL_DIR";
     const signal_dir_path_owned = std.process.getEnvVarOwned(allocator, envVarName) catch |err| {
         try stderr.print("Error getting environment variable '{s}': {any}\n", .{ envVarName, err });
-        std.process.exit(1);
+        flushAndExit(stdout, stderr, 1);
     };
     defer allocator.free(signal_dir_path_owned);
 
     try stdout.print("FAKEEDITOR_OUTPUT_END\n", .{});
+    try stdout.flush();
 
     const start_time = std.time.nanoTimestamp();
 
     const signal_file_path = std.fs.path.join(allocator, &.{ signal_dir_path_owned, "0" }) catch |e| {
         try stderr.print("Critical Error: Failed to construct signal file path '{s}{c}{s}': {any}. Exiting fakeeditor.\n", .{ signal_dir_path_owned, std.fs.path.sep, "0", e });
-        std.process.exit(1);
+        flushAndExit(stdout, stderr, 1);
     };
 
     var ppid: if (builtin.os.tag != .windows) c.pid_t else void =
@@ -129,7 +136,7 @@ pub fn main() !void {
     var parent_monitoring_active: bool = true;
 
     if (builtin.os.tag == .windows) {
-        win_ppid = getParentPidWindows() catch |err| blk: {
+        win_ppid = getParentPidWindows(stderr) catch |err| blk: {
             try stderr.print("Warning: Failed to get parent PID on Windows: {any}. Parent process monitoring will be disabled.\n", .{err});
             parent_monitoring_active = false;
             break :blk 0;
@@ -138,7 +145,7 @@ pub fn main() !void {
         ppid = c.getppid();
         if (ppid == 1) { // Reparented to init/launchd
             try stderr.print("Info: Parent process is init/launchd (PID 1), original parent likely exited. Exiting fakeeditor.\n", .{});
-            std.process.exit(1); // Exit immediately if reparented
+            flushAndExit(stdout, stderr, 1); // Exit immediately if reparented
         }
     }
 
@@ -148,15 +155,15 @@ pub fn main() !void {
 
         if (elapsed_ms >= TOTAL_TIMEOUT_MS) {
             try stderr.print("Error: Timeout ({}ms) reached in fakeeditor. Exiting.\n", .{TOTAL_TIMEOUT_MS});
-            std.process.exit(1);
+            flushAndExit(stdout, stderr, 1);
         }
 
         // Parent Process Check
         if (parent_monitoring_active) {
             if (builtin.os.tag == .windows) {
-                if (!try parentProcessExistsWindows(win_ppid)) {
+                if (!try parentProcessExistsWindows(win_ppid, stderr)) {
                     try stderr.print("Parent process (PID: {}) no longer exists (Windows). Exiting.\n", .{win_ppid});
-                    std.process.exit(1);
+                    flushAndExit(stdout, stderr, 1);
                 }
             } else {
                 if (std.posix.kill(ppid, 0)) |_| {
@@ -164,7 +171,7 @@ pub fn main() !void {
                 } else |err| {
                     if (err == error.NoSuchProcess) {
                         try stderr.print("Parent process (PID: {}) no longer exists (POSIX). Exiting.\n", .{ppid});
-                        std.process.exit(1);
+                        flushAndExit(stdout, stderr, 1);
                     }
                     // Other errors with kill could also indicate an issue, but NoSuchProcess is the key one.
                     // If kill fails for other reasons, we might want to log it to stderr but not necessarily exit immediately,
@@ -176,7 +183,7 @@ pub fn main() !void {
         // Check for signal file "0"
         if (std.fs.accessAbsolute(signal_file_path, .{})) |_| {
             // File "0" exists
-            std.process.exit(0);
+            flushAndExit(stdout, stderr, 0);
         } else |err| {
             if (err != error.FileNotFound) {
                 // Some other error accessing the file, log it but continue polling
@@ -184,6 +191,6 @@ pub fn main() !void {
             }
         }
 
-        std.time.sleep(POLLING_INTERVAL_MS * std.time.ns_per_ms);
+        std.Thread.sleep(POLLING_INTERVAL_MS * std.time.ns_per_ms);
     }
 }
