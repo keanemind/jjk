@@ -85,12 +85,14 @@ fn getParentPidWindows(stderr: *std.Io.Writer) !c.DWORD {
 }
 
 pub fn main() !void {
-    var stdout_buffer: [1024]u8 = undefined;
-    var stderr_buffer: [1024]u8 = undefined;
+    var stdout_buffer: [4096]u8 = undefined;
+    var stderr_buffer: [4096]u8 = undefined;
     var stdout_writer = std.fs.File.stdout().writer(stdout_buffer[0..]);
     var stderr_writer = std.fs.File.stderr().writer(stderr_buffer[0..]);
     const stdout = &stdout_writer.interface;
     const stderr = &stderr_writer.interface;
+    defer stdout.flush() catch {};
+    defer stderr.flush() catch {};
     const allocator = std.heap.page_allocator;
 
     const pid = switch (builtin.os.tag) {
