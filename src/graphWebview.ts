@@ -140,6 +140,19 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
 
     webviewView.webview.onDidReceiveMessage(async (message: Message) => {
       switch (message.command) {
+        case "openChanges":
+          try {
+            await vscode.commands.executeCommand(
+              "jj.openChangeDiff",
+              this.repository.repositoryRoot,
+              message.changeId,
+            );
+          } catch (error: unknown) {
+            vscode.window.showErrorMessage(
+              `Failed to open changes: ${error as string}`,
+            );
+          }
+          break;
         case "editChange":
           if (!message.changeId) {
             break;

@@ -596,6 +596,11 @@ export class RepositorySourceControlManager {
       "@",
       "Working Copy",
     );
+    (
+      this.workingCopyResourceGroup as vscode.SourceControlResourceGroup & {
+        multiDiffEditorEnableViewChanges?: boolean;
+      }
+    ).multiDiffEditorEnableViewChanges = true;
     this.subscriptions.push(this.workingCopyResourceGroup);
 
     // Set up the SourceControlInputBox
@@ -782,6 +787,11 @@ export class RepositorySourceControlManager {
             parentChange,
           ),
         );
+        (
+          parentChangeResourceGroup as vscode.SourceControlResourceGroup & {
+            multiDiffEditorEnableViewChanges?: boolean;
+          }
+        ).multiDiffEditorEnableViewChanges = true;
         this.parentResourceGroups.push(parentChangeResourceGroup);
       } else {
         parentChangeResourceGroup = parentGroup;
