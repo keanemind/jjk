@@ -4,7 +4,7 @@
   "publisher": "jjk",
   "description": "Jujutsu (jj) version control system for VS Code",
   "icon": "images/logo.png",
-  "version": "0.9.3",
+  "version": "0.10.0",
   "engines": {
     "vscode": "^1.96.0",
     "npm": ">=11.10.0"
