@@ -73,8 +73,7 @@ suite("SCM Integration Tests", () => {
     await vscode.commands.executeCommand("jj.refresh");
 
     // Verify the file shows up in the working copy resource group
-    const workingCopyStates =
-      repoSCM.workingCopyResourceGroup.resourceStates;
+    const workingCopyStates = repoSCM.workingCopyResourceGroup.resourceStates;
     const addedFile = workingCopyStates.find((state) =>
       state.resourceUri.fsPath.endsWith(testFileName),
     );
