@@ -1348,7 +1348,7 @@ export class JJRepository {
         const match = error.message.match(/error:\s*([\s\S]+)$/i);
         if (match) {
           const errorMessage = match[1];
-          throw new Error(errorMessage);
+          throw new Error(errorMessage, { cause: error });
         } else {
           throw error;
         }
@@ -2358,6 +2358,7 @@ async function prepareFakeeditor(): Promise<{
       } catch (error) {
         throw new Error(
           `Failed to write signal file '${signalFilePath}': ${error instanceof Error ? error.message : String(error)}`,
+          { cause: error },
         );
       }
     },
@@ -2367,6 +2368,7 @@ async function prepareFakeeditor(): Promise<{
       } catch (error) {
         throw new Error(
           `Failed to cleanup signal directory '${signalDir}': ${error instanceof Error ? error.message : String(error)}`,
+          { cause: error },
         );
       }
     },
