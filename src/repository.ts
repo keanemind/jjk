@@ -1540,6 +1540,39 @@ export class JJRepository {
     return fileStatuses;
   }
 
+  /**
+   * Returns local bookmark names that are ancestors of @, suitable as base
+   * revision presets.
+   */
+  async bookmarksOfAncestors(): Promise<string[]> {
+    try {
+      const output = (
+        await handleJJCommand(
+          this.spawnJJRead(
+            [
+              "log",
+              "--no-graph",
+              "-r",
+              "bookmarks() & ::@",
+              "-T",
+              'local_bookmarks.join("\\n") ++ "\\n"',
+            ],
+            { defaultTimeout: 5000 },
+          ),
+        )
+      )
+        .toString()
+        .trim();
+
+      if (!output) {
+        return [];
+      }
+      return output.split("\n").filter(Boolean);
+    } catch {
+      return [];
+    }
+  }
+
   async describeRetryImmutable(rev: string, message: string) {
     try {
       return await this.describe(rev, message);

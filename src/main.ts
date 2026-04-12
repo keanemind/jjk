@@ -115,6 +115,20 @@ export async function activate(context: vscode.ExtensionContext) {
         await checkReposFunction(affectedFolders);
       }
     }
+
+    if (
+      e.affectsConfiguration("jjk.baseRevision") ||
+      e.affectsConfiguration("jjk.showBaseComparison") ||
+      e.affectsConfiguration("jjk.showParentCommit")
+    ) {
+      // Reset operationId to force re-fetch with new config values
+      await Promise.all(
+        workspaceSCM.repoSCMs.map(async (repoSCM) => {
+          repoSCM.operationId = undefined;
+          await repoSCM.checkForUpdates();
+        }),
+      );
+    }
   });
 
   let isInitialized = false;
@@ -1493,9 +1507,63 @@ export async function activate(context: vscode.ExtensionContext) {
     ),
   );
 
-  // Stub: full QuickPick implementation added in a later commit
   context.subscriptions.push(
-    vscode.commands.registerCommand("jj.changeBaseRevision", () => {}),
+    vscode.commands.registerCommand("jj.changeBaseRevision", async () => {
+      const repository = getSelectedRepo();
+
+      const config = vscode.workspace.getConfiguration(
+        "jjk",
+        vscode.Uri.file(repository.repositoryRoot),
+      );
+      const showParentCommit = config.get<boolean>("showParentCommit") ?? true;
+
+      const items: vscode.QuickPickItem[] = [
+        { label: "trunk()", description: "Default: main branch" },
+      ];
+      // Only show @- when parent commit groups are hidden,
+      // since otherwise the parent is already visible in the SCM view
+      if (!showParentCommit) {
+        items.push({ label: "@-", description: "Parent commit" });
+      }
+
+      // Fetch bookmarks between the
+      const bookmarks = await repository.bookmarksOfAncestors();
+      for (const b of bookmarks) {
+        items.push({ label: b, description: "bookmark" });
+      }
+
+      items.push({
+        label: "$(edit) Custom revset...",
+        description: "Enter any revset expression",
+      });
+
+      const selected = await vscode.window.showQuickPick(items, {
+        placeHolder: "Select base revision",
+      });
+      if (!selected) {
+        return;
+      }
+
+      let value = selected.label;
+      if (value === "$(edit) Custom revset...") {
+        const currentBase = config.get<string>("baseRevision") ?? "trunk()";
+        const custom = await vscode.window.showInputBox({
+          prompt: "Enter a jj revset expression for the base revision",
+          value: currentBase,
+          placeHolder: "trunk()",
+        });
+        if (custom === undefined) {
+          return;
+        }
+        value = custom;
+      }
+
+      await config.update(
+        "baseRevision",
+        value,
+        vscode.ConfigurationTarget.Workspace,
+      );
+    }),
   );
 
   context.subscriptions.push(
