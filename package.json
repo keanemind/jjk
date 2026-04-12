@@ -198,6 +198,12 @@
         "title": "Open child change",
         "category": "Jujutsu",
         "icon": "$(arrow-right)"
+      },
+      {
+        "command": "jj.changeBaseRevision",
+        "title": "Change base revision",
+        "category": "Jujutsu",
+        "icon": "$(git-compare)"
       }
     ],
     "menus": {
@@ -287,12 +293,17 @@
           "command": "jj.new",
           "when": "scmProvider == jj",
           "group": "navigation"
+        },
+        {
+          "command": "jj.changeBaseRevision",
+          "when": "scmProvider == jj && config.jjk.showBaseComparison",
+          "group": "navigation"
         }
       ],
       "scm/resourceGroup/context": [
         {
           "command": "jj.describe",
-          "when": "scmProvider == jj",
+          "when": "scmProvider == jj && scmResourceGroup =~ /^(@|[a-z]+)$/",
           "group": "inline"
         },
         {
@@ -302,17 +313,22 @@
         },
         {
           "command": "jj.squashToWorkingCopyResourceGroup",
-          "when": "scmProvider == jj && scmResourceGroup != @",
+          "when": "scmProvider == jj && scmResourceGroup =~ /^[a-z]+$/",
           "group": "inline"
         },
         {
           "command": "jj.restoreResourceGroup",
-          "when": "scmProvider == jj",
+          "when": "scmProvider == jj && scmResourceGroup =~ /^(@|[a-z]+)$/",
           "group": "inline"
         },
         {
           "command": "jj.editResourceGroup",
-          "when": "scmProvider == jj && scmResourceGroup != @",
+          "when": "scmProvider == jj && scmResourceGroup =~ /^[a-z]+$/",
+          "group": "inline"
+        },
+        {
+          "command": "jj.changeBaseRevision",
+          "when": "scmProvider == jj && scmResourceGroup =~ /^base-comparison-/",
           "group": "inline"
         }
       ],
@@ -324,7 +340,7 @@
         },
         {
           "command": "jj.restoreResourceState",
-          "when": "scmProvider == jj",
+          "when": "scmProvider == jj && scmResourceGroup =~ /^(@|[a-z]+)$/",
           "group": "inline"
         },
         {
@@ -339,14 +355,14 @@
         },
         {
           "command": "jj.squashToWorkingCopyResourceState",
-          "when": "scmProvider == jj && scmResourceGroup != @",
+          "when": "scmProvider == jj && scmResourceGroup =~ /^[a-z]+$/",
           "group": "inline"
         }
       ],
       "scm/resourceFolder/context": [
         {
           "command": "jj.restoreResourceState",
-          "when": "scmProvider == jj",
+          "when": "scmProvider == jj && scmResourceGroup =~ /^(@|[a-z]+)$/",
           "group": "inline"
         },
         {
@@ -356,7 +372,7 @@
         },
         {
           "command": "jj.squashToWorkingCopyResourceState",
-          "when": "scmProvider == jj && scmResourceGroup != @",
+          "when": "scmProvider == jj && scmResourceGroup =~ /^[a-z]+$/",
           "group": "inline"
         }
       ],
@@ -486,6 +502,18 @@
           "type": "boolean",
           "default": true,
           "description": "Whether to show Parent Commit resource groups in the SCM sidebar.",
+          "scope": "resource"
+        },
+        "jjk.showBaseComparison": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether to show Base Comparison resource groups in the SCM sidebar. Shows cumulative changes from the base revision to the current branch position.",
+          "scope": "resource"
+        },
+        "jjk.baseRevision": {
+          "type": "string",
+          "default": "trunk()",
+          "description": "Revset expression for the base of the comparison. Used by the Base Comparison resource group.",
           "scope": "resource"
         }
       }
