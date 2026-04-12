@@ -559,6 +559,50 @@ export function provideOriginalResource(uri: vscode.Uri) {
   return originalUri;
 }
 
+type BaseComparisonResult =
+  | { kind: "ok"; fileStatuses: FileStatus[]; toRevision: string }
+  | { kind: "error"; toRevision: string; error: string };
+
+/** Settings that affect both data fetching and rendering, read once per cycle. */
+type RefreshConfig = {
+  showParentCommit: boolean;
+  showBaseComparison: boolean;
+  baseRevision: string;
+};
+
+/**
+ * Immutable snapshot of all repo state computed in a single refresh cycle.
+ * Assigned atomically so readers never see a mix of stale and fresh data.
+ */
+type RepoSnapshot = {
+  status: RepositoryStatus;
+  fileStatusesByChange: Map<string, FileStatus[]>;
+  conflictedFilesByChange: Map<string, Set<string>>;
+  parentShowResults: Map<string, Show>;
+  baseComparisonResult: BaseComparisonResult | undefined;
+  trackedFiles: Set<string>;
+};
+
+/**
+ * Filters an array of resource groups, disposing those not in `validIds` and
+ * returning the survivors. Used by render() to reconcile both parent commit
+ * and base comparison groups against the latest data.
+ */
+function reconcileGroups(
+  groups: vscode.SourceControlResourceGroup[],
+  validIds: Set<string>,
+): vscode.SourceControlResourceGroup[] {
+  const kept: vscode.SourceControlResourceGroup[] = [];
+  for (const group of groups) {
+    if (validIds.has(group.id)) {
+      kept.push(group);
+    } else {
+      group.dispose();
+    }
+  }
+  return kept;
+}
+
 export class RepositorySourceControlManager {
   subscriptions: {
     dispose(): unknown;
@@ -573,19 +617,9 @@ export class RepositorySourceControlManager {
   readonly onDidUpdate: vscode.Event<void> = this._onDidUpdate.event;
 
   operationId: string | undefined; // the latest operation id seen by this manager
-  fileStatusesByChange: Map<string, FileStatus[]> = new Map();
-  conflictedFilesByChange: Map<string, Set<string>> = new Map();
-  trackedFiles: Set<string> = new Set();
-  status: RepositoryStatus | undefined;
-  parentShowResults: Map<string, Show> = new Map();
+  snapshot: RepoSnapshot | undefined;
 
-  // Base comparison state — kept in a dedicated field so it can be split
-  // into a separate refresh cycle later without restructuring render().
   baseComparisonGroups: vscode.SourceControlResourceGroup[] = [];
-  baseComparisonResults: Map<
-    string,
-    { fileStatuses: FileStatus[]; toRevision: string; error?: string }
-  > = new Map();
 
   /**
    * Determines the "--to" revision for the base comparison, implementing the
@@ -711,20 +745,34 @@ export class RepositorySourceControlManager {
       this.operationId = latestOperationId;
       const status = await this.repository.status();
 
-      await this.updateState(status);
-      this.render();
+      const vsConfig = vscode.workspace.getConfiguration(
+        "jjk",
+        vscode.Uri.file(this.repositoryRoot),
+      );
+      const config: RefreshConfig = {
+        showParentCommit: vsConfig.get<boolean>("showParentCommit") ?? true,
+        showBaseComparison:
+          vsConfig.get<boolean>("showBaseComparison") ?? false,
+        baseRevision: vsConfig.get<string>("baseRevision") ?? "trunk()",
+      };
+
+      this.snapshot = await this.buildSnapshot(status, config);
+      this.render(config);
 
       this._onDidUpdate.fire(undefined);
     }
   }
 
-  async updateState(status: RepositoryStatus) {
-    const newTrackedFiles = new Set<string>();
-    const newParentShowResults = new Map<string, Show>();
-    const newFileStatusesByChange = new Map<string, FileStatus[]>([
+  async buildSnapshot(
+    status: RepositoryStatus,
+    config: RefreshConfig,
+  ): Promise<RepoSnapshot> {
+    const trackedFiles = new Set<string>();
+    const parentShowResults = new Map<string, Show>();
+    const fileStatusesByChange = new Map<string, FileStatus[]>([
       ["@", status.fileStatuses],
     ]);
-    const newConflictedFilesByChange = new Map<string, Set<string>>([
+    const conflictedFilesByChange = new Map<string, Set<string>>([
       ["@", status.conflictedFiles],
     ]);
 
@@ -734,21 +782,12 @@ export class RepositorySourceControlManager {
       let currentPath = this.repositoryRoot + path.sep;
       for (const p of pathParts) {
         currentPath += p;
-        newTrackedFiles.add(currentPath);
+        trackedFiles.add(currentPath);
         currentPath += path.sep;
       }
     }
 
-    const config = vscode.workspace.getConfiguration(
-      "jjk",
-      vscode.Uri.file(this.repositoryRoot),
-    );
-    const showParentCommit = config.get<boolean>("showParentCommit") ?? true;
-    const showBaseComparison =
-      config.get<boolean>("showBaseComparison") ?? false;
-    const baseRevision = config.get<string>("baseRevision") ?? "trunk()";
-
-    if (showParentCommit) {
+    if (config.showParentCommit) {
       const parentShowPromises = status.parentChanges.map(
         async (parentChange) => {
           const showResult = await this.repository.show(parentChange.changeId);
@@ -759,37 +798,31 @@ export class RepositorySourceControlManager {
       const parentShowResultsArray = await Promise.all(parentShowPromises);
 
       for (const { changeId, showResult } of parentShowResultsArray) {
-        newParentShowResults.set(changeId, showResult);
-        newFileStatusesByChange.set(changeId, showResult.fileStatuses);
-        newConflictedFilesByChange.set(changeId, showResult.conflictedFiles);
+        parentShowResults.set(changeId, showResult);
+        fileStatusesByChange.set(changeId, showResult.fileStatuses);
+        conflictedFilesByChange.set(changeId, showResult.conflictedFiles);
       }
     }
 
     // Base comparison: fetch diff from base revision to the additive target.
     // This runs after parent show() completes because getBaseComparisonTarget
     // needs parentShowResults to determine @-- (the parent's parent).
-    const newBaseComparisonResults = new Map<
-      string,
-      { fileStatuses: FileStatus[]; toRevision: string; error?: string }
-    >();
+    let baseComparisonResult: BaseComparisonResult | undefined;
 
-    if (showBaseComparison) {
+    if (config.showBaseComparison) {
       const toRevision = RepositorySourceControlManager.getBaseComparisonTarget(
         status,
-        newParentShowResults,
-        showParentCommit,
+        parentShowResults,
+        config.showParentCommit,
       );
 
       if (toRevision !== null) {
         try {
           const fileStatuses = await this.repository.diffSummary(
-            baseRevision,
+            config.baseRevision,
             toRevision,
           );
-          newBaseComparisonResults.set("base-comparison", {
-            fileStatuses,
-            toRevision,
-          });
+          baseComparisonResult = { kind: "ok", fileStatuses, toRevision };
         } catch (e) {
           const message = e instanceof Error ? e.message : String(e);
           // Parse jj's "error: <detail>" stderr format; falls back to a
@@ -797,13 +830,13 @@ export class RepositorySourceControlManager {
           const shortMessage =
             message.match(/error:\s*([\s\S]+?)(?:\n|$)/i)?.[1] ??
             message.substring(0, 80);
-          newBaseComparisonResults.set("base-comparison", {
-            fileStatuses: [],
+          baseComparisonResult = {
+            kind: "error",
             toRevision,
             error: shortMessage,
-          });
+          };
           logger.warn(
-            `Base comparison failed for revset "${baseRevision}": ${message}`,
+            `Base comparison failed for revset "${config.baseRevision}": ${message}`,
           );
         }
       }
@@ -813,18 +846,21 @@ export class RepositorySourceControlManager {
     // can show A/M/D badges. The key is the toRevision (the revision used in
     // the resourceUri), which matches how provideFileDecoration extracts the
     // rev from jj:// URIs.
-    for (const [, result] of newBaseComparisonResults) {
-      if (!result.error) {
-        newFileStatusesByChange.set(result.toRevision, result.fileStatuses);
-      }
+    if (baseComparisonResult?.kind === "ok") {
+      fileStatusesByChange.set(
+        baseComparisonResult.toRevision,
+        baseComparisonResult.fileStatuses,
+      );
     }
 
-    this.status = status;
-    this.fileStatusesByChange = newFileStatusesByChange;
-    this.conflictedFilesByChange = newConflictedFilesByChange;
-    this.parentShowResults = newParentShowResults;
-    this.baseComparisonResults = newBaseComparisonResults;
-    this.trackedFiles = newTrackedFiles;
+    return {
+      status,
+      fileStatusesByChange,
+      conflictedFilesByChange,
+      parentShowResults,
+      baseComparisonResult,
+      trackedFiles,
+    };
   }
 
   static getLabel(prefix: string, change: Change) {
@@ -835,191 +871,139 @@ export class RepositorySourceControlManager {
     }${change.description ? "" : " (no description)"}`;
   }
 
-  render() {
-    if (!this.status?.workingCopy) {
+  render(config: RefreshConfig) {
+    const snapshot = this.snapshot;
+    if (!snapshot?.status.workingCopy) {
       throw new Error(
         "Cannot render source control without a current working copy change.",
       );
     }
 
-    this.workingCopyResourceGroup.label =
-      RepositorySourceControlManager.getLabel(
-        "Working Copy",
-        this.status.workingCopy,
-      );
-    this.workingCopyResourceGroup.resourceStates = this.status.fileStatuses.map(
-      (fileStatus) => {
-        return {
-          resourceUri: vscode.Uri.file(fileStatus.path),
-          decorations: {
-            strikeThrough: fileStatus.type === "D",
-            tooltip: path.basename(fileStatus.file),
-          },
-          command: getResourceStateCommand(
-            fileStatus,
-            toJJUri(vscode.Uri.file(`${fileStatus.path}`), {
-              diffOriginalRev: "@",
-            }),
-            vscode.Uri.file(fileStatus.path),
-            "(Working Copy)",
-          ),
-        };
-      },
-    );
-    this.sourceControl.count = this.status.fileStatuses.length;
-
-    const config = vscode.workspace.getConfiguration(
-      "jjk",
-      vscode.Uri.file(this.repositoryRoot),
-    );
-    const showParentCommit =
-      config.get<boolean>("showParentCommit") ?? true;
-    const showBaseComparison =
-      config.get<boolean>("showBaseComparison") ?? false;
-    const baseRevision =
-      config.get<string>("baseRevision") ?? "trunk()";
-
-    this.renderParentCommits(this.status, showParentCommit);
-
-    this.renderBaseComparison(showBaseComparison, baseRevision);
+    this.renderWorkingCopy(snapshot);
+    this.renderParentGroups(snapshot, config);
+    this.renderBaseComparisonGroup(snapshot, config);
 
     this.decorationProvider.onRefresh(
       this.repositoryRoot,
-      this.fileStatusesByChange,
-      this.trackedFiles,
-      this.conflictedFilesByChange,
+      snapshot.fileStatusesByChange,
+      snapshot.trackedFiles,
+      snapshot.conflictedFilesByChange,
     );
   }
 
-  private renderParentCommits(
-    status: RepositoryStatus,
-    showParentCommit: boolean,
-  ) {
-    if (!showParentCommit) {
-      for (const group of this.parentResourceGroups) {
-        group.dispose();
-      }
-      this.parentResourceGroups = [];
-      return;
-    }
-
-    const updatedGroups: vscode.SourceControlResourceGroup[] = [];
-    for (const group of this.parentResourceGroups) {
-      const parentChange = status.parentChanges.find(
-        (change) => change.changeId === group.id,
+  private renderWorkingCopy(snapshot: RepoSnapshot) {
+    this.workingCopyResourceGroup.label =
+      RepositorySourceControlManager.getLabel(
+        "Working Copy",
+        snapshot.status.workingCopy,
       );
-      if (!parentChange) {
-        group.dispose();
-      } else {
-        group.label = RepositorySourceControlManager.getLabel(
-          "Parent Commit",
-          parentChange,
-        );
-        updatedGroups.push(group);
-      }
-    }
-    this.parentResourceGroups = updatedGroups;
-
-    for (const parentChange of this.status!.parentChanges) {
-      let parentChangeResourceGroup!: vscode.SourceControlResourceGroup;
-
-      const parentGroup = this.parentResourceGroups.find(
-        (group) => group.id === parentChange.changeId,
+    this.workingCopyResourceGroup.resourceStates =
+      snapshot.status.fileStatuses.map((fileStatus) =>
+        toResourceState(
+          fileStatus,
+          toJJUri(vscode.Uri.file(fileStatus.path), { diffOriginalRev: "@" }),
+          vscode.Uri.file(fileStatus.path),
+          "(Working Copy)",
+        ),
       );
-      if (!parentGroup) {
-        parentChangeResourceGroup = this.sourceControl.createResourceGroup(
-          parentChange.changeId,
-          RepositorySourceControlManager.getLabel(
-            "Parent Commit",
-            parentChange,
-          ),
-        );
-        this.parentResourceGroups.push(parentChangeResourceGroup);
-      } else {
-        parentChangeResourceGroup = parentGroup;
-      }
-
-      const showResult = this.parentShowResults.get(parentChange.changeId);
-      if (showResult) {
-        parentChangeResourceGroup.resourceStates =
-          showResult.fileStatuses.map((parentStatus) => {
-            return {
-              resourceUri: toJJUri(vscode.Uri.file(parentStatus.path), {
-                rev: parentChange.changeId,
-              }),
-              decorations: {
-                strikeThrough: parentStatus.type === "D",
-                tooltip: path.basename(parentStatus.file),
-              },
-              command: getResourceStateCommand(
-                parentStatus,
-                toJJUri(vscode.Uri.file(parentStatus.path), {
-                  diffOriginalRev: parentChange.changeId,
-                }),
-                toJJUri(vscode.Uri.file(parentStatus.path), {
-                  rev: parentChange.changeId,
-                }),
-                `(${parentChange.changeId})`,
-              ),
-            };
-          });
-      }
-    }
+    this.sourceControl.count = snapshot.status.fileStatuses.length;
   }
 
-  private renderBaseComparison(
-    showBaseComparison: boolean,
-    baseRevision: string,
-  ) {
-    this.baseComparisonGroups = reconcileGroups(
-      this.baseComparisonGroups,
-      new Set(this.baseComparisonResults.keys()),
+  private renderParentGroups(snapshot: RepoSnapshot, config: RefreshConfig) {
+    const validParentIds = new Set(
+      config.showParentCommit
+        ? snapshot.status.parentChanges.map((c) => c.changeId)
+        : [],
+    );
+    this.parentResourceGroups = reconcileGroups(
+      this.parentResourceGroups,
+      validParentIds,
     );
 
-    if (!showBaseComparison) {
-      for (const group of this.baseComparisonGroups) {
-        group.dispose();
-      }
-      this.baseComparisonGroups = [];
-      return;
-    }
-
-    for (const [groupId, result] of this.baseComparisonResults) {
-      let group = this.baseComparisonGroups.find((g) => g.id === groupId);
-      if (!group) {
-        // New group - create now, fill details in below
-        group = this.sourceControl.createResourceGroup(groupId, "");
-        this.baseComparisonGroups.push(group);
-      }
-
-      if (result.error) {
-        group.label = `Changes since ${baseRevision} (error: ${result.error})`;
-        group.resourceStates = [];
+    for (const parentChange of snapshot.status.parentChanges) {
+      if (!validParentIds.has(parentChange.changeId)) {
         continue;
       }
 
-      group.label = `Changes since ${baseRevision}`;
-      group.resourceStates = result.fileStatuses.map((fileStatus) => {
-        const leftUri = toJJUri(vscode.Uri.file(fileStatus.path), {
-          rev: baseRevision,
-        });
-        const rightUri = toJJUri(vscode.Uri.file(fileStatus.path), {
-          rev: result.toRevision,
-        });
-        return {
-          resourceUri: rightUri,
-          decorations: {
-            strikeThrough: fileStatus.type === "D",
-            tooltip: path.basename(fileStatus.file),
-          },
-          command: getResourceStateCommand(
-            fileStatus,
-            leftUri,
-            rightUri,
-            `(${baseRevision})`,
+      let group = this.parentResourceGroups.find(
+        (g) => g.id === parentChange.changeId,
+      );
+      if (!group) {
+        group = this.sourceControl.createResourceGroup(
+          parentChange.changeId,
+          "",
+        );
+        this.parentResourceGroups.push(group);
+      }
+
+      group.label = RepositorySourceControlManager.getLabel(
+        "Parent Commit",
+        parentChange,
+      );
+
+      const showResult = snapshot.parentShowResults.get(parentChange.changeId);
+      if (showResult) {
+        group.resourceStates = showResult.fileStatuses.map((parentStatus) =>
+          toResourceState(
+            parentStatus,
+            toJJUri(vscode.Uri.file(parentStatus.path), {
+              diffOriginalRev: parentChange.changeId,
+            }),
+            toJJUri(vscode.Uri.file(parentStatus.path), {
+              rev: parentChange.changeId,
+            }),
+            `(${parentChange.changeId})`,
           ),
-        };
-      });
+        );
+      }
+    }
+  }
+
+  private renderBaseComparisonGroup(
+    snapshot: RepoSnapshot,
+    config: RefreshConfig,
+  ) {
+    const validBaseIds = new Set(
+      snapshot.baseComparisonResult ? ["base-comparison"] : [],
+    );
+    this.baseComparisonGroups = reconcileGroups(
+      this.baseComparisonGroups,
+      validBaseIds,
+    );
+
+    if (!config.showBaseComparison || !snapshot.baseComparisonResult) {
+      return;
+    }
+
+    let group = this.baseComparisonGroups.find(
+      (g) => g.id === "base-comparison",
+    );
+    if (!group) {
+      group = this.sourceControl.createResourceGroup("base-comparison", "");
+      this.baseComparisonGroups.push(group);
+    }
+
+    const result = snapshot.baseComparisonResult;
+    switch (result.kind) {
+      case "error":
+        group.label = `Changes since ${config.baseRevision} (error: ${result.error})`;
+        group.resourceStates = [];
+        break;
+      case "ok":
+        group.label = `Changes since ${config.baseRevision}`;
+        group.resourceStates = result.fileStatuses.map((fileStatus) =>
+          toResourceState(
+            fileStatus,
+            toJJUri(vscode.Uri.file(fileStatus.path), {
+              rev: config.baseRevision,
+            }),
+            toJJUri(vscode.Uri.file(fileStatus.path), {
+              rev: result.toRevision,
+            }),
+            `(${config.baseRevision})`,
+          ),
+        );
+        break;
     }
   }
 
@@ -1036,22 +1020,25 @@ export class RepositorySourceControlManager {
   }
 }
 
-/**
- * Dispose resource groups whose IDs are no longer valid and return the rest.
- */
-function reconcileGroups(
-  groups: vscode.SourceControlResourceGroup[],
-  validIds: Set<string>,
-): vscode.SourceControlResourceGroup[] {
-  const kept: vscode.SourceControlResourceGroup[] = [];
-  for (const group of groups) {
-    if (validIds.has(group.id)) {
-      kept.push(group);
-    } else {
-      group.dispose();
-    }
-  }
-  return kept;
+function toResourceState(
+  fileStatus: FileStatus,
+  beforeUri: vscode.Uri,
+  afterUri: vscode.Uri,
+  diffTitleSuffix: string,
+): vscode.SourceControlResourceState {
+  return {
+    resourceUri: afterUri,
+    decorations: {
+      strikeThrough: fileStatus.type === "D",
+      tooltip: path.basename(fileStatus.file),
+    },
+    command: getResourceStateCommand(
+      fileStatus,
+      beforeUri,
+      afterUri,
+      diffTitleSuffix,
+    ),
+  };
 }
 
 function getResourceStateCommand(
@@ -1568,7 +1555,8 @@ export class JJRepository {
         return [];
       }
       return output.split("\n").filter(Boolean);
-    } catch {
+    } catch (e) {
+      logger.warn(`Failed to list bookmarks: ${String(e)}`);
       return [];
     }
   }

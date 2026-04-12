@@ -83,7 +83,8 @@ suite("SCM Integration Tests", () => {
     );
 
     // Record the current working copy change ID
-    const workingCopyChangeIdBefore = repoSCM.status?.workingCopy.changeId;
+    const workingCopyChangeIdBefore =
+      repoSCM.snapshot?.status.workingCopy?.changeId;
     assert.ok(workingCopyChangeIdBefore, "Expected a working copy change ID");
 
     // Execute jj.new via the source control.
@@ -103,7 +104,8 @@ suite("SCM Integration Tests", () => {
     );
 
     // Verify the working copy change ID has changed
-    const workingCopyChangeIdAfter = repoSCM.status?.workingCopy.changeId;
+    const workingCopyChangeIdAfter =
+      repoSCM.snapshot?.status.workingCopy?.changeId;
     assert.ok(
       workingCopyChangeIdAfter,
       "Expected a working copy change ID after jj.new",

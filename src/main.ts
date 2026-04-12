@@ -128,6 +128,7 @@ export async function activate(context: vscode.ExtensionContext) {
           await repoSCM.checkForUpdates();
         }),
       );
+      updateScmGroupContextKeys();
     }
   });
 
@@ -564,10 +565,10 @@ export async function activate(context: vscode.ExtensionContext) {
 
               let statuses: FileStatus[];
               if (scm.workingCopyResourceGroup === resourceGroup) {
-                if (!scm.status) {
+                if (!scm.snapshot?.status) {
                   throw new Error("No current working copy change found");
                 }
-                const repositoryStatus = scm.status;
+                const repositoryStatus = scm.snapshot.status;
 
                 statuses = resourceStates.map((resourceState) => {
                   const foundStatus = repositoryStatus.fileStatuses.find(
@@ -582,7 +583,7 @@ export async function activate(context: vscode.ExtensionContext) {
                   return foundStatus;
                 });
               } else if (scm.parentResourceGroups.includes(resourceGroup)) {
-                const show = scm.parentShowResults.get(resourceGroup.id);
+                const show = scm.snapshot?.parentShowResults.get(resourceGroup.id);
                 if (!show) {
                   throw new Error(
                     "No current parent change show result found for the resource group",
@@ -1497,6 +1498,35 @@ export async function activate(context: vscode.ExtensionContext) {
     // Snapshot changes
     await Promise.all(
       workspaceSCM.repoSCMs.map((repoSCM) => repoSCM.checkForUpdates()),
+    );
+
+    updateScmGroupContextKeys();
+  }
+
+  /**
+   * Sets VS Code context keys that identify which SCM resource groups are
+   * commit groups vs base comparison groups. This is used in package.json
+   * when clauses via the `in` operator (e.g. `scmResourceGroup in
+   * jj.commitGroupIds`) to reliably control which buttons appear on each
+   * group type — more robust than regex matching on group IDs.
+   */
+  function updateScmGroupContextKeys() {
+    const commitGroupIds = workspaceSCM.repoSCMs.flatMap((repo) => [
+      repo.workingCopyResourceGroup.id,
+      ...repo.parentResourceGroups.map((g) => g.id),
+    ]);
+    const baseComparisonGroupIds = workspaceSCM.repoSCMs.flatMap((repo) =>
+      repo.baseComparisonGroups.map((g) => g.id),
+    );
+    vscode.commands.executeCommand(
+      "setContext",
+      "jj.commitGroupIds",
+      commitGroupIds,
+    );
+    vscode.commands.executeCommand(
+      "setContext",
+      "jj.baseComparisonGroupIds",
+      baseComparisonGroupIds,
     );
   }
 
