@@ -1,7 +1,7 @@
 import * as assert from "assert";
 import * as path from "path";
 import { getExtensionAPI } from "./extensionApi";
-import type { FileStatus } from "../repository";
+import type { FileStatus, RepositoryStatus, Show } from "../repository";
 
 suite("parseRenamePaths", () => {
   let parseRenamePaths: (
@@ -183,5 +183,129 @@ suite("parseFileStatusLine", () => {
     parseFileStatusLine(root, "M second.ts", out);
     assert.strictEqual(out.length, 2);
     assert.strictEqual(out[1].type, "M");
+  });
+});
+
+suite("getBaseComparisonTarget", () => {
+  let getBaseComparisonTarget: (
+    status: RepositoryStatus,
+    parentShowResults: Map<string, Show>,
+    showParentCommit: boolean,
+  ) => string | null;
+
+  suiteSetup(async () => {
+    const api = await getExtensionAPI();
+    const cls = api.repository.RepositorySourceControlManager;
+    getBaseComparisonTarget = (status, parentShowResults, showParentCommit) =>
+      cls.getBaseComparisonTarget(status, parentShowResults, showParentCommit);
+  });
+
+  function makeChange(changeId: string): RepositoryStatus["parentChanges"][0] {
+    return {
+      changeId,
+      commitId: `commit-${changeId}`,
+      description: "",
+      isEmpty: false,
+      isConflict: false,
+    };
+  }
+
+  function makeStatus(
+    changeId: string,
+    parentChangeIds: string[],
+  ): RepositoryStatus {
+    return {
+      fileStatuses: [],
+      workingCopy: makeChange(changeId),
+      parentChanges: parentChangeIds.map(makeChange),
+      conflictedFiles: new Set(),
+    };
+  }
+
+  function makeShow(changeId: string, parentChangeIds: string[]): Show {
+    return {
+      change: {
+        ...makeChange(changeId),
+        author: { name: "someone", email: "someone@somewhere.com" },
+        authoredDate: "sometime",
+        parentChangeIds,
+        parentCommitIds: parentChangeIds.map((id) => `commit-${id}`),
+      },
+      fileStatuses: [],
+      conflictedFiles: new Set(),
+    };
+  }
+
+  test("linear shows base comparison", () => {
+    const grandparent = makeChange("grandparent");
+    const parent = makeChange("parent");
+    const child = makeChange("child");
+    const status = makeStatus(child.changeId, [parent.changeId]);
+
+    const parentShow = makeShow(parent.changeId, [grandparent.changeId]);
+    const parentShowResults = new Map<string, Show>([
+      [parent.changeId, parentShow],
+    ]);
+
+    let shown = getBaseComparisonTarget(status, parentShowResults, true);
+    assert.strictEqual(grandparent.changeId, shown);
+    shown = getBaseComparisonTarget(status, parentShowResults, false);
+    assert.strictEqual(parent.changeId, shown);
+  });
+
+  test("multiple parents, no base comparison", () => {
+    const grandparent1 = makeChange("grandparent1");
+    const parent1 = makeChange("parent1");
+    const grandparent2 = makeChange("grandparent2");
+    const parent2 = makeChange("parent2");
+    const child = makeChange("child");
+    const status = makeStatus(child.changeId, [
+      parent1.changeId,
+      parent2.changeId,
+    ]);
+
+    const parent1Show = makeShow(parent1.changeId, [grandparent1.changeId]);
+    const parent2Show = makeShow(parent2.changeId, [grandparent2.changeId]);
+    const parentShowResults = new Map<string, Show>([
+      [parent1.changeId, parent1Show],
+      [parent2.changeId, parent2Show],
+    ]);
+
+    let shown = getBaseComparisonTarget(status, parentShowResults, true);
+    assert.strictEqual(null, shown);
+    shown = getBaseComparisonTarget(status, parentShowResults, false);
+    assert.strictEqual(null, shown);
+  });
+
+  test("single parent, multiple grandparents", () => {
+    const grandparent1 = makeChange("grandparent1");
+    const grandparent2 = makeChange("grandparent2");
+    const parent = makeChange("parent");
+    const child = makeChange("child");
+    const status = makeStatus(child.changeId, [parent.changeId]);
+
+    const parentShow = makeShow(parent.changeId, [
+      grandparent1.changeId,
+      grandparent2.changeId,
+    ]);
+    const parentShowResults = new Map<string, Show>([
+      [parent.changeId, parentShow],
+    ]);
+
+    // If we're showing the parent, then base target is unclear - there are two
+    // grandparents
+    let shown = getBaseComparisonTarget(status, parentShowResults, true);
+    assert.strictEqual(null, shown);
+
+    // If we're not showing the parent, then base target is clear - its parent
+    shown = getBaseComparisonTarget(status, parentShowResults, false);
+    assert.strictEqual(parent.changeId, shown);
+  });
+
+  test("missing show result", () => {
+    const status = makeStatus("child", ["parent"]);
+    const parentShowResults = new Map<string, Show>();
+    const shown = getBaseComparisonTarget(status, parentShowResults, true);
+    assert.strictEqual(null, shown);
   });
 });
