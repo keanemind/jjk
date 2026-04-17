@@ -2102,6 +2102,50 @@ export type Operation = {
   snapshot: boolean;
 };
 
+const changeRegex = /^(A|M|D|R|C) (.+)$/;
+
+/**
+ * Parses a single file status line matching the `A|M|D|R|C <path>` format
+ * produced by both `jj status` and `jj diff --summary`. Appends the result
+ * to `out`. Returns true if the line matched, false otherwise.
+ */
+export function parseFileStatusLine(
+  repositoryRoot: string,
+  line: string,
+  out: FileStatus[],
+): boolean {
+  const changeMatch = changeRegex.exec(line);
+  if (!changeMatch) {
+    return false;
+  }
+
+  const [_, type, file] = changeMatch;
+
+  if (type === "R" || type === "C") {
+    const parsedPaths = parseRenamePaths(file);
+    if (parsedPaths) {
+      out.push({
+        type: type,
+        file: parsedPaths.toPath,
+        path: path.join(repositoryRoot, parsedPaths.toPath),
+        renamedFrom: parsedPaths.fromPath,
+      });
+    } else {
+      throw new Error(
+        `Unexpected ${type === "R" ? "rename" : "copy"} line: ${line}`,
+      );
+    }
+  } else {
+    const normalizedFile = path.normalize(file).replace(/\\/g, "/");
+    out.push({
+      type: type as "A" | "M" | "D",
+      file: normalizedFile,
+      path: path.join(repositoryRoot, normalizedFile),
+    });
+  }
+  return true;
+}
+
 async function parseJJStatus(
   repositoryRoot: string,
   output: string,
@@ -2118,7 +2162,6 @@ async function parseJJStatus(
   };
   const parentCommits: Change[] = [];
 
-  const changeRegex = /^(A|M|D|R|C) (.+)$/;
   const commitRegex =
     /^(Working copy|Parent commit)\s*(\(@-?\))?\s*:\s+(\S+)\s+(\S+)(?:\s+(.+?)\s+\|)?(?:\s+(.*))?$/;
 
@@ -2172,32 +2215,9 @@ async function parseJJStatus(
       }
     }
 
-    const changeMatch = changeRegex.exec(ansiStrippedTrimmedLine);
-    if (changeMatch) {
-      const [_, type, file] = changeMatch;
-
-      if (type === "R" || type === "C") {
-        const parsedPaths = parseRenamePaths(file);
-        if (parsedPaths) {
-          fileStatuses.push({
-            type: type,
-            file: parsedPaths.toPath,
-            path: path.join(repositoryRoot, parsedPaths.toPath),
-            renamedFrom: parsedPaths.fromPath,
-          });
-        } else {
-          throw new Error(
-            `Unexpected ${type === "R" ? "rename" : "copy"} line: ${line}`,
-          );
-        }
-      } else {
-        const normalizedFile = path.normalize(file).replace(/\\/g, "/");
-        fileStatuses.push({
-          type: type as "A" | "M" | "D",
-          file: normalizedFile,
-          path: path.join(repositoryRoot, normalizedFile),
-        });
-      }
+    if (
+      parseFileStatusLine(repositoryRoot, ansiStrippedTrimmedLine, fileStatuses)
+    ) {
       continue;
     }
 
