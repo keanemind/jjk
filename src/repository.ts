@@ -912,6 +912,7 @@ export class JJRepository {
           ...getPollIgnoreWorkingCopyArgs(this.repositoryRoot),
           "operation",
           "log",
+          "--ignore-working-copy",
           "--limit",
           "1",
           "-T",
