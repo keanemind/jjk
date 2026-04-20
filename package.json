@@ -481,6 +481,12 @@
           "default": true,
           "description": "Whether the periodic poll command (jj operation log) should snapshot the working copy. When enabled, file changes are automatically detected; when disabled, modified files may not auto-update until the next manual jj command.",
           "scope": "resource"
+        },
+        "jjk.showParentCommit": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to show Parent Commit resource groups in the SCM sidebar.",
+          "scope": "resource"
         }
       }
     },

@@ -688,19 +688,27 @@ export class RepositorySourceControlManager {
       }
     }
 
-    const parentShowPromises = status.parentChanges.map(
-      async (parentChange) => {
-        const showResult = await this.repository.show(parentChange.changeId);
-        return { changeId: parentChange.changeId, showResult };
-      },
+    const config = vscode.workspace.getConfiguration(
+      "jjk",
+      vscode.Uri.file(this.repositoryRoot),
     );
+    const showParentCommit = config.get<boolean>("showParentCommit") ?? true;
 
-    const parentShowResultsArray = await Promise.all(parentShowPromises);
+    if (showParentCommit) {
+      const parentShowPromises = status.parentChanges.map(
+        async (parentChange) => {
+          const showResult = await this.repository.show(parentChange.changeId);
+          return { changeId: parentChange.changeId, showResult };
+        },
+      );
 
-    for (const { changeId, showResult } of parentShowResultsArray) {
-      newParentShowResults.set(changeId, showResult);
-      newFileStatusesByChange.set(changeId, showResult.fileStatuses);
-      newConflictedFilesByChange.set(changeId, showResult.conflictedFiles);
+      const parentShowResultsArray = await Promise.all(parentShowPromises);
+
+      for (const { changeId, showResult } of parentShowResultsArray) {
+        newParentShowResults.set(changeId, showResult);
+        newFileStatusesByChange.set(changeId, showResult.fileStatuses);
+        newConflictedFilesByChange.set(changeId, showResult.conflictedFiles);
+      }
     }
 
     this.status = status;
@@ -751,9 +759,33 @@ export class RepositorySourceControlManager {
     );
     this.sourceControl.count = this.status.fileStatuses.length;
 
+    this.renderParentCommits(this.status);
+
+    this.decorationProvider.onRefresh(
+      this.repositoryRoot,
+      this.fileStatusesByChange,
+      this.trackedFiles,
+      this.conflictedFilesByChange,
+    );
+  }
+
+  private renderParentCommits(status: RepositoryStatus) {
+    const config = vscode.workspace.getConfiguration(
+      "jjk",
+      vscode.Uri.file(this.repositoryRoot),
+    );
+
+    if (!config.get<boolean>("showParentCommit", true)) {
+      for (const group of this.parentResourceGroups) {
+        group.dispose();
+      }
+      this.parentResourceGroups = [];
+      return;
+    }
+
     const updatedGroups: vscode.SourceControlResourceGroup[] = [];
     for (const group of this.parentResourceGroups) {
-      const parentChange = this.status.parentChanges.find(
+      const parentChange = status.parentChanges.find(
         (change) => change.changeId === group.id,
       );
       if (!parentChange) {
@@ -768,7 +800,7 @@ export class RepositorySourceControlManager {
     }
     this.parentResourceGroups = updatedGroups;
 
-    for (const parentChange of this.status.parentChanges) {
+    for (const parentChange of this.status!.parentChanges) {
       let parentChangeResourceGroup!: vscode.SourceControlResourceGroup;
 
       const parentGroup = this.parentResourceGroups.find(
@@ -789,8 +821,8 @@ export class RepositorySourceControlManager {
 
       const showResult = this.parentShowResults.get(parentChange.changeId);
       if (showResult) {
-        parentChangeResourceGroup.resourceStates = showResult.fileStatuses.map(
-          (parentStatus) => {
+        parentChangeResourceGroup.resourceStates =
+          showResult.fileStatuses.map((parentStatus) => {
             return {
               resourceUri: toJJUri(vscode.Uri.file(parentStatus.path), {
                 rev: parentChange.changeId,
@@ -810,17 +842,9 @@ export class RepositorySourceControlManager {
                 `(${parentChange.changeId})`,
               ),
             };
-          },
-        );
+          });
       }
     }
-
-    this.decorationProvider.onRefresh(
-      this.repositoryRoot,
-      this.fileStatusesByChange,
-      this.trackedFiles,
-      this.conflictedFilesByChange,
-    );
   }
 
   dispose() {
@@ -2102,6 +2126,50 @@ export type Operation = {
   snapshot: boolean;
 };
 
+const changeRegex = /^(A|M|D|R|C) (.+)$/;
+
+/**
+ * Parses a single file status line matching the `A|M|D|R|C <path>` format
+ * produced by both `jj status` and `jj diff --summary`. Appends the result
+ * to `out`. Returns true if the line matched, false otherwise.
+ */
+export function parseFileStatusLine(
+  repositoryRoot: string,
+  line: string,
+  out: FileStatus[],
+): boolean {
+  const changeMatch = changeRegex.exec(line);
+  if (!changeMatch) {
+    return false;
+  }
+
+  const [_, type, file] = changeMatch;
+
+  if (type === "R" || type === "C") {
+    const parsedPaths = parseRenamePaths(file);
+    if (parsedPaths) {
+      out.push({
+        type: type,
+        file: parsedPaths.toPath,
+        path: path.join(repositoryRoot, parsedPaths.toPath),
+        renamedFrom: parsedPaths.fromPath,
+      });
+    } else {
+      throw new Error(
+        `Unexpected ${type === "R" ? "rename" : "copy"} line: ${line}`,
+      );
+    }
+  } else {
+    const normalizedFile = path.normalize(file).replace(/\\/g, "/");
+    out.push({
+      type: type as "A" | "M" | "D",
+      file: normalizedFile,
+      path: path.join(repositoryRoot, normalizedFile),
+    });
+  }
+  return true;
+}
+
 async function parseJJStatus(
   repositoryRoot: string,
   output: string,
@@ -2118,7 +2186,6 @@ async function parseJJStatus(
   };
   const parentCommits: Change[] = [];
 
-  const changeRegex = /^(A|M|D|R|C) (.+)$/;
   const commitRegex =
     /^(Working copy|Parent commit)\s*(\(@-?\))?\s*:\s+(\S+)\s+(\S+)(?:\s+(.+?)\s+\|)?(?:\s+(.*))?$/;
 
@@ -2172,32 +2239,9 @@ async function parseJJStatus(
       }
     }
 
-    const changeMatch = changeRegex.exec(ansiStrippedTrimmedLine);
-    if (changeMatch) {
-      const [_, type, file] = changeMatch;
-
-      if (type === "R" || type === "C") {
-        const parsedPaths = parseRenamePaths(file);
-        if (parsedPaths) {
-          fileStatuses.push({
-            type: type,
-            file: parsedPaths.toPath,
-            path: path.join(repositoryRoot, parsedPaths.toPath),
-            renamedFrom: parsedPaths.fromPath,
-          });
-        } else {
-          throw new Error(
-            `Unexpected ${type === "R" ? "rename" : "copy"} line: ${line}`,
-          );
-        }
-      } else {
-        const normalizedFile = path.normalize(file).replace(/\\/g, "/");
-        fileStatuses.push({
-          type: type as "A" | "M" | "D",
-          file: normalizedFile,
-          path: path.join(repositoryRoot, normalizedFile),
-        });
-      }
+    if (
+      parseFileStatusLine(repositoryRoot, ansiStrippedTrimmedLine, fileStatuses)
+    ) {
       continue;
     }
 
