@@ -17,7 +17,9 @@ body {
   position: absolute;
   z-index: 20;
   max-width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 16px);
   min-width: min(360px, calc(100vw - 48px));
+  box-sizing: border-box;
   padding: 10px 12px;
   border: 1px solid
     var(--vscode-editorHoverWidget-border, var(--vscode-widget-border));
@@ -30,6 +32,10 @@ body {
   color: var(--vscode-editorHoverWidget-foreground, var(--vscode-foreground));
   pointer-events: auto;
   user-select: text;
+}
+
+#hover-card[hidden] {
+  display: none;
 }
 
 .hover-field-grid {
@@ -89,6 +95,9 @@ body {
   word-break: break-word;
   margin-top: 10px;
   padding-top: 10px;
+  padding-right: 4px;
+  max-height: min(360px, 45vh);
+  overflow-y: auto;
   border-top: 1px solid
     var(--vscode-editorHoverWidget-border, rgba(255, 255, 255, 0.08));
 }
