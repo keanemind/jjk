@@ -992,6 +992,60 @@ export async function activate(context: vscode.ExtensionContext) {
       }),
     );
 
+    function registerGraphContextCommand(
+      command: string,
+      action: () => Promise<unknown>,
+      failureMessage: string,
+    ) {
+      context.subscriptions.push(
+        vscode.commands.registerCommand(command, async () => {
+          try {
+            await action();
+          } catch (error) {
+            vscode.window.showErrorMessage(
+              `${failureMessage}${error instanceof Error ? `: ${error.message}` : ""}`,
+            );
+          }
+        }),
+      );
+    }
+
+    registerGraphContextCommand(
+      "jj.graph.new",
+      () => graphWebview.newFromContextChange(),
+      "Failed to create change",
+    );
+    registerGraphContextCommand(
+      "jj.graph.edit",
+      () => graphWebview.editContextChange(),
+      "Failed to switch to change",
+    );
+    registerGraphContextCommand(
+      "jj.graph.duplicate",
+      () => graphWebview.duplicateContextChange(),
+      "Failed to duplicate change",
+    );
+    registerGraphContextCommand(
+      "jj.graph.describe",
+      () => graphWebview.describeContextChange(),
+      "Failed to update description",
+    );
+    registerGraphContextCommand(
+      "jj.graph.abandon",
+      () => graphWebview.abandonContextChange(),
+      "Failed to abandon change",
+    );
+    registerGraphContextCommand(
+      "jj.graph.copyChangeId",
+      () => graphWebview.copyContextChangeId(),
+      "Failed to copy change ID",
+    );
+    registerGraphContextCommand(
+      "jj.graph.copyCommitId",
+      () => graphWebview.copyContextCommitId(),
+      "Failed to copy commit ID",
+    );
+
     context.subscriptions.push(
       vscode.commands.registerCommand("jj.refreshOperationLog", async () => {
         try {

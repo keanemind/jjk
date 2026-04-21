@@ -1358,6 +1358,42 @@ export class JJRepository {
     }
   }
 
+  async duplicate(rev: string) {
+    return await handleJJCommand(
+      this.spawnJJ(["duplicate", rev], {
+        defaultTimeout: 5000,
+      }),
+    );
+  }
+
+  async abandonRetryImmutable(rev: string) {
+    try {
+      return await this.abandon(rev);
+    } catch (e) {
+      if (e instanceof ImmutableError) {
+        const choice = await vscode.window.showQuickPick(["Continue"], {
+          title: `${rev} is immutable, are you sure?`,
+        });
+        if (!choice) {
+          return;
+        }
+        return await this.abandon(rev, true);
+      }
+      throw e;
+    }
+  }
+
+  async abandon(rev: string, ignoreImmutable = false) {
+    return await handleJJCommand(
+      this.spawnJJ(
+        ["abandon", rev, ...(ignoreImmutable ? ["--ignore-immutable"] : [])],
+        {
+          defaultTimeout: 5000,
+        },
+      ),
+    );
+  }
+
   async squashRetryImmutable({
     fromRev,
     toRev,

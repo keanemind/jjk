@@ -177,6 +177,48 @@
         "icon": "$(repo)"
       },
       {
+        "command": "jj.graph.new",
+        "title": "jj new",
+        "category": "Jujutsu",
+        "icon": "$(plus)"
+      },
+      {
+        "command": "jj.graph.edit",
+        "title": "jj edit",
+        "category": "Jujutsu",
+        "icon": "$(sign-in)"
+      },
+      {
+        "command": "jj.graph.duplicate",
+        "title": "jj duplicate",
+        "category": "Jujutsu",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "jj.graph.describe",
+        "title": "jj describe",
+        "category": "Jujutsu",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "jj.graph.abandon",
+        "title": "jj abandon",
+        "category": "Jujutsu",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "jj.graph.copyChangeId",
+        "title": "Copy change ID",
+        "category": "Jujutsu",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "jj.graph.copyCommitId",
+        "title": "Copy commit ID",
+        "category": "Jujutsu",
+        "icon": "$(copy)"
+      },
+      {
         "command": "jj.placeholderForFolders",
         "title": "​",
         "category": "Jujutsu",
@@ -275,6 +317,43 @@
           "command": "jj.operationRestore",
           "when": "view == jjOperationLog",
           "group": "inline"
+        }
+      ],
+      "webview/context": [
+        {
+          "command": "jj.graph.new",
+          "when": "webviewId == 'jjGraphWebview' && webviewSection == 'changeNode' && graphChangeIsRoot == false",
+          "group": "1_jj@1"
+        },
+        {
+          "command": "jj.graph.edit",
+          "when": "webviewId == 'jjGraphWebview' && webviewSection == 'changeNode' && graphChangeIsRoot == false",
+          "group": "1_jj@2"
+        },
+        {
+          "command": "jj.graph.duplicate",
+          "when": "webviewId == 'jjGraphWebview' && webviewSection == 'changeNode' && graphChangeIsRoot == false",
+          "group": "1_jj@3"
+        },
+        {
+          "command": "jj.graph.describe",
+          "when": "webviewId == 'jjGraphWebview' && webviewSection == 'changeNode' && graphChangeIsRoot == false",
+          "group": "1_jj@4"
+        },
+        {
+          "command": "jj.graph.abandon",
+          "when": "webviewId == 'jjGraphWebview' && webviewSection == 'changeNode' && graphChangeIsRoot == false",
+          "group": "2_danger@1"
+        },
+        {
+          "command": "jj.graph.copyChangeId",
+          "when": "webviewId == 'jjGraphWebview' && webviewSection == 'changeNode' && graphHasChangeId",
+          "group": "3_copy@1"
+        },
+        {
+          "command": "jj.graph.copyCommitId",
+          "when": "webviewId == 'jjGraphWebview' && webviewSection == 'changeNode' && graphHasCommitId",
+          "group": "3_copy@2"
         }
       ],
       "scm/title": [
@@ -427,6 +506,34 @@
         },
         {
           "command": "jj.selectGraphWebviewRepo",
+          "when": "false"
+        },
+        {
+          "command": "jj.graph.new",
+          "when": "false"
+        },
+        {
+          "command": "jj.graph.edit",
+          "when": "false"
+        },
+        {
+          "command": "jj.graph.duplicate",
+          "when": "false"
+        },
+        {
+          "command": "jj.graph.describe",
+          "when": "false"
+        },
+        {
+          "command": "jj.graph.abandon",
+          "when": "false"
+        },
+        {
+          "command": "jj.graph.copyChangeId",
+          "when": "false"
+        },
+        {
+          "command": "jj.graph.copyCommitId",
           "when": "false"
         },
         {
