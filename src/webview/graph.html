@@ -397,6 +397,14 @@
         return rowDataByChangeId.get(changeId);
       }
 
+      function setGraphContextChange(change) {
+        vscode.postMessage({
+          command: "contextChange",
+          changeId: change.contextValue,
+          commitId: change.commitId,
+        });
+      }
+
       function getParentIds(node) {
         // Parent IDs are part of the render-scoped row state so callers can read them without
         // reparsing JSON from `dataset`.
@@ -918,6 +926,13 @@
           node.dataset.changeId = change.contextValue;
           node.dataset.branchType = change.branchType;
           node.dataset.symbolColumn = String(change.symbolColumn || 0);
+          node.dataset.vscodeContext = JSON.stringify({
+            webviewSection: "changeNode",
+            preventDefaultContextMenuItems: true,
+            graphChangeIsRoot: change.contextValue === "zzzzzzzz",
+            graphHasChangeId: Boolean(change.changeId),
+            graphHasCommitId: Boolean(change.commitId),
+          });
           // Store a shallow snapshot for hover/highlight logic; the DOM only keeps scalar lookup
           // fields that are convenient for selectors and event targeting.
           rowDataByChangeId.set(change.contextValue, { ...change });
@@ -1018,6 +1033,7 @@
 
           // Add hover handlers
           node.addEventListener("mouseenter", () => {
+            setGraphContextChange(change);
             cancelHideHoverCard();
             highlightConnectedNodes(node, true);
             scheduleShowHoverCard(change, node);
@@ -1030,6 +1046,16 @@
           node.addEventListener("mousemove", () => {
             if (!hoverCard.hidden) {
               positionHoverCard(node);
+            }
+          });
+
+          node.addEventListener("contextmenu", () => {
+            setGraphContextChange(change);
+          });
+
+          node.addEventListener("mousedown", (event) => {
+            if (event.button === 2) {
+              setGraphContextChange(change);
             }
           });
 

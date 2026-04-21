@@ -6,6 +6,7 @@ import path from "path";
 type Message = {
   command: string;
   changeId?: string;
+  commitId?: string;
   selectedNodes?: string[];
 };
 
@@ -96,6 +97,12 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
   public panel?: vscode.WebviewView;
   public repository: JJRepository;
   public selectedNodes: Set<string> = new Set();
+  private contextChange:
+    | {
+        changeId: string;
+        commitId?: string;
+      }
+    | undefined;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -164,6 +171,16 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
             );
           }
           break;
+        case "contextChange":
+          if (!message.changeId) {
+            this.contextChange = undefined;
+            break;
+          }
+          this.contextChange = {
+            changeId: message.changeId,
+            commitId: message.commitId,
+          };
+          break;
         case "selectChange":
           this.selectedNodes = new Set(message.selectedNodes ?? []);
           vscode.commands.executeCommand(
@@ -226,6 +243,7 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
     const workingCopyId = status.workingCopy.changeId;
 
     this.selectedNodes.clear();
+    this.contextChange = undefined;
     this.panel.webview.postMessage({
       command: "updateGraph",
       changes: changes,
@@ -333,6 +351,79 @@ export class JJGraphWebview implements vscode.WebviewViewProvider {
     });
 
     return res;
+  }
+
+  private getContextChangeId(): string {
+    const changeId = this.contextChange?.changeId;
+    if (!changeId) {
+      throw new Error("No graph change selected");
+    }
+    if (changeId === "zzzzzzzz") {
+      throw new Error("Cannot run this operation on root()");
+    }
+    return changeId;
+  }
+
+  public async newFromContextChange() {
+    const changeId = this.getContextChangeId();
+    await this.repository.new(undefined, [changeId]);
+  }
+
+  public async editContextChange() {
+    const changeId = this.getContextChangeId();
+    await this.repository.editRetryImmutable(changeId);
+  }
+
+  public async duplicateContextChange() {
+    const changeId = this.getContextChangeId();
+    await this.repository.duplicate(changeId);
+  }
+
+  public async describeContextChange() {
+    const changeId = this.getContextChangeId();
+    const showResult = await this.repository.show(changeId);
+    const message = await vscode.window.showInputBox({
+      prompt: "Provide a description",
+      placeHolder: "Change description here...",
+      value: showResult.change.description,
+    });
+
+    if (message === undefined) {
+      return;
+    }
+
+    await this.repository.describeRetryImmutable(changeId, message);
+  }
+
+  public async abandonContextChange() {
+    const changeId = this.getContextChangeId();
+    const abandon = "Abandon";
+    const choice = await vscode.window.showWarningMessage(
+      `Abandon change ${changeId}? Descendants will be rebased onto its parent(s). If this is the working-copy change, jj will create a new empty working-copy change.`,
+      { modal: true },
+      abandon,
+    );
+    if (choice !== abandon) {
+      return;
+    }
+
+    await this.repository.abandonRetryImmutable(changeId);
+  }
+
+  public async copyContextChangeId() {
+    const changeId = this.contextChange?.changeId;
+    if (!changeId) {
+      throw new Error("No graph change selected");
+    }
+    await vscode.env.clipboard.writeText(changeId);
+  }
+
+  public async copyContextCommitId() {
+    const commitId = this.contextChange?.commitId;
+    if (!commitId) {
+      throw new Error("No graph commit selected");
+    }
+    await vscode.env.clipboard.writeText(commitId);
   }
 
   areChangeNodesEqual(a: ChangeNode[], b: ChangeNode[]): boolean {
