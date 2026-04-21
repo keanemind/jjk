@@ -29,14 +29,12 @@
       const graphLanePadding = 6;
       const hoverCard = document.getElementById("hover-card");
       let hoveredNode = null;
-      let hoverHideTimer = null;
-      let hoverShowTimer = null;
-      const hoverShowDelayMs = 700;
 
       window.addEventListener("message", (event) => {
         const message = event.data;
         switch (message.command) {
           case "updateGraph":
+            clearHoverCard();
             changeDetailsCache.clear();
             selectedNodes.clear();
             document.querySelectorAll(".change-node").forEach((n) => {
@@ -279,6 +277,21 @@
         return button;
       }
 
+      function buildHoverCloseButton() {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "hover-close-button";
+        button.title = "Close";
+        button.setAttribute("aria-label", "Close details");
+        button.innerHTML = '<i class="codicon codicon-close"></i>';
+        button.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          clearHoverCard();
+        });
+        return button;
+      }
+
       function appendHoverField(grid, label, valueBuilder) {
         const row = document.createElement("div");
         row.className = "hover-field-row";
@@ -339,14 +352,6 @@
       }
 
       function clearHoverCard() {
-        if (hoverShowTimer) {
-          clearTimeout(hoverShowTimer);
-          hoverShowTimer = null;
-        }
-        if (hoverHideTimer) {
-          clearTimeout(hoverHideTimer);
-          hoverHideTimer = null;
-        }
         if (hoveredNode) {
           highlightConnectedNodes(hoveredNode, false);
         }
@@ -490,34 +495,6 @@
         }
       }
 
-      function scheduleHideHoverCard() {
-        if (hoverHideTimer) {
-          clearTimeout(hoverHideTimer);
-        }
-        hoverHideTimer = setTimeout(() => {
-          clearHoverCard();
-        }, 80);
-      }
-
-      function cancelHideHoverCard() {
-        if (hoverHideTimer) {
-          clearTimeout(hoverHideTimer);
-          hoverHideTimer = null;
-        }
-      }
-
-      function scheduleShowHoverCard(change, node) {
-        if (hoverShowTimer) {
-          clearTimeout(hoverShowTimer);
-        }
-        // The graph sits in a narrow sidebar, so wait long enough that pointer travel across
-        // adjacent rows does not constantly trigger accidental hover cards.
-        hoverShowTimer = setTimeout(() => {
-          hoverShowTimer = null;
-          renderHoverCard(change, node);
-        }, hoverShowDelayMs);
-      }
-
       function positionHoverCard(node) {
         const nodeRect = node.getBoundingClientRect();
         const graphRect = document.getElementById("graph").getBoundingClientRect();
@@ -547,6 +524,7 @@
 
       function renderHoverCard(change, node) {
         hoverCard.innerHTML = "";
+        hoverCard.appendChild(buildHoverCloseButton());
 
         const headerFields = document.createElement("div");
         headerFields.className = "hover-field-grid";
@@ -999,24 +977,28 @@
           circle.setAttribute("transform", `translate(${x}, ${y})`);
           circlesContainer.appendChild(circle);
 
-          // Add hover handlers
+          // Add hover handlers for graph relationship highlighting only. The detail card opens
+          // explicitly from row clicks so scrolling across rows does not trigger it.
           node.addEventListener("mouseenter", () => {
-            cancelHideHoverCard();
-            highlightConnectedNodes(node, true);
-            scheduleShowHoverCard(change, node);
+            if (hoverCard.hidden) {
+              highlightConnectedNodes(node, true);
+            }
           });
 
           node.addEventListener("mouseleave", () => {
-            scheduleHideHoverCard();
+            if (hoverCard.hidden) {
+              highlightConnectedNodes(node, false);
+            }
           });
 
           node.addEventListener("mousemove", () => {
-            if (!hoverCard.hidden) {
+            if (!hoverCard.hidden && hoveredNode === node) {
               positionHoverCard(node);
             }
           });
 
           node.onclick = (e) => {
+            e.stopPropagation();
             if (selectedNodes.has(change.contextValue)) {
               // Deselecting a node
               selectedNodes.delete(change.contextValue);
@@ -1032,10 +1014,8 @@
               selectedNodes: Array.from(selectedNodes),
             });
 
-            cancelHideHoverCard();
-            if (hoverShowTimer) {
-              clearTimeout(hoverShowTimer);
-              hoverShowTimer = null;
+            if (hoveredNode && hoveredNode !== node) {
+              highlightConnectedNodes(hoveredNode, false);
             }
             highlightConnectedNodes(node, true);
             renderHoverCard(change, node);
@@ -1085,9 +1065,13 @@
         });
 
         // Reapply any existing classes (like child-node or dimmed)
-        const hoveredNode = document.querySelector(".change-node:hover");
-        if (hoveredNode && selectedNodes.size === 0) {
+        if (hoveredNode && !hoverCard.hidden) {
           highlightConnectedNodes(hoveredNode, true);
+          return;
+        }
+        const hoveredRow = document.querySelector(".change-node:hover");
+        if (hoveredRow && selectedNodes.size === 0) {
+          highlightConnectedNodes(hoveredRow, true);
         }
       }
 
@@ -1108,12 +1092,21 @@
         clearHoverCard();
       });
 
-      hoverCard.addEventListener("mouseenter", () => {
-        cancelHideHoverCard();
+      document.addEventListener("click", (event) => {
+        if (hoverCard.hidden || hoverCard.contains(event.target)) {
+          return;
+        }
+        clearHoverCard();
       });
 
-      hoverCard.addEventListener("mouseleave", () => {
-        scheduleHideHoverCard();
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          clearHoverCard();
+        }
+      });
+
+      hoverCard.addEventListener("click", (event) => {
+        event.stopPropagation();
       });
 
       // Signal that the webview is ready
