@@ -356,6 +356,29 @@
         hoveredNode = null;
       }
 
+      function setHoveredNodeHighlight(node) {
+        if (hoveredNode === node) {
+          return;
+        }
+        if (hoveredNode) {
+          highlightConnectedNodes(hoveredNode, false);
+        }
+        hoveredNode = node;
+        if (hoveredNode) {
+          highlightConnectedNodes(hoveredNode, true);
+        }
+      }
+
+      function isElementWithinActiveHoverTarget(target) {
+        if (!hoveredNode || !(target instanceof Element)) {
+          return false;
+        }
+        return Boolean(
+          hoveredNode.contains(target) ||
+            (!hoverCard.hidden && hoverCard.contains(target)),
+        );
+      }
+
       function getTextContentRect(node) {
         // Hover positioning is anchored from the text block rather than the graph lane so the
         // circles remain clickable while the card is visible.
@@ -1148,11 +1171,20 @@
           // Add hover handlers
           node.addEventListener("mouseenter", () => {
             cancelHideHoverCard();
-            highlightConnectedNodes(node, true);
+            setHoveredNodeHighlight(node);
             scheduleShowHoverCard(change, node);
           });
 
-          node.addEventListener("mouseleave", () => {
+          node.addEventListener("mouseleave", (event) => {
+            if (
+              !hoverCard.hidden &&
+              isElementWithinActiveHoverTarget(event.relatedTarget)
+            ) {
+              return;
+            }
+            if (hoverCard.hidden) {
+              setHoveredNodeHighlight(null);
+            }
             scheduleHideHoverCard();
           });
 
@@ -1183,7 +1215,6 @@
               clearTimeout(hoverShowTimer);
               hoverShowTimer = null;
             }
-            highlightConnectedNodes(node, true);
             renderHoverCard(change, node);
           };
         });
@@ -1258,8 +1289,20 @@
         cancelHideHoverCard();
       });
 
-      hoverCard.addEventListener("mouseleave", () => {
+      hoverCard.addEventListener("mouseleave", (event) => {
+        if (isElementWithinActiveHoverTarget(event.relatedTarget)) {
+          return;
+        }
         scheduleHideHoverCard();
+      });
+
+      document.addEventListener("pointermove", (event) => {
+        if (hoverCard.hidden || !hoveredNode) {
+          return;
+        }
+        if (!isElementWithinActiveHoverTarget(event.target)) {
+          clearHoverCard();
+        }
       });
 
       // Signal that the webview is ready
