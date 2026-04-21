@@ -25,8 +25,9 @@
       // Rich per-row state lives in JS rather than serialized DOM attributes. The map is rebuilt on
       // every `updateGraph()` call, so it never outlives the current render.
       const rowDataByChangeId = new Map();
-      const graphLaneStep = 10;
+      const graphLaneStep = 6;
       const graphLanePadding = 6;
+      const branchCornerRadius = 8;
       const hoverCard = document.getElementById("hover-card");
       let hoveredNode = null;
       let hoverHideTimer = null;
@@ -382,6 +383,118 @@
         );
       }
 
+      function getSymbolRadius(node) {
+        return node.dataset.changeId === currentWorkingCopyId ? 7 : 5;
+      }
+
+      function getRoundedConnectionGeometry(
+        currentX,
+        currentExitY,
+        parentX,
+        parentEntryY,
+      ) {
+        const dx = parentX - currentX;
+        const dy = parentEntryY - currentExitY;
+        if (Math.abs(dx) < 0.001 || dy <= 0) {
+          return null;
+        }
+
+        const laneSpan = Math.abs(dx) / graphLaneStep;
+        const diagonalRise = Math.max(
+          0,
+          Math.min(
+            laneSpan * graphLaneStep * 1.25,
+            dy - 2,
+          ),
+        );
+        const radius = Math.max(
+          0,
+          Math.min(
+            branchCornerRadius,
+            Math.abs(dx) / 2 - 0.5,
+          ),
+        );
+
+        if (radius <= 0 || diagonalRise <= 0) {
+          return null;
+        }
+
+        const straightRise = dy - diagonalRise;
+        const startCornerY = currentExitY + straightRise / 2;
+        const endCornerY = parentEntryY - straightRise / 2;
+        const diagonalLength = Math.hypot(dx, diagonalRise);
+        const diagonalUnitX = dx / diagonalLength;
+        const diagonalUnitY = diagonalRise / diagonalLength;
+        const diagonalTurnAngle = Math.atan2(Math.abs(dx), diagonalRise);
+        const tangentOffset = Math.max(
+          0,
+          Math.min(
+            radius * Math.tan(diagonalTurnAngle / 2),
+            straightRise / 2 - 0.5,
+            diagonalLength / 2 - 0.5,
+          ),
+        );
+
+        if (tangentOffset <= 0) {
+          return null;
+        }
+
+        const startVerticalEndY = startCornerY - tangentOffset;
+        const startDiagonalX = currentX + diagonalUnitX * tangentOffset;
+        const startDiagonalY = startCornerY + diagonalUnitY * tangentOffset;
+        const endDiagonalX = parentX - diagonalUnitX * tangentOffset;
+        const endDiagonalY = endCornerY - diagonalUnitY * tangentOffset;
+        const endVerticalStartY = endCornerY + tangentOffset;
+
+        return {
+          startVerticalEndY,
+          startCornerY,
+          startDiagonalX,
+          startDiagonalY,
+          endDiagonalX,
+          endDiagonalY,
+          endCornerY,
+          endVerticalStartY,
+        };
+      }
+
+      function buildRoundedConnectionPath(
+        currentX,
+        currentExitY,
+        parentX,
+        parentEntryY,
+        geometry,
+      ) {
+        if (!geometry) {
+          return `
+            M ${currentX} ${currentExitY}
+            L ${parentX} ${parentEntryY}
+          `;
+        }
+
+        const {
+          startVerticalEndY,
+          startCornerY,
+          startDiagonalX,
+          startDiagonalY,
+          endDiagonalX,
+          endDiagonalY,
+          endCornerY,
+          endVerticalStartY,
+        } = geometry;
+
+        return `
+          M ${currentX} ${currentExitY}
+          L ${currentX} ${startVerticalEndY}
+          Q ${currentX} ${startCornerY}
+            ${startDiagonalX} ${startDiagonalY}
+          L ${endDiagonalX} ${endDiagonalY}
+          Q ${parentX} ${endCornerY}
+            ${parentX} ${endVerticalStartY}
+          L ${parentX} ${parentEntryY}
+        `;
+      }
+
       function getRowData(changeId) {
         return rowDataByChangeId.get(changeId);
       }
@@ -634,7 +747,7 @@
       }
 
       function updateConnections() {
-        const nodes = document.querySelectorAll(".change-node");
+        const nodes = Array.from(document.querySelectorAll(".change-node"));
 
         const connectionLines = document.getElementById("connection-lines");
         connectionLines.innerHTML = "";
@@ -644,17 +757,21 @@
         const svgRect = svg.getBoundingClientRect();
 
         const nodeMap = new Map();
-        nodes.forEach((node, i) => {
+        nodes.forEach((node) => {
           nodeMap.set(node.dataset.changeId, node);
         });
 
-        nodes.forEach((node, index) => {
+        const edgeSpecs = [];
+
+        nodes.forEach((node) => {
           const parentIds = getParentIds(node);
           const { nodeRect, y: currentY } = getNodeCenter(node, svgRect);
           const currentColumn = Number(node.dataset.symbolColumn || "0");
+          const currentRadius = getSymbolRadius(node);
 
           // Convert to SVG coordinates with vertical centering
           const currentX = getLaneX(nodeRect, svgRect, currentColumn);
+          const currentExitY = currentY + currentRadius;
 
           parentIds.forEach((parentId, index) => {
             const parentNode = nodeMap.get(parentId);
@@ -666,7 +783,9 @@
               const parentColumn = Number(
                 parentNode.dataset.symbolColumn || "0",
               );
+              const parentRadius = getSymbolRadius(parentNode);
               const parentX = getLaneX(parentRect, svgRect, parentColumn);
+              const parentEntryY = parentY - parentRadius;
 
               const path = document.createElementNS(
                 "http://www.w3.org/2000/svg",
@@ -688,36 +807,63 @@
               });
 
               if (isLatestParent && currentColumn === parentColumn && isAdjacent) {
-                // Vertical line for adjacent nodes
+                // Vertical lane continuation should meet the symbol edge instead of running
+                // through the symbol center, otherwise merges read like crossings.
                 path.setAttribute(
                   "d",
                   `
-                                M ${currentX} ${currentY}
-                                L ${parentX} ${parentY}
+                                M ${currentX} ${currentExitY}
+                                L ${parentX} ${parentEntryY}
                             `,
                 );
+                edgeSpecs.push({ path, presetPath: true });
               } else {
-                // Bend close to the child node so the vertical segment at the
-                // child's column stays short and doesn't bleed through unrelated
-                // branches that share the same column.
-                const bendY = Math.min(
-                  currentY + nodeRect.height,
-                  (currentY + parentY) / 2,
-                );
-                path.setAttribute(
-                  "d",
-                  `
-                                M ${currentX} ${currentY}
-                                L ${currentX} ${bendY}
-                                L ${parentX} ${bendY}
-                                L ${parentX} ${parentY}
-                            `,
-                );
+                // For non-trunk edges, keep a single intentional diagonal
+                // between rounded exit/entry fillets.
+                edgeSpecs.push({
+                  path,
+                  currentX,
+                  currentExitY,
+                  currentColumn,
+                  parentX,
+                  parentEntryY,
+                  parentColumn,
+                  geometry: getRoundedConnectionGeometry(
+                    currentX,
+                    currentExitY,
+                    parentX,
+                    parentEntryY,
+                  ),
+                });
               }
-
-              connectionLines.appendChild(path);
             }
           });
+        });
+
+        edgeSpecs.forEach((spec) => {
+          if (spec.presetPath) {
+            // Leave pre-rendered vertical continuations untouched.
+          } else if (!spec.geometry) {
+            spec.path.setAttribute(
+              "d",
+              `
+                M ${spec.currentX} ${spec.currentExitY}
+                L ${spec.parentX} ${spec.parentEntryY}
+              `,
+            );
+          } else {
+            spec.path.setAttribute(
+              "d",
+              buildRoundedConnectionPath(
+                spec.currentX,
+                spec.currentExitY,
+                spec.parentX,
+                spec.parentEntryY,
+                spec.geometry,
+              ),
+            );
+          }
+          connectionLines.appendChild(spec.path);
         });
       }
 

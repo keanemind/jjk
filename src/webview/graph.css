@@ -171,13 +171,19 @@ body {
 /* Transition effects */
 .node-circle circle,
 .connection-line {
-  transition: opacity 0.2s ease-in-out;
+  transition:
+    opacity 0.2s ease-in-out,
+    stroke-width 0.2s ease-in-out,
+    stroke 0.2s ease-in-out;
 }
 
 .connection-line {
   stroke: var(--vscode-charts-blue);
   stroke-width: 2;
   fill: none;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  opacity: 0.68;
 }
 
 /* Node styling */
@@ -221,19 +227,26 @@ body {
 }
 
 .connection-line.dimmed {
-  opacity: 0.4;
+  opacity: 0.16;
+  stroke-width: 1.6;
 }
 
 .connection-line.highlighted {
-  opacity: 0.95;
+  opacity: 1;
+  stroke-width: 3;
+  stroke: color-mix(
+    in srgb,
+    var(--vscode-charts-blue) 72%,
+    white 28%
+  );
 }
 
 /* Child connection styling */
 .connection-line.highlighted.child-connection {
   stroke: color-mix(
     in srgb,
-    var(--vscode-charts-blue) 82%,
-    var(--vscode-terminal-ansiGreen) 18%
+    var(--vscode-charts-blue) 60%,
+    var(--vscode-terminal-ansiGreen) 40%
   );
 }
 
@@ -269,7 +282,7 @@ body {
   flex: 1;
   min-width: 0;
   margin-left: var(--graph-width, 0px);
-  padding-left: 8px;
+  padding-left: 4px;
   gap: 1px;
 }
 
