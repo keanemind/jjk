@@ -332,9 +332,9 @@ export class WorkspaceSourceControlManager {
         const jjPath = await getJJPath(workspaceFolder.uri.fsPath);
         const jjVersion = await getJJVersion(jjPath.filepath);
 
-        if (semver.lt(jjVersion, "0.26.0")) {
+        if (semver.lt(jjVersion, "0.27.0")) {
           throw new Error(
-            `jj version ${jjVersion} is not supported. Please upgrade to at least jj 0.26.0.`,
+            `jj version ${jjVersion} is not supported. Please upgrade to at least jj 0.27.0.`,
           );
         }
 
