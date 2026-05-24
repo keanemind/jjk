@@ -631,10 +631,9 @@
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
     "compile-tests": "node esbuild.js --test",
-    "pretest": "npm run compile-tests && npm run compile",
     "check-types": "tsc --noEmit",
     "lint": "eslint src",
-    "test": "node out/test/runTest.js"
+    "test": "npm run compile-tests && npm run compile && node out/test/runTest.js"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
