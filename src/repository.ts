@@ -143,22 +143,6 @@ export function resolveRepoPath(workspaceRoot: string): string {
 }
 
 /**
- * Returns ["--ignore-working-copy"] if pollSnapshotWorkingCopy is disabled, otherwise returns an empty array.
- * This controls whether the poll command (getLatestOperationId) snapshots the working copy.
- */
-function getPollIgnoreWorkingCopyArgs(repositoryRoot: string): string[] {
-  const config = vscode.workspace.getConfiguration(
-    "jjk",
-    vscode.Uri.file(repositoryRoot),
-  );
-  const pollSnapshot = config.get<boolean>("pollSnapshotWorkingCopy");
-  if (pollSnapshot === false) {
-    return ["--ignore-working-copy"];
-  }
-  return [];
-}
-
-/**
  * Gets the configured jj executable path from settings.
  * If no path is configured, searches through common installation paths before falling back to "jj".
  */
@@ -298,13 +282,13 @@ function convertJJErrors(e: unknown): never {
 export class WorkspaceSourceControlManager {
   repoInfos:
     | Map<
-      string,
-      {
-        jjPath: Awaited<ReturnType<typeof getJJPath>>;
-        jjVersion: string;
-        repoRoot: string;
-      }
-    >
+        string,
+        {
+          jjPath: Awaited<ReturnType<typeof getJJPath>>;
+          jjVersion: string;
+          repoRoot: string;
+        }
+      >
     | undefined;
   repoSCMs: RepositorySourceControlManager[] = [];
   subscriptions: {
@@ -722,9 +706,11 @@ export class RepositorySourceControlManager {
   }
 
   static getLabel(prefix: string, change: Change) {
-    return `${prefix} [${change.changeId}]${change.description ? ` • ${change.description}` : ""
-      }${change.isEmpty ? " (empty)" : ""}${change.isConflict ? " (conflict)" : ""
-      }${change.description ? "" : " (no description)"}`;
+    return `${prefix} [${change.changeId}]${
+      change.description ? ` • ${change.description}` : ""
+    }${change.isEmpty ? " (empty)" : ""}${
+      change.isConflict ? " (conflict)" : ""
+    }${change.description ? "" : " (no description)"}`;
   }
 
   render() {
@@ -872,7 +858,7 @@ function getResourceStateCommand(
       beforeUri,
       afterUri,
       (fileStatus.renamedFrom ? `${fileStatus.renamedFrom} => ` : "") +
-      `${fileStatus.file} ${diffTitleSuffix}`,
+        `${fileStatus.file} ${diffTitleSuffix}`,
     ],
   };
 }
@@ -985,11 +971,61 @@ export class JJRepository {
   statusCache: RepositoryStatus | undefined;
   gitFetchPromise: Promise<void> | undefined;
 
+  private watchmanRegistersSnapshotTrigger = false;
+
   constructor(
     public repositoryRoot: string,
     private jjPath: string,
     private jjVersion: string,
-  ) { }
+  ) {}
+
+  private async loadWatchmanRegisterSnapshotTriggerConfig() {
+    const wasWatchmanRegisteringSnapshotTrigger =
+      this.watchmanRegistersSnapshotTrigger;
+    this.watchmanRegistersSnapshotTrigger = false;
+    try {
+      const output = (
+        await handleJJCommand(
+          this.spawnJJRead(
+            ["config", "get", "fsmonitor.watchman.register-snapshot-trigger"],
+            { defaultTimeout: 5000 },
+          ),
+        )
+      )
+        .toString()
+        .trim()
+        .toLowerCase();
+      if (output === "true") {
+        this.watchmanRegistersSnapshotTrigger = true;
+        if (!wasWatchmanRegisteringSnapshotTrigger) {
+          logger.info(
+            `Skipping snapshot polling for ${this.repositoryRoot}: jj fsmonitor.watchman.register-snapshot-trigger is true (Watchman registers snapshot triggers).`,
+          );
+        }
+      }
+    } catch {
+      // Unknown key (older jj) or other errors: keep default (poll snapshots).
+    }
+  }
+
+  /**
+   * Returns ["--ignore-working-copy"] if snapshot polling should not run a working-copy snapshot,
+   * otherwise an empty array. Used by the periodic poll (`getLatestOperationId`).
+   */
+  private getPollIgnoreWorkingCopyArgs(): string[] {
+    if (this.watchmanRegistersSnapshotTrigger) {
+      return ["--ignore-working-copy"];
+    }
+    const config = vscode.workspace.getConfiguration(
+      "jjk",
+      vscode.Uri.file(this.repositoryRoot),
+    );
+    const pollSnapshot = config.get<boolean>("pollSnapshotWorkingCopy");
+    if (pollSnapshot === false) {
+      return ["--ignore-working-copy"];
+    }
+    return [];
+  }
 
   spawnJJ(
     args: string[],
@@ -1019,10 +1055,11 @@ export class JJRepository {
    * return the new operation id.
    */
   async getLatestOperationId() {
+    await this.loadWatchmanRegisterSnapshotTriggerConfig();
     return (
       await handleJJCommand(
         this.spawnJJ([
-          ...getPollIgnoreWorkingCopyArgs(this.repositoryRoot),
+          ...this.getPollIgnoreWorkingCopyArgs(),
           "operation",
           "log",
           "--limit",
