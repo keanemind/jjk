@@ -135,6 +135,18 @@
         "category": "Jujutsu"
       },
       {
+        "command": "jj.showBookmarkMenu",
+        "title": "Show bookmarks",
+        "category": "Jujutsu",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "jj.createBookmarkAtCurrent",
+        "title": "Create bookmark",
+        "category": "Jujutsu",
+        "icon": "$(plus)"
+      },
+      {
         "command": "jj.refreshOperationLog",
         "title": "Refresh operation log",
         "category": "Jujutsu",
@@ -285,6 +297,11 @@
         },
         {
           "command": "jj.new",
+          "when": "scmProvider == jj",
+          "group": "navigation"
+        },
+        {
+          "command": "jj.showBookmarkMenu",
           "when": "scmProvider == jj",
           "group": "navigation"
         }
