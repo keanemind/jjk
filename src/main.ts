@@ -115,6 +115,21 @@ export async function activate(context: vscode.ExtensionContext) {
         await checkReposFunction(affectedFolders);
       }
     }
+
+    if (
+      e.affectsConfiguration("jjk.baseRevision") ||
+      e.affectsConfiguration("jjk.showBaseComparison") ||
+      e.affectsConfiguration("jjk.showParentCommit")
+    ) {
+      // Reset operationId to force re-fetch with new config values
+      await Promise.all(
+        workspaceSCM.repoSCMs.map(async (repoSCM) => {
+          repoSCM.operationId = undefined;
+          await repoSCM.checkForUpdates();
+        }),
+      );
+      updateScmGroupContextKeys();
+    }
   });
 
   let isInitialized = false;
@@ -550,10 +565,10 @@ export async function activate(context: vscode.ExtensionContext) {
 
               let statuses: FileStatus[];
               if (scm.workingCopyResourceGroup === resourceGroup) {
-                if (!scm.status) {
+                if (!scm.snapshot?.status) {
                   throw new Error("No current working copy change found");
                 }
-                const repositoryStatus = scm.status;
+                const repositoryStatus = scm.snapshot.status;
 
                 statuses = resourceStates.map((resourceState) => {
                   const foundStatus = repositoryStatus.fileStatuses.find(
@@ -568,7 +583,7 @@ export async function activate(context: vscode.ExtensionContext) {
                   return foundStatus;
                 });
               } else if (scm.parentResourceGroups.includes(resourceGroup)) {
-                const show = scm.parentShowResults.get(resourceGroup.id);
+                const show = scm.snapshot?.parentShowResults.get(resourceGroup.id);
                 if (!show) {
                   throw new Error(
                     "No current parent change show result found for the resource group",
@@ -1484,6 +1499,35 @@ export async function activate(context: vscode.ExtensionContext) {
     await Promise.all(
       workspaceSCM.repoSCMs.map((repoSCM) => repoSCM.checkForUpdates()),
     );
+
+    updateScmGroupContextKeys();
+  }
+
+  /**
+   * Sets VS Code context keys that identify which SCM resource groups are
+   * commit groups vs base comparison groups. This is used in package.json
+   * when clauses via the `in` operator (e.g. `scmResourceGroup in
+   * jj.commitGroupIds`) to reliably control which buttons appear on each
+   * group type — more robust than regex matching on group IDs.
+   */
+  function updateScmGroupContextKeys() {
+    const commitGroupIds = workspaceSCM.repoSCMs.flatMap((repo) => [
+      repo.workingCopyResourceGroup.id,
+      ...repo.parentResourceGroups.map((g) => g.id),
+    ]);
+    const baseComparisonGroupIds = workspaceSCM.repoSCMs.flatMap((repo) =>
+      repo.baseComparisonGroups.map((g) => g.id),
+    );
+    vscode.commands.executeCommand(
+      "setContext",
+      "jj.commitGroupIds",
+      commitGroupIds,
+    );
+    vscode.commands.executeCommand(
+      "setContext",
+      "jj.baseComparisonGroupIds",
+      baseComparisonGroupIds,
+    );
   }
 
   context.subscriptions.push(
@@ -1491,6 +1535,65 @@ export async function activate(context: vscode.ExtensionContext) {
       "jj.refresh",
       showLoading(() => poll()),
     ),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("jj.changeBaseRevision", async () => {
+      const repository = getSelectedRepo();
+
+      const config = vscode.workspace.getConfiguration(
+        "jjk",
+        vscode.Uri.file(repository.repositoryRoot),
+      );
+      const showParentCommit = config.get<boolean>("showParentCommit") ?? true;
+
+      const items: vscode.QuickPickItem[] = [
+        { label: "trunk()", description: "Default: main branch" },
+      ];
+      // Only show @- when parent commit groups are hidden,
+      // since otherwise the parent is already visible in the SCM view
+      if (!showParentCommit) {
+        items.push({ label: "@-", description: "Parent commit" });
+      }
+
+      // Fetch bookmarks between the
+      const bookmarks = await repository.bookmarksOfAncestors();
+      for (const b of bookmarks) {
+        items.push({ label: b, description: "bookmark" });
+      }
+
+      items.push({
+        label: "$(edit) Custom revset...",
+        description: "Enter any revset expression",
+      });
+
+      const selected = await vscode.window.showQuickPick(items, {
+        placeHolder: "Select base revision",
+      });
+      if (!selected) {
+        return;
+      }
+
+      let value = selected.label;
+      if (value === "$(edit) Custom revset...") {
+        const currentBase = config.get<string>("baseRevision") ?? "trunk()";
+        const custom = await vscode.window.showInputBox({
+          prompt: "Enter a jj revset expression for the base revision",
+          value: currentBase,
+          placeHolder: "trunk()",
+        });
+        if (custom === undefined) {
+          return;
+        }
+        value = custom;
+      }
+
+      await config.update(
+        "baseRevision",
+        value,
+        vscode.ConfigurationTarget.Workspace,
+      );
+    }),
   );
 
   context.subscriptions.push(
