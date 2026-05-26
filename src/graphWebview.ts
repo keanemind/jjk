@@ -9,9 +9,7 @@ type Message = {
   selectedNodes?: string[];
 };
 
-function buildChangeStats(
-  fileStatuses: Array<{ type: string }>,
-): {
+function buildChangeStats(fileStatuses: Array<{ type: string }>): {
   total: number;
   added: number;
   modified: number;
@@ -465,14 +463,14 @@ export function parseJJLog(output: string): ChangeNode[] {
       .replace(/\(conflict\)\s*/g, "")
       .trim();
     const cleanedDescriptionLines = descriptionLines.map((line) =>
-      line
-        .replace(/\(empty\)\s*/g, "")
-        .replace(/\(conflict\)\s*/g, ""),
+      line.replace(/\(empty\)\s*/g, "").replace(/\(conflict\)\s*/g, ""),
     );
     const fullDescription = cleanedDescriptionLines.join("\n").trim();
     const hasDescription =
       fullDescription.length > 0 && fullDescription !== "(no description set)";
-    const description = hasDescription ? cleanedDescription : "(no description set)";
+    const description = hasDescription
+      ? cleanedDescription
+      : "(no description set)";
     const fullDescriptionText = hasDescription
       ? fullDescription
       : "(no description set)";
@@ -524,9 +522,15 @@ export function parseJJLog(output: string): ChangeNode[] {
       .trim();
 
     const changeIdMatch = beforeTimestamp.match(/([a-z0-9]{8,})\s+(\S+)$/i);
-    const commitIdMatch = afterTimestamp.match(commitIdPattern);
+    const isConflictHeader = afterTimestamp.endsWith("(conflict)");
+    const afterTimestampClean = isConflictHeader
+      ? afterTimestamp.slice(0, -"(conflict)".length).trimEnd()
+      : afterTimestamp;
+    const commitIdMatch = afterTimestampClean.match(commitIdPattern);
     const symbolsMatch = headerLine.match(/^[^a-zA-Z0-9(]+/);
-    const branchTypeMatch = symbolsMatch ? symbolsMatch[0].match(/[@○◆]/) : null;
+    const branchTypeMatch = symbolsMatch
+      ? symbolsMatch[0].match(/[@○◆×]/)
+      : null;
 
     if (!changeIdMatch || !commitIdMatch || commitIdMatch.index === undefined) {
       continue;
@@ -538,7 +542,7 @@ export function parseJJLog(output: string): ChangeNode[] {
     const branchType = branchTypeMatch ? branchTypeMatch[0] : undefined;
     const commitId = commitIdMatch[1];
     const symbolColumn = getSymbolColumn(headerLine, branchType);
-    const refName = afterTimestamp
+    const refName = afterTimestampClean
       .slice(0, commitIdMatch.index)
       .trim()
       .replace(/\s+/g, " ");
@@ -567,7 +571,7 @@ export function parseJJLog(output: string): ChangeNode[] {
         timestamp,
         refName,
         isEmpty,
-        isConflict,
+        isConflict || isConflictHeader,
         hasDescription,
         false,
         symbolColumn,
