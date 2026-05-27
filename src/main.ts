@@ -321,7 +321,7 @@ export async function activate(context: vscode.ExtensionContext) {
           currentBookmarks.length === 1
             ? currentBookmarks[0]
             : `${currentBookmarks[0]} +${currentBookmarks.length - 1}`;
-        bookmarkStatusBarItem.text = `$(git-branch) ${bookmarkLabel}`;
+        bookmarkStatusBarItem.text = `$(bookmark) ${bookmarkLabel}`;
         bookmarkStatusBarItem.tooltip = `${folderName} - Current bookmark: ${currentBookmarks.join(", ")}\nChange: ${workingCopy.changeId}\nCommit: ${workingCopy.commitId}\nClick for bookmark actions`;
       } else {
         bookmarkStatusBarItem.text = `$(git-commit) ${workingCopy.changeId}`;

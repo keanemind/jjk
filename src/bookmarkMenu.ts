@@ -118,7 +118,7 @@ export function buildBookmarkMenuItems({
       ];
 
       return {
-        label: `$(git-branch) ${bookmark.name}`,
+        label: `$(bookmark) ${bookmark.name}`,
         description:
           descriptions.length > 0 ? descriptions.join(" - ") : undefined,
         detail: formatBookmarkDetail(bookmark),
@@ -139,7 +139,7 @@ export function buildBookmarkMenuItems({
     .map((bookmark) => {
       const name = bookmarkRefName(bookmark);
       return {
-        label: `$(git-branch) ${name}`,
+        label: `$(bookmark) ${name}`,
         description: "remote",
         detail: formatBookmarkDetail(bookmark),
         bookmark: name,
