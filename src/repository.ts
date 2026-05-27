@@ -979,7 +979,7 @@ const bookmarkRecordTemplate = template({
   .field("remote", jjIf(bookmark.remote(), bookmark.remote(), str("")))
   .field(
     "changeId",
-    jjIf(bookmarkTarget, bookmarkTarget.change_id().shortest(), str("")),
+    jjIf(bookmarkTarget, bookmarkTarget.change_id(), str("")),
   )
   .field(
     "commitId",

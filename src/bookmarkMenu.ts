@@ -47,12 +47,20 @@ function compareBookmarks(a: Bookmark, b: Bookmark) {
   return (a.remote ?? "").localeCompare(b.remote ?? "");
 }
 
+function formatChangeId(changeId: string | undefined) {
+  if (!changeId) {
+    return undefined;
+  }
+
+  return changeId.slice(0, 8);
+}
+
 function formatBookmarkDetail(bookmark: Bookmark) {
   if (bookmark.isConflict) {
     return "conflicted bookmark";
   }
 
-  const idText = [bookmark.changeId, bookmark.commitId].filter(Boolean).join(" ");
+  const idText = formatChangeId(bookmark.changeId);
   const description = bookmark.description || "(no description)";
   return idText ? `${idText} ${description}` : description;
 }
