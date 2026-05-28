@@ -6,7 +6,12 @@ import {
   provideOriginalResource,
   WorkspaceSourceControlManager,
 } from "./repository";
-import type { JJRepository, ChangeWithDetails, FileStatus } from "./repository";
+import type {
+  JJRepository,
+  ChangeWithDetails,
+  FileStatus,
+  RepositorySourceControlManager,
+} from "./repository";
 import { JJDecorationProvider } from "./decorationProvider";
 import {
   OperationLogManager,
@@ -25,6 +30,11 @@ import {
 } from "./vendor/vscode/editor/common/diff/linesDiffComputer";
 import { match } from "arktype";
 import { getActiveTextEditorDiff, pathEquals } from "./utils";
+import {
+  type BookmarkMenuItem,
+  buildBookmarkMenuItems,
+  validateBookmarkName,
+} from "./bookmarkMenu";
 
 export async function activate(context: vscode.ExtensionContext) {
   const outputChannel = vscode.window.createOutputChannel("Jujutsu Kaizen", {
@@ -160,29 +170,187 @@ export async function activate(context: vscode.ExtensionContext) {
         if (graphWebview.repository.repositoryRoot === repoSCM.repositoryRoot) {
           void graphWebview.refresh();
         }
+        updateBookmarkStatusBarItem();
+        updateFetchStatusBarItem();
       }),
     );
 
-    const statusBarItem = vscode.window.createStatusBarItem(
+    const bookmarkStatusBarItem = vscode.window.createStatusBarItem(
+      vscode.StatusBarAlignment.Left,
+      101,
+    );
+    const fetchStatusBarItem = vscode.window.createStatusBarItem(
       vscode.StatusBarAlignment.Left,
       100,
     );
-    context.subscriptions.push(statusBarItem);
-    statusBarItem.command = "jj.gitFetch";
+    context.subscriptions.push(bookmarkStatusBarItem, fetchStatusBarItem);
+    bookmarkStatusBarItem.name = "Jujutsu Bookmark";
+    bookmarkStatusBarItem.command = "jj.showBookmarkMenu";
+    fetchStatusBarItem.name = "Jujutsu Fetch";
+    fetchStatusBarItem.command = "jj.gitFetch";
     let lastOpenedFileUri: vscode.Uri | undefined;
+    const getStatusBarRepoSCM = () => {
+      if (lastOpenedFileUri) {
+        const repoSCM =
+          workspaceSCM.getRepositorySourceControlManagerFromUri(
+            lastOpenedFileUri,
+          );
+        if (repoSCM) {
+          return repoSCM;
+        }
+      }
+
+      const selectedRepo =
+        context.workspaceState.get<string>("selectedRepository");
+      if (selectedRepo) {
+        return workspaceSCM.repoSCMs.find(
+          (repoSCM) => repoSCM.repositoryRoot === selectedRepo,
+        );
+      }
+
+      return workspaceSCM.repoSCMs[0];
+    };
+
+    function isBookmarkMenuItem(
+      item: BookmarkMenuItem | vscode.QuickPickItem | undefined,
+    ): item is BookmarkMenuItem {
+      return Boolean(item && "action" in item);
+    }
+
+    async function showBookmarkMenu({
+      bookmarks,
+      currentBookmarks,
+    }: Parameters<typeof buildBookmarkMenuItems>[0]) {
+      return await new Promise<BookmarkMenuItem | undefined>((resolve) => {
+        const quickPick = vscode.window.createQuickPick<
+          BookmarkMenuItem | vscode.QuickPickItem
+        >();
+        let resolved = false;
+
+        const finish = (selection: BookmarkMenuItem | undefined) => {
+          if (resolved) {
+            return;
+          }
+          resolved = true;
+          resolve(selection);
+          quickPick.hide();
+        };
+
+        const updateItems = () => {
+          const items = buildBookmarkMenuItems({
+            bookmarks,
+            currentBookmarks,
+            query: quickPick.value,
+          });
+          quickPick.items = items;
+        };
+
+        quickPick.title = "Jujutsu Bookmarks";
+        quickPick.placeholder = "Create a bookmark or select a bookmark to edit";
+        quickPick.matchOnDescription = true;
+        quickPick.matchOnDetail = true;
+        updateItems();
+
+        quickPick.onDidChangeValue(updateItems);
+        quickPick.onDidAccept(() => {
+          finish(
+            quickPick.selectedItems.find(isBookmarkMenuItem) ??
+              quickPick.activeItems.find(isBookmarkMenuItem),
+          );
+        });
+        quickPick.onDidHide(() => {
+          finish(undefined);
+          quickPick.dispose();
+        });
+        quickPick.show();
+      });
+    }
+
+    async function createBookmarkAtCurrent(
+      repoSCM: RepositorySourceControlManager,
+      bookmarkName?: string,
+      existingNames?: Set<string>,
+    ) {
+      const knownNames =
+        existingNames ??
+        new Set(
+          (await repoSCM.repository.listBookmarks()).map(
+            (bookmark) => bookmark.name,
+          ),
+        );
+
+      const validateInput = (value: string) =>
+        validateBookmarkName(value, knownNames);
+
+      const name =
+        bookmarkName ??
+        (await vscode.window.showInputBox({
+          title: "Create Bookmark",
+          prompt: "Create a new bookmark at the current change",
+          placeHolder: "bookmark-name",
+          validateInput,
+        }));
+
+      if (!name) {
+        return;
+      }
+
+      const validationMessage = validateInput(name);
+      if (validationMessage) {
+        vscode.window.showErrorMessage(validationMessage);
+        return;
+      }
+
+      await repoSCM.repository.createBookmark(name.trim());
+      await poll();
+    }
+
+    function updateBookmarkStatusBarItem() {
+      const repoSCM = getStatusBarRepoSCM();
+      if (!repoSCM?.status) {
+        bookmarkStatusBarItem.hide();
+        return;
+      }
+
+      const folderName = path.basename(repoSCM.repositoryRoot);
+      const workingCopy = repoSCM.status.workingCopy;
+      const currentBookmarks = workingCopy.bookmarks ?? [];
+
+      if (currentBookmarks.length > 0) {
+        const bookmarkLabel =
+          currentBookmarks.length === 1
+            ? currentBookmarks[0]
+            : `${currentBookmarks[0]} +${currentBookmarks.length - 1}`;
+        bookmarkStatusBarItem.text = `$(bookmark) ${bookmarkLabel}`;
+        bookmarkStatusBarItem.tooltip = `${folderName} - Current bookmark: ${currentBookmarks.join(", ")}\nChange: ${workingCopy.changeId}\nCommit: ${workingCopy.commitId}\nClick for bookmark actions`;
+      } else {
+        bookmarkStatusBarItem.text = `$(git-commit) ${workingCopy.changeId}`;
+        bookmarkStatusBarItem.tooltip = `${folderName} - Current change: ${workingCopy.changeId}\nCommit: ${workingCopy.commitId}\nClick for bookmark actions`;
+      }
+
+      bookmarkStatusBarItem.show();
+    }
+
+    function updateFetchStatusBarItem() {
+      const repoSCM = getStatusBarRepoSCM();
+      if (!repoSCM) {
+        fetchStatusBarItem.hide();
+        return;
+      }
+
+      const folderName = path.basename(repoSCM.repositoryRoot);
+      fetchStatusBarItem.text = "$(cloud-download)";
+      fetchStatusBarItem.tooltip = `${folderName} - Run \`jj git fetch\``;
+      fetchStatusBarItem.show();
+    }
     const statusBarHandleDidChangeActiveTextEditor = (
       editor: vscode.TextEditor | undefined,
     ) => {
       if (editor && editor.document.uri.scheme === "file") {
         lastOpenedFileUri = editor.document.uri;
-        const repository = workspaceSCM.getRepositoryFromUri(lastOpenedFileUri);
-        if (repository) {
-          const folderName = repository.repositoryRoot.split("/").at(-1)!;
-          statusBarItem.text = "$(cloud-download)";
-          statusBarItem.tooltip = `${folderName} – Run \`jj git fetch\``;
-          statusBarItem.show();
-        }
       }
+      updateBookmarkStatusBarItem();
+      updateFetchStatusBarItem();
     };
     context.subscriptions.push(
       vscode.window.onDidChangeActiveTextEditor(
@@ -1081,22 +1249,87 @@ export async function activate(context: vscode.ExtensionContext) {
     );
 
     context.subscriptions.push(
-      vscode.commands.registerCommand("jj.gitFetch", async () => {
-        if (lastOpenedFileUri) {
-          statusBarItem.text = "$(sync~spin)";
-          statusBarItem.tooltip = "Fetching...";
+      vscode.commands.registerCommand("jj.showBookmarkMenu", async () => {
+        try {
+          const repoSCM = getStatusBarRepoSCM();
+          if (!repoSCM) {
+            throw new Error("Repository not found");
+          }
+
+          const bookmarks = await repoSCM.repository.listBookmarks({
+            allRemotes: true,
+          });
+          const currentBookmarks = new Set(
+            repoSCM.status?.workingCopy.bookmarks ?? [],
+          );
+
+          const selection = await showBookmarkMenu({
+            bookmarks,
+            currentBookmarks,
+          });
+
+          if (!selection || !("action" in selection)) {
+            return;
+          }
+
+          if (selection.action === "createBookmark") {
+            await createBookmarkAtCurrent(
+              repoSCM,
+              selection.bookmarkName,
+              new Set(bookmarks.map((bookmark) => bookmark.name)),
+            );
+          } else if (selection.action === "editBookmark") {
+            await repoSCM.repository.editRetryImmutable(selection.bookmark);
+            await poll();
+          }
+        } catch (error) {
+          vscode.window.showErrorMessage(
+            `Failed to show bookmarks${error instanceof Error ? `: ${error.message}` : ""}`,
+          );
+        }
+      }),
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand(
+        "jj.createBookmarkAtCurrent",
+        async (repositoryRoot?: string, bookmarkName?: string) => {
           try {
-            await workspaceSCM
-              .getRepositoryFromUri(lastOpenedFileUri)
-              ?.gitFetch();
+            const repoSCM = repositoryRoot
+              ? workspaceSCM.repoSCMs.find(
+                  (repoSCM) => repoSCM.repositoryRoot === repositoryRoot,
+                )
+              : getStatusBarRepoSCM();
+            if (!repoSCM) {
+              throw new Error("Repository not found");
+            }
+
+            await createBookmarkAtCurrent(repoSCM, bookmarkName);
+          } catch (error) {
+            vscode.window.showErrorMessage(
+              `Failed to create bookmark${error instanceof Error ? `: ${error.message}` : ""}`,
+            );
+          }
+        },
+      ),
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand("jj.gitFetch", async () => {
+        const repoSCM = getStatusBarRepoSCM();
+        if (repoSCM) {
+          fetchStatusBarItem.text = "$(sync~spin)";
+          fetchStatusBarItem.tooltip = "Fetching...";
+          try {
+            await repoSCM.repository.gitFetch();
+            await poll();
           } catch (error) {
             vscode.window.showErrorMessage(
               `Failed to fetch from remote${error instanceof Error ? `: ${error.message}` : ""}`,
             );
           } finally {
-            statusBarHandleDidChangeActiveTextEditor(
-              vscode.window.activeTextEditor,
-            );
+            updateBookmarkStatusBarItem();
+            updateFetchStatusBarItem();
           }
         }
       }),
@@ -1690,6 +1923,7 @@ export async function activate(context: vscode.ExtensionContext) {
     workspaceSCM,
     uri: await import("./uri"),
     repository: await import("./repository"),
+    bookmarkMenu: await import("./bookmarkMenu"),
     graphWebview: await import("./graphWebview"),
   };
 }

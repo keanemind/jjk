@@ -6,6 +6,7 @@ import * as fsSync from "fs";
 import { getParams, toJJUri } from "./uri";
 import {
   CommitT,
+  CommitRefExpr,
   OperationT,
   Expr,
   str,
@@ -967,6 +968,45 @@ const operationRecordTemplate = template({
   .field("snapshot", operation.snapshot())
   .build();
 
+const BOOKMARK_FIELD_SEPARATOR = "\x1f";
+const bookmark = new CommitRefExpr({ kind: "keyword", name: "self" });
+const bookmarkTarget = bookmark.normal_target();
+const bookmarkRecordTemplate = template({
+  fieldSeparator: BOOKMARK_FIELD_SEPARATOR,
+  recordSeparator: "\n",
+})
+  .field("name", bookmark.name())
+  .field("remote", jjIf(bookmark.remote(), bookmark.remote(), str("")))
+  .field(
+    "changeId",
+    jjIf(bookmarkTarget, bookmarkTarget.change_id(), str("")),
+  )
+  .field(
+    "commitId",
+    jjIf(bookmarkTarget, bookmarkTarget.commit_id().short(), str("")),
+  )
+  .field(
+    "description",
+    jjIf(
+      bookmarkTarget,
+      bookmarkTarget.description().first_line().escape_json(),
+      str('""'),
+    ),
+  )
+  .field("conflict", jjIf(bookmark.conflict(), str("conflict"), str("")))
+  .field("tracked", jjIf(bookmark.tracked(), str("tracked"), str("")))
+  .build();
+
+export type Bookmark = {
+  name: string;
+  remote?: string;
+  changeId?: string;
+  commitId?: string;
+  description?: string;
+  isConflict: boolean;
+  isTracked: boolean;
+};
+
 export class JJRepository {
   statusCache: RepositoryStatus | undefined;
   gitFetchPromise: Promise<void> | undefined;
@@ -1786,6 +1826,67 @@ export class JJRepository {
           defaultTimeout: 5000,
         },
       ),
+    );
+  }
+
+  async listBookmarks({
+    allRemotes = false,
+  }: { allRemotes?: boolean } = {}) {
+    const output = (
+      await handleJJCommand(
+        this.spawnJJRead(
+          [
+            "bookmark",
+            "list",
+            ...(allRemotes ? ["--all-remotes"] : []),
+            "-T",
+            bookmarkRecordTemplate.template,
+          ],
+          {
+            defaultTimeout: 5000,
+          },
+        ),
+      )
+    ).toString();
+
+    return output
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => {
+        const [
+          name,
+          remote,
+          changeId,
+          commitId,
+          description,
+          conflict,
+          tracked,
+        ] = line.split(BOOKMARK_FIELD_SEPARATOR);
+        if (!name) {
+          throw new Error("Missing bookmark name in jj bookmark list output.");
+        }
+        const parsedDescription: unknown = JSON.parse(description || '""');
+        if (typeof parsedDescription !== "string") {
+          throw new Error("Unexpected bookmark description JSON payload.");
+        }
+        return {
+          name,
+          remote: remote || undefined,
+          changeId: changeId || undefined,
+          commitId: commitId || undefined,
+          description: parsedDescription || undefined,
+          isConflict: conflict === "conflict",
+          isTracked: tracked === "tracked",
+        } satisfies Bookmark;
+      });
+  }
+
+  async createBookmark(name: string) {
+    return await handleJJCommand(
+      this.spawnJJ(["bookmark", "create", name, "--revision", "@"], {
+        defaultTimeout: 5000,
+      }),
     );
   }
 
