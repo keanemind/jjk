@@ -1,5 +1,7 @@
 import * as assert from "assert";
+import * as path from "path";
 import { getExtensionAPI } from "./extensionApi";
+import type { FileStatus } from "../repository";
 
 suite("parseRenamePaths", () => {
   let parseRenamePaths: (
@@ -106,5 +108,80 @@ suite("parseRenamePaths", () => {
   test("should return null for empty input", () => {
     const input = "";
     assert.strictEqual(parseRenamePaths(input), null);
+  });
+});
+
+suite("parseFileStatusLine", () => {
+  let parseFileStatusLine: (
+    repositoryRoot: string,
+    line: string,
+    out: FileStatus[],
+  ) => boolean;
+
+  const root = "/repo";
+
+  suiteSetup(async () => {
+    ({ parseFileStatusLine } = (await getExtensionAPI()).repository);
+  });
+
+  test("parses added file", () => {
+    const out: FileStatus[] = [];
+    assert.strictEqual(parseFileStatusLine(root, "A src/new.ts", out), true);
+    assert.deepStrictEqual(out, [
+      { type: "A", file: "src/new.ts", path: path.join(root, "src/new.ts") },
+    ]);
+  });
+
+  test("parses modified file", () => {
+    const out: FileStatus[] = [];
+    parseFileStatusLine(root, "M lib/utils.ts", out);
+    assert.strictEqual(out.length, 1);
+    assert.strictEqual(out[0].type, "M");
+    assert.strictEqual(out[0].file, "lib/utils.ts");
+  });
+
+  test("parses deleted file", () => {
+    const out: FileStatus[] = [];
+    parseFileStatusLine(root, "D old-file.txt", out);
+    assert.strictEqual(out[0].type, "D");
+  });
+
+  test("parses rename with brace syntax", () => {
+    const out: FileStatus[] = [];
+    parseFileStatusLine(root, "R src/{old => new}/file.ts", out);
+    assert.strictEqual(out.length, 1);
+    assert.strictEqual(out[0].type, "R");
+    assert.strictEqual(out[0].file, "src/new/file.ts");
+    assert.strictEqual(out[0].renamedFrom, "src/old/file.ts");
+  });
+
+  test("parses copy", () => {
+    const out: FileStatus[] = [];
+    parseFileStatusLine(root, "C src/{a => b}.ts", out);
+    assert.strictEqual(out[0].type, "C");
+    assert.strictEqual(out[0].renamedFrom, "src/a.ts");
+  });
+
+  test("returns false for non-matching line", () => {
+    const out: FileStatus[] = [];
+    assert.strictEqual(
+      parseFileStatusLine(root, "Working copy : abc123", out),
+      false,
+    );
+    assert.strictEqual(out.length, 0);
+  });
+
+  test("returns false for empty line", () => {
+    const out: FileStatus[] = [];
+    assert.strictEqual(parseFileStatusLine(root, "", out), false);
+  });
+
+  test("appends to existing array", () => {
+    const out: FileStatus[] = [
+      { type: "A", file: "existing.ts", path: path.join(root, "existing.ts") },
+    ];
+    parseFileStatusLine(root, "M second.ts", out);
+    assert.strictEqual(out.length, 2);
+    assert.strictEqual(out[1].type, "M");
   });
 });
