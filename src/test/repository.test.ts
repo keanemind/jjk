@@ -108,3 +108,53 @@ suite("parseRenamePaths", () => {
     assert.strictEqual(parseRenamePaths(input), null);
   });
 });
+
+suite("getRestorePaths", () => {
+  let getRestorePaths: (
+    statuses: {
+      type: "A" | "M" | "D" | "R" | "C";
+      file: string;
+      path: string;
+      renamedFrom?: string;
+    }[],
+  ) => string[];
+
+  suiteSetup(async () => {
+    ({ getRestorePaths } = (await getExtensionAPI()).repository);
+  });
+
+  test("restores only the selected path for normal file changes", () => {
+    assert.deepStrictEqual(
+      getRestorePaths([{ type: "M", file: "file.ts", path: "file.ts" }]),
+      ["file.ts"],
+    );
+  });
+
+  test("restores both sides of a rename", () => {
+    assert.deepStrictEqual(
+      getRestorePaths([
+        {
+          type: "R",
+          file: "new.ts",
+          path: "new.ts",
+          renamedFrom: "old.ts",
+        },
+      ]),
+      ["new.ts", "old.ts"],
+    );
+  });
+
+  test("does not restore the source side of a copy", () => {
+    assert.deepStrictEqual(
+      getRestorePaths([
+        {
+          type: "C",
+          file: "copy.ts",
+          path: "copy.ts",
+          renamedFrom: "source.ts",
+        },
+      ]),
+      ["copy.ts"],
+    );
+  });
+});
