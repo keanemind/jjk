@@ -3,6 +3,9 @@ log-word-wrap = false
 paginate = "never"
 color = "never"
 
+[templates]
+file_list = 'path.display() ++ "\n"'
+
 [template-aliases]
 'commit_timestamp(commit)' = 'commit.committer().timestamp()'
 'format_short_id(id)' = 'id.shortest(8)'

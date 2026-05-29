@@ -4,6 +4,18 @@ import spawn from "cross-spawn";
 import fs from "fs/promises";
 import * as fsSync from "fs";
 import { getParams, toJJUri } from "./uri";
+import {
+  CommitT,
+  CommitRefExpr,
+  OperationT,
+  Expr,
+  str,
+  concat,
+  stringify,
+  jjIf,
+  template,
+} from "./jjTemplate";
+import type { RecordTemplate } from "./jjTemplate";
 import type { JJDecorationProvider } from "./decorationProvider";
 import { logger } from "./logger";
 import type { ChildProcess } from "child_process";
@@ -129,22 +141,6 @@ export function resolveRepoPath(workspaceRoot: string): string {
     return path.resolve(path.join(workspaceRoot, ".jj"), contents);
   }
   return jjRepoPath;
-}
-
-/**
- * Returns ["--ignore-working-copy"] if pollSnapshotWorkingCopy is disabled, otherwise returns an empty array.
- * This controls whether the poll command (getLatestOperationId) snapshots the working copy.
- */
-function getPollIgnoreWorkingCopyArgs(repositoryRoot: string): string[] {
-  const config = vscode.workspace.getConfiguration(
-    "jjk",
-    vscode.Uri.file(repositoryRoot),
-  );
-  const pollSnapshot = config.get<boolean>("pollSnapshotWorkingCopy");
-  if (pollSnapshot === false) {
-    return ["--ignore-working-copy"];
-  }
-  return [];
 }
 
 /**
@@ -337,9 +333,9 @@ export class WorkspaceSourceControlManager {
         const jjPath = await getJJPath(workspaceFolder.uri.fsPath);
         const jjVersion = await getJJVersion(jjPath.filepath);
 
-        if (semver.lt(jjVersion, "0.26.0")) {
+        if (semver.lt(jjVersion, "0.27.0")) {
           throw new Error(
-            `jj version ${jjVersion} is not supported. Please upgrade to at least jj 0.26.0.`,
+            `jj version ${jjVersion} is not supported. Please upgrade to at least jj 0.27.0.`,
           );
         }
 
@@ -868,15 +864,208 @@ function getResourceStateCommand(
   };
 }
 
+// -- jj template definitions --
+
+const commit = new CommitT();
+const operation = new OperationT();
+
+const SHOW_FILE_SEPARATOR = "j@j@k";
+const SHOW_FILE_FIELD_SEPARATOR = "@?!"; // characters that are illegal in filepaths
+
+const parentIdList = (getId: (p: CommitT) => Expr) =>
+  jjIf(
+    commit.parents(),
+    concat(
+      str("["),
+      commit
+        .parents()
+        .map("p", (p) => stringify(getId(p)).escape_json())
+        .join(","),
+      str("]"),
+    ),
+    str("[]"),
+  );
+
+const showDiffExpr = commit
+  .diff()
+  .files()
+  .map("entry", (e) =>
+    concat(
+      e.status(),
+      str(SHOW_FILE_FIELD_SEPARATOR),
+      e.source().path().display(),
+      str(SHOW_FILE_FIELD_SEPARATOR),
+      e.target().path().display(),
+      str(SHOW_FILE_FIELD_SEPARATOR),
+      e.target().conflict(),
+    ),
+  )
+  .join(SHOW_FILE_SEPARATOR);
+
+const showTemplate = template({
+  fieldSeparator: "ඞjjk",
+  recordSeparator: "jjkඞ\n",
+})
+  .field("changeId", commit.change_id())
+  .field("commitId", commit.commit_id())
+  .field(
+    "parentChangeIds",
+    parentIdList((p) => p.change_id()),
+  )
+  .field(
+    "parentCommitIds",
+    parentIdList((p) => p.commit_id()),
+  )
+  .field("authorName", commit.author().name())
+  .field("authorEmail", commit.author().email())
+  .field(
+    "authoredDate",
+    commit.author().timestamp().local().format(str("%F %H:%M:%S")),
+  )
+  .field("description", commit.description().escape_json())
+  .field("empty", commit.empty())
+  .field("conflict", commit.conflict())
+  .field("diffFiles", showDiffExpr);
+
+const showRecordTemplate = showTemplate.build();
+
+const showPaginatedRecordTemplate = template({
+  fieldSeparator: "ඞjjk",
+  recordSeparator: "jjkඞ\n",
+  startSentinel: "ඞSTARTඞ",
+})
+  .field("changeId", commit.change_id())
+  .field("commitId", commit.commit_id())
+  .field(
+    "parentChangeIds",
+    parentIdList((p) => p.change_id()),
+  )
+  .field(
+    "parentCommitIds",
+    parentIdList((p) => p.commit_id()),
+  )
+  .field("authorName", commit.author().name())
+  .field("authorEmail", commit.author().email())
+  .field(
+    "authoredDate",
+    commit.author().timestamp().local().format(str("%F %H:%M:%S")),
+  )
+  .field("description", commit.description().escape_json())
+  .field("empty", commit.empty())
+  .field("conflict", commit.conflict())
+  .field("diffFiles", showDiffExpr)
+  .build();
+
+const operationRecordTemplate = template({
+  fieldSeparator: "kjjඞ",
+  recordSeparator: "ඞඞඞ\n",
+})
+  .field("id", operation.id())
+  .field("description", operation.description())
+  .field("tags", operation.tags())
+  .field("start", operation.time().start())
+  .field("user", operation.user())
+  .field("snapshot", operation.snapshot())
+  .build();
+
+const BOOKMARK_FIELD_SEPARATOR = "\x1f";
+const bookmark = new CommitRefExpr({ kind: "keyword", name: "self" });
+const bookmarkTarget = bookmark.normal_target();
+const bookmarkRecordTemplate = template({
+  fieldSeparator: BOOKMARK_FIELD_SEPARATOR,
+  recordSeparator: "\n",
+})
+  .field("name", bookmark.name())
+  .field("remote", jjIf(bookmark.remote(), bookmark.remote(), str("")))
+  .field(
+    "changeId",
+    jjIf(bookmarkTarget, bookmarkTarget.change_id(), str("")),
+  )
+  .field(
+    "commitId",
+    jjIf(bookmarkTarget, bookmarkTarget.commit_id().short(), str("")),
+  )
+  .field(
+    "description",
+    jjIf(
+      bookmarkTarget,
+      bookmarkTarget.description().first_line().escape_json(),
+      str('""'),
+    ),
+  )
+  .field("conflict", jjIf(bookmark.conflict(), str("conflict"), str("")))
+  .field("tracked", jjIf(bookmark.tracked(), str("tracked"), str("")))
+  .build();
+
+export type Bookmark = {
+  name: string;
+  remote?: string;
+  changeId?: string;
+  commitId?: string;
+  description?: string;
+  isConflict: boolean;
+  isTracked: boolean;
+};
+
 export class JJRepository {
   statusCache: RepositoryStatus | undefined;
   gitFetchPromise: Promise<void> | undefined;
+
+  private watchmanRegistersSnapshotTrigger = false;
 
   constructor(
     public repositoryRoot: string,
     private jjPath: string,
     private jjVersion: string,
   ) {}
+
+  private async loadWatchmanRegisterSnapshotTriggerConfig() {
+    const wasWatchmanRegisteringSnapshotTrigger =
+      this.watchmanRegistersSnapshotTrigger;
+    this.watchmanRegistersSnapshotTrigger = false;
+    try {
+      const output = (
+        await handleJJCommand(
+          this.spawnJJRead(
+            ["config", "get", "fsmonitor.watchman.register-snapshot-trigger"],
+            { defaultTimeout: 5000 },
+          ),
+        )
+      )
+        .toString()
+        .trim()
+        .toLowerCase();
+      if (output === "true") {
+        this.watchmanRegistersSnapshotTrigger = true;
+        if (!wasWatchmanRegisteringSnapshotTrigger) {
+          logger.info(
+            `Skipping snapshot polling for ${this.repositoryRoot}: jj fsmonitor.watchman.register-snapshot-trigger is true (Watchman registers snapshot triggers).`,
+          );
+        }
+      }
+    } catch {
+      // Unknown key (older jj) or other errors: keep default (poll snapshots).
+    }
+  }
+
+  /**
+   * Returns ["--ignore-working-copy"] if snapshot polling should not run a working-copy snapshot,
+   * otherwise an empty array. Used by the periodic poll (`getLatestOperationId`).
+   */
+  private getPollIgnoreWorkingCopyArgs(): string[] {
+    if (this.watchmanRegistersSnapshotTrigger) {
+      return ["--ignore-working-copy"];
+    }
+    const config = vscode.workspace.getConfiguration(
+      "jjk",
+      vscode.Uri.file(this.repositoryRoot),
+    );
+    const pollSnapshot = config.get<boolean>("pollSnapshotWorkingCopy");
+    if (pollSnapshot === false) {
+      return ["--ignore-working-copy"];
+    }
+    return [];
+  }
 
   spawnJJ(
     args: string[],
@@ -906,10 +1095,11 @@ export class JJRepository {
    * return the new operation id.
    */
   async getLatestOperationId() {
+    await this.loadWatchmanRegisterSnapshotTriggerConfig();
     return (
       await handleJJCommand(
         this.spawnJJ([
-          ...getPollIgnoreWorkingCopyArgs(this.repositoryRoot),
+          ...this.getPollIgnoreWorkingCopyArgs(),
           "operation",
           "log",
           "--limit",
@@ -972,26 +1162,7 @@ export class JJRepository {
   }
 
   async showAll(revsets: string[]) {
-    const revSeparator = "jjkඞ\n";
-    const fieldSeparator = "ඞjjk";
-    const summaryFileSeparator = "j@j@k";
-    const summaryFileFieldSeparator = "@?!"; // characters that are illegal in filepaths
-    const templateFields = [
-      "change_id",
-      "commit_id",
-      'if(parents, "[" ++ parents.map(|p| stringify(p.change_id()).escape_json()).join(",") ++ "]", "[]")',
-      'if(parents, "[" ++ parents.map(|p| stringify(p.commit_id()).escape_json()).join(",") ++ "]", "[]")',
-      "author.name()",
-      "author.email()",
-      'author.timestamp().local().format("%F %H:%M:%S")',
-      "description.escape_json()",
-      "empty",
-      "conflict",
-      `diff.files().map(|entry| entry.status() ++ "${summaryFileFieldSeparator}" ++ entry.source().path().display() ++ "${summaryFileFieldSeparator}" ++ entry.target().path().display() ++ "${summaryFileFieldSeparator}" ++ entry.target().conflict()).join("${summaryFileSeparator}")`,
-    ];
-    const template =
-      templateFields.join(` ++ "${fieldSeparator}" ++ `) +
-      ` ++ "${revSeparator}"`;
+    const rt = showRecordTemplate;
 
     const output = (
       await handleJJCommand(
@@ -999,7 +1170,7 @@ export class JJRepository {
           [
             "log",
             "-T",
-            template,
+            rt.template,
             "--no-graph",
             ...revsets.flatMap((revset) => ["-r", revset]),
           ],
@@ -1016,16 +1187,8 @@ export class JJRepository {
       );
     }
 
-    const revResults = output.split(revSeparator).slice(0, -1); // the output ends in a separator so remove the empty string at the end
-    return revResults.map((revResult) =>
-      this.parseShowResult(
-        revResult,
-        templateFields,
-        fieldSeparator,
-        summaryFileSeparator,
-        summaryFileFieldSeparator,
-      ),
-    );
+    const revResults = output.split(rt.recordSeparator).slice(0, -1); // the output ends in a separator so remove the empty string at the end
+    return revResults.map((revResult) => this.parseShowResult(revResult, rt));
   }
 
   showAllPaginated(revsets: string[]): {
@@ -1052,31 +1215,15 @@ export class JJRepository {
     // Note that if we just split by "end" (revSeparator), we'd get graph symbols at the beginning. This is why we need
     // a start sentinel.
 
-    const startSentinel = "ඞSTARTඞ";
-    const revSeparator = "jjkඞ\n";
-    const fieldSeparator = "ඞjjk";
-    const summaryFileSeparator = "j@j@k";
-    const summaryFileFieldSeparator = "@?!"; // characters that are illegal in filepaths
-    const templateFields = [
-      "change_id",
-      "commit_id",
-      'if(parents, "[" ++ parents.map(|p| stringify(p.change_id()).escape_json()).join(",") ++ "]", "[]")',
-      'if(parents, "[" ++ parents.map(|p| stringify(p.commit_id()).escape_json()).join(",") ++ "]", "[]")',
-      "author.name()",
-      "author.email()",
-      'author.timestamp().local().format("%F %H:%M:%S")',
-      "description.escape_json()",
-      "empty",
-      "conflict",
-      `diff.files().map(|entry| entry.status() ++ "${summaryFileFieldSeparator}" ++ entry.source().path().display() ++ "${summaryFileFieldSeparator}" ++ entry.target().path().display() ++ "${summaryFileFieldSeparator}" ++ entry.target().conflict()).join("${summaryFileSeparator}")`,
-    ];
-    const template =
-      `"${startSentinel}" ++ ` +
-      templateFields.join(` ++ "${fieldSeparator}" ++ `) +
-      ` ++ "${revSeparator}"`;
+    const rt = showPaginatedRecordTemplate;
 
     const childProcess = this.spawnJJ(
-      ["log", "-T", template, ...revsets.flatMap((revset) => ["-r", revset])],
+      [
+        "log",
+        "-T",
+        rt.template,
+        ...revsets.flatMap((revset) => ["-r", revset]),
+      ],
       undefined,
       { timeout: 0 }, // no timeout
     );
@@ -1105,27 +1252,23 @@ export class JJRepository {
       let buffer = "";
       for await (const chunk of childProcess.stdout!) {
         buffer += chunk;
-        let separatorIndex = buffer.indexOf(revSeparator);
+        let separatorIndex = buffer.indexOf(rt.recordSeparator);
         while (separatorIndex !== -1) {
           const revSliceWithGraphSymbols = buffer.slice(0, separatorIndex);
-          buffer = buffer.slice(separatorIndex + revSeparator.length);
+          buffer = buffer.slice(separatorIndex + rt.recordSeparator.length);
 
-          const startIndex = revSliceWithGraphSymbols.indexOf(startSentinel);
+          const startIndex = revSliceWithGraphSymbols.indexOf(
+            rt.startSentinel!,
+          );
           if (startIndex === -1) {
             throw new Error("Failed to find start sentinel in jj log output");
           }
           const revResult = revSliceWithGraphSymbols.slice(
-            startIndex + startSentinel.length,
+            startIndex + rt.startSentinel!.length,
           );
 
-          yield this.parseShowResult(
-            revResult,
-            templateFields,
-            fieldSeparator,
-            summaryFileSeparator,
-            summaryFileFieldSeparator,
-          );
-          separatorIndex = buffer.indexOf(revSeparator);
+          yield this.parseShowResult(revResult, rt);
+          separatorIndex = buffer.indexOf(rt.recordSeparator);
         }
       }
 
@@ -1143,13 +1286,7 @@ export class JJRepository {
     };
   }
 
-  private parseShowResult(
-    revResult: string,
-    templateFields: string[],
-    fieldSeparator: string,
-    summaryFileSeparator: string,
-    summaryFileFieldSeparator: string,
-  ): Show {
+  private parseShowResult(revResult: string, rt: RecordTemplate): Show {
     const parseJsonStringArray = (value: string, fieldName: string) => {
       const parsed: unknown = JSON.parse(value);
       if (!Array.isArray(parsed)) {
@@ -1157,12 +1294,12 @@ export class JJRepository {
       }
       return parsed.map((item) => String(item));
     };
-    const fields = revResult.split(fieldSeparator);
-    if (fields.length > templateFields.length) {
+    const fields = revResult.split(rt.fieldSeparator);
+    if (fields.length > rt.fields.length) {
       throw new Error(
         "Separator found in a field value. This is not supported.",
       );
-    } else if (fields.length < templateFields.length) {
+    } else if (fields.length < rt.fields.length) {
       throw new Error("Missing fields in the output.");
     }
     const ret: Show = {
@@ -1187,37 +1324,37 @@ export class JJRepository {
     for (let i = 0; i < fields.length; i++) {
       const field = fields[i];
       const value = field.trim();
-      switch (templateFields[i]) {
-        case "change_id":
+      switch (rt.fields[i].name) {
+        case "changeId":
           ret.change.changeId = value;
           break;
-        case "commit_id":
+        case "commitId":
           ret.change.commitId = value;
           break;
-        case 'if(parents, "[" ++ parents.map(|p| stringify(p.change_id()).escape_json()).join(",") ++ "]", "[]")': {
+        case "parentChangeIds": {
           ret.change.parentChangeIds = parseJsonStringArray(
             value,
             "parent change ids",
           );
           break;
         }
-        case 'if(parents, "[" ++ parents.map(|p| stringify(p.commit_id()).escape_json()).join(",") ++ "]", "[]")': {
+        case "parentCommitIds": {
           ret.change.parentCommitIds = parseJsonStringArray(
             value,
             "parent commit ids",
           );
           break;
         }
-        case "author.name()":
+        case "authorName":
           ret.change.author.name = value;
           break;
-        case "author.email()":
+        case "authorEmail":
           ret.change.author.email = value;
           break;
-        case 'author.timestamp().local().format("%F %H:%M:%S")':
+        case "authoredDate":
           ret.change.authoredDate = value;
           break;
-        case "description.escape_json()":
+        case "description":
           {
             const parsed: unknown = JSON.parse(value);
             if (typeof parsed !== "string") {
@@ -1232,12 +1369,10 @@ export class JJRepository {
         case "conflict":
           ret.change.isConflict = value === "true";
           break;
-        default: {
-          for (const line of value
-            .split(summaryFileSeparator)
-            .filter(Boolean)) {
+        case "diffFiles": {
+          for (const line of value.split(SHOW_FILE_SEPARATOR).filter(Boolean)) {
             const [status, rawSourcePath, rawTargetPath, conflict] = line.split(
-              summaryFileFieldSeparator,
+              SHOW_FILE_FIELD_SEPARATOR,
             );
             const sourcePath = path
               .normalize(rawSourcePath)
@@ -1348,7 +1483,7 @@ export class JJRepository {
         const match = error.message.match(/error:\s*([\s\S]+)$/i);
         if (match) {
           const errorMessage = match[1];
-          throw new Error(errorMessage);
+          throw new Error(errorMessage, { cause: error });
         } else {
           throw error;
         }
@@ -1694,6 +1829,67 @@ export class JJRepository {
     );
   }
 
+  async listBookmarks({
+    allRemotes = false,
+  }: { allRemotes?: boolean } = {}) {
+    const output = (
+      await handleJJCommand(
+        this.spawnJJRead(
+          [
+            "bookmark",
+            "list",
+            ...(allRemotes ? ["--all-remotes"] : []),
+            "-T",
+            bookmarkRecordTemplate.template,
+          ],
+          {
+            defaultTimeout: 5000,
+          },
+        ),
+      )
+    ).toString();
+
+    return output
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => {
+        const [
+          name,
+          remote,
+          changeId,
+          commitId,
+          description,
+          conflict,
+          tracked,
+        ] = line.split(BOOKMARK_FIELD_SEPARATOR);
+        if (!name) {
+          throw new Error("Missing bookmark name in jj bookmark list output.");
+        }
+        const parsedDescription: unknown = JSON.parse(description || '""');
+        if (typeof parsedDescription !== "string") {
+          throw new Error("Unexpected bookmark description JSON payload.");
+        }
+        return {
+          name,
+          remote: remote || undefined,
+          changeId: changeId || undefined,
+          commitId: commitId || undefined,
+          description: parsedDescription || undefined,
+          isConflict: conflict === "conflict",
+          isTracked: tracked === "tracked",
+        } satisfies Bookmark;
+      });
+  }
+
+  async createBookmark(name: string) {
+    return await handleJJCommand(
+      this.spawnJJ(["bookmark", "create", name, "--revision", "@"], {
+        defaultTimeout: 5000,
+      }),
+    );
+  }
+
   async restoreRetryImmutable(rev?: string, filepaths?: string[]) {
     try {
       return await this.restore(rev, filepaths);
@@ -1773,19 +1969,7 @@ export class JJRepository {
   }
 
   async operationLog(): Promise<Operation[]> {
-    const operationSeparator = "ඞඞඞ\n";
-    const fieldSeparator = "kjjඞ";
-    const templateFields = [
-      "self.id()",
-      "self.description()",
-      "self.tags()",
-      "self.time().start()",
-      "self.user()",
-      "self.snapshot()",
-    ];
-    const template =
-      templateFields.join(` ++ "${fieldSeparator}" ++ `) +
-      ` ++ "${operationSeparator}"`;
+    const rt = operationRecordTemplate;
 
     const output = (
       await handleJJCommand(
@@ -1798,7 +1982,7 @@ export class JJRepository {
             "--no-graph",
             "--at-operation=@",
             "-T",
-            template,
+            rt.template,
           ],
           {
             defaultTimeout: 5000,
@@ -1808,14 +1992,14 @@ export class JJRepository {
     ).toString();
 
     const ret: Operation[] = [];
-    const lines = output.split(operationSeparator).slice(0, -1); // the output ends in a separator so remove the empty string at the end
-    for (const line of lines) {
-      const results = line.split(fieldSeparator);
-      if (results.length > templateFields.length) {
+    const records = output.split(rt.recordSeparator).slice(0, -1); // the output ends in a separator so remove the empty string at the end
+    for (const record of records) {
+      const results = record.split(rt.fieldSeparator);
+      if (results.length > rt.fields.length) {
         throw new Error(
           "Separator found in a field value. This is not supported.",
         );
-      } else if (results.length < templateFields.length) {
+      } else if (results.length < rt.fields.length) {
         throw new Error("Missing fields in the output.");
       }
       const op: Operation = {
@@ -1830,23 +2014,23 @@ export class JJRepository {
       for (let i = 0; i < results.length; i++) {
         const field = results[i];
         const value = field.trim();
-        switch (templateFields[i]) {
-          case "self.id()":
+        switch (rt.fields[i].name) {
+          case "id":
             op.id = value;
             break;
-          case "self.description()":
+          case "description":
             op.description = value;
             break;
-          case "self.tags()":
+          case "tags":
             op.tags = value;
             break;
-          case "self.time().start()":
+          case "start":
             op.start = value;
             break;
-          case "self.user()":
+          case "user":
             op.user = value;
             break;
-          case "self.snapshot()":
+          case "snapshot":
             op.snapshot = value === "true";
             break;
         }
@@ -2358,6 +2542,7 @@ async function prepareFakeeditor(): Promise<{
       } catch (error) {
         throw new Error(
           `Failed to write signal file '${signalFilePath}': ${error instanceof Error ? error.message : String(error)}`,
+          { cause: error },
         );
       }
     },
@@ -2367,6 +2552,7 @@ async function prepareFakeeditor(): Promise<{
       } catch (error) {
         throw new Error(
           `Failed to cleanup signal directory '${signalDir}': ${error instanceof Error ? error.message : String(error)}`,
+          { cause: error },
         );
       }
     },
