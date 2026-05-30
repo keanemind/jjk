@@ -7,42 +7,77 @@ import {
   window,
   MarkdownString,
 } from "vscode";
-import { JJRepository, Operation } from "./repository";
 import path from "path";
+import type { RepoHandle } from "./repoHandle";
+import type { Operation } from "./types";
+
+interface OperationLogManagerDeps {
+  readonly initialRepo: RepoHandle;
+  readonly loadOperations: (repo: RepoHandle) => Promise<readonly Operation[]>;
+}
 
 export class OperationLogManager {
-  subscriptions: {
+  private readonly subscriptions: {
     dispose(): unknown;
   }[] = [];
-  operationLogTreeView: TreeView<OperationTreeItem>;
+  private readonly onDidChangeTreeDataEmitter = new EventEmitter<
+    OperationTreeItem | undefined | null | void
+  >();
+  private readonly operationLogTreeDataProvider: OperationLogTreeDataProvider;
+  private readonly operationLogTreeView: TreeView<OperationTreeItem>;
+  private selectedRepo: RepoHandle;
+  private operationTreeItems: OperationTreeItem[] = [];
 
-  constructor(
-    public operationLogTreeDataProvider: OperationLogTreeDataProvider,
-  ) {
+  constructor(private readonly deps: OperationLogManagerDeps) {
+    this.selectedRepo = deps.initialRepo;
+    this.operationLogTreeDataProvider = new OperationLogTreeDataProvider(
+      () => this.operationTreeItems,
+      this.onDidChangeTreeDataEmitter.event,
+    );
     this.operationLogTreeView = window.createTreeView<OperationTreeItem>(
       "jjOperationLog",
       {
-        treeDataProvider: operationLogTreeDataProvider,
+        treeDataProvider: this.operationLogTreeDataProvider,
       },
     );
     this.operationLogTreeView.title = `Operation Log (${path.basename(
-      operationLogTreeDataProvider.getSelectedRepo().repositoryRoot,
+      this.selectedRepo.config.repositoryRoot,
     )})`;
     this.subscriptions.push(this.operationLogTreeView);
   }
 
-  async setSelectedRepo(repo: JJRepository) {
-    await this.operationLogTreeDataProvider.setSelectedRepo(repo);
+  async setSelectedRepo(repo: RepoHandle) {
+    const prevRepo = this.selectedRepo;
+    this.selectedRepo = repo;
     this.operationLogTreeView.title = `Operation Log (${path.basename(
-      repo.repositoryRoot,
+      repo.config.repositoryRoot,
     )})`;
+    if (prevRepo.config.repositoryRoot !== repo.config.repositoryRoot) {
+      await this.refresh();
+    }
   }
 
   async refresh() {
-    await this.operationLogTreeDataProvider.refresh();
+    const prev = this.operationTreeItems;
+    const operations = await this.deps.loadOperations(this.selectedRepo);
+    this.operationTreeItems = operations.map(
+      (op) =>
+        new OperationTreeItem(op, this.selectedRepo.config.repositoryRoot),
+    );
+    if (
+      prev.length !== this.operationTreeItems.length ||
+      !prev.every((op, i) => op.id === this.operationTreeItems[i].operation.id)
+    ) {
+      this.onDidChangeTreeDataEmitter.fire();
+    }
+  }
+
+  getSelectedRepo() {
+    return this.selectedRepo;
   }
 
   dispose() {
+    this.onDidChangeTreeDataEmitter.dispose();
     this.subscriptions.forEach((s) => s.dispose());
   }
 }
@@ -66,47 +101,18 @@ export class OperationTreeItem extends TreeItem {
 }
 
 export class OperationLogTreeDataProvider implements TreeDataProvider<unknown> {
-  _onDidChangeTreeData: EventEmitter<
-    OperationTreeItem | undefined | null | void
-  > = new EventEmitter();
-  onDidChangeTreeData: Event<OperationTreeItem | undefined | null | void> =
-    this._onDidChangeTreeData.event;
-
-  operationTreeItems: OperationTreeItem[] = [];
-
-  constructor(private selectedRepository: JJRepository) {}
+  constructor(
+    private readonly getOperationTreeItems: () => readonly OperationTreeItem[],
+    readonly onDidChangeTreeData: Event<
+      OperationTreeItem | undefined | null | void
+    >,
+  ) {}
 
   getTreeItem(element: TreeItem): TreeItem {
     return element;
   }
 
   getChildren(): OperationTreeItem[] {
-    return this.operationTreeItems;
-  }
-
-  async refresh() {
-    const prev = this.operationTreeItems;
-    const operations = await this.selectedRepository.operationLog();
-    this.operationTreeItems = operations.map(
-      (op) => new OperationTreeItem(op, this.selectedRepository.repositoryRoot),
-    );
-    if (
-      prev.length !== this.operationTreeItems.length ||
-      !prev.every((op, i) => op.id === this.operationTreeItems[i].operation.id)
-    ) {
-      this._onDidChangeTreeData.fire();
-    }
-  }
-
-  async setSelectedRepo(repo: JJRepository) {
-    const prevRepo = this.selectedRepository;
-    this.selectedRepository = repo;
-    if (prevRepo.repositoryRoot !== repo.repositoryRoot) {
-      await this.refresh();
-    }
-  }
-
-  getSelectedRepo() {
-    return this.selectedRepository;
+    return [...this.getOperationTreeItems()];
   }
 }

@@ -4,7 +4,7 @@ import * as path from "path";
 import * as fs from "fs/promises";
 import { execJJPromise } from "./utils";
 import { getExtensionAPI } from "./extensionApi";
-import type { WorkspaceSourceControlManager } from "../repository";
+import type { WorkspaceSourceControlManager } from "../repoHandle";
 import type * as UriModule from "../uri";
 
 const THREE_MINUTES = 1000 * 60 * 3;

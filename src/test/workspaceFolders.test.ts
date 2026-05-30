@@ -5,7 +5,7 @@ import * as fs from "fs/promises";
 import * as os from "os";
 import { execJJPromise } from "./utils";
 import { getExtensionAPI } from "./extensionApi";
-import type { WorkspaceSourceControlManager } from "../repository";
+import type { WorkspaceSourceControlManager } from "../repoHandle";
 
 async function createTempJJRepo(prefix: string): Promise<string> {
   // Use realpath to resolve macOS /var -> /private/var symlinks,

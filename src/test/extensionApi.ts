@@ -1,16 +1,20 @@
 import * as assert from "assert";
 import * as vscode from "vscode";
-import type * as RepositoryModule from "../repository";
-import type { WorkspaceSourceControlManager } from "../repository";
+import type { WorkspaceSourceControlManager } from "../repoHandle";
 import type * as UriModule from "../uri";
 import type * as GraphWebviewModule from "../graphWebview";
-import type * as BookmarkMenuModule from "../bookmarkMenu";
 
 type ExtensionAPI = {
   workspaceSCM: WorkspaceSourceControlManager;
   uri: typeof UriModule;
-  repository: typeof RepositoryModule;
-  bookmarkMenu: typeof BookmarkMenuModule;
+  repository: {
+    parseRenamePaths: (
+      input: string,
+    ) => { fromPath: string; toPath: string } | null;
+    resolveRepoPath: (workspaceRoot: string) => string;
+    fakeEditorPath: string;
+    ImmutableError: new (message: string) => Error;
+  };
   graphWebview: typeof GraphWebviewModule;
 };
 
