@@ -4,7 +4,7 @@
   "publisher": "jjk",
   "description": "Jujutsu (jj) version control system for VS Code",
   "icon": "images/logo.png",
-  "version": "0.11.0",
+  "version": "0.10.0",
   "engines": {
     "vscode": "^1.96.0",
     "npm": ">=11.10.0"
@@ -135,18 +135,6 @@
         "category": "Jujutsu"
       },
       {
-        "command": "jj.showBookmarkMenu",
-        "title": "Show bookmarks",
-        "category": "Jujutsu",
-        "icon": "$(bookmark)"
-      },
-      {
-        "command": "jj.createBookmarkAtCurrent",
-        "title": "Create bookmark",
-        "category": "Jujutsu",
-        "icon": "$(plus)"
-      },
-      {
         "command": "jj.refreshOperationLog",
         "title": "Refresh operation log",
         "category": "Jujutsu",
@@ -187,48 +175,6 @@
         "title": "Select repository",
         "category": "Jujutsu",
         "icon": "$(repo)"
-      },
-      {
-        "command": "jj.graph.new",
-        "title": "jj new",
-        "category": "Jujutsu",
-        "icon": "$(plus)"
-      },
-      {
-        "command": "jj.graph.edit",
-        "title": "jj edit",
-        "category": "Jujutsu",
-        "icon": "$(sign-in)"
-      },
-      {
-        "command": "jj.graph.duplicate",
-        "title": "jj duplicate",
-        "category": "Jujutsu",
-        "icon": "$(copy)"
-      },
-      {
-        "command": "jj.graph.describe",
-        "title": "jj describe",
-        "category": "Jujutsu",
-        "icon": "$(edit)"
-      },
-      {
-        "command": "jj.graph.abandon",
-        "title": "jj abandon",
-        "category": "Jujutsu",
-        "icon": "$(trash)"
-      },
-      {
-        "command": "jj.graph.copyChangeId",
-        "title": "Copy change ID",
-        "category": "Jujutsu",
-        "icon": "$(copy)"
-      },
-      {
-        "command": "jj.graph.copyCommitId",
-        "title": "Copy commit ID",
-        "category": "Jujutsu",
-        "icon": "$(copy)"
       },
       {
         "command": "jj.placeholderForFolders",
@@ -331,43 +277,6 @@
           "group": "inline"
         }
       ],
-      "webview/context": [
-        {
-          "command": "jj.graph.new",
-          "when": "webviewId == 'jjGraphWebview' && webviewSection == 'changeNode' && graphChangeIsRoot == false",
-          "group": "1_jj@1"
-        },
-        {
-          "command": "jj.graph.edit",
-          "when": "webviewId == 'jjGraphWebview' && webviewSection == 'changeNode' && graphChangeIsRoot == false",
-          "group": "1_jj@2"
-        },
-        {
-          "command": "jj.graph.duplicate",
-          "when": "webviewId == 'jjGraphWebview' && webviewSection == 'changeNode' && graphChangeIsRoot == false",
-          "group": "1_jj@3"
-        },
-        {
-          "command": "jj.graph.describe",
-          "when": "webviewId == 'jjGraphWebview' && webviewSection == 'changeNode' && graphChangeIsRoot == false",
-          "group": "1_jj@4"
-        },
-        {
-          "command": "jj.graph.abandon",
-          "when": "webviewId == 'jjGraphWebview' && webviewSection == 'changeNode' && graphChangeIsRoot == false",
-          "group": "2_danger@1"
-        },
-        {
-          "command": "jj.graph.copyChangeId",
-          "when": "webviewId == 'jjGraphWebview' && webviewSection == 'changeNode' && graphHasChangeId",
-          "group": "3_copy@1"
-        },
-        {
-          "command": "jj.graph.copyCommitId",
-          "when": "webviewId == 'jjGraphWebview' && webviewSection == 'changeNode' && graphHasCommitId",
-          "group": "3_copy@2"
-        }
-      ],
       "scm/title": [
         {
           "command": "jj.refresh",
@@ -376,11 +285,6 @@
         },
         {
           "command": "jj.new",
-          "when": "scmProvider == jj",
-          "group": "navigation"
-        },
-        {
-          "command": "jj.showBookmarkMenu",
           "when": "scmProvider == jj",
           "group": "navigation"
         }
@@ -523,34 +427,6 @@
         },
         {
           "command": "jj.selectGraphWebviewRepo",
-          "when": "false"
-        },
-        {
-          "command": "jj.graph.new",
-          "when": "false"
-        },
-        {
-          "command": "jj.graph.edit",
-          "when": "false"
-        },
-        {
-          "command": "jj.graph.duplicate",
-          "when": "false"
-        },
-        {
-          "command": "jj.graph.describe",
-          "when": "false"
-        },
-        {
-          "command": "jj.graph.abandon",
-          "when": "false"
-        },
-        {
-          "command": "jj.graph.copyChangeId",
-          "when": "false"
-        },
-        {
-          "command": "jj.graph.copyCommitId",
           "when": "false"
         },
         {
@@ -765,7 +641,6 @@
     "@types/mocha": "^10.0.10",
     "@types/node": "20.x",
     "@types/semver": "^7.7.1",
-    "@types/triple-beam": "^1.3.5",
     "@types/vscode": "^1.96.0",
     "@types/which": "^3.0.4",
     "@vscode/test-cli": "^0.0.10",
@@ -776,13 +651,14 @@
     "npm-run-all": "^4.1.5",
     "prettier": "3.4.2",
     "typescript": "^5.7.2",
-    "typescript-eslint": "^8.59.3"
+    "typescript-eslint": "^8.59.4"
   },
   "dependencies": {
     "@vscode/codicons": "^0.0.36",
     "ansi-regex": "^6.1.0",
     "arktype": "^2.1.19",
     "cross-spawn": "^7.0.6",
+    "effect": "^3.21.0",
     "logform": "^2.7.0",
     "semver": "^7.7.3",
     "triple-beam": "^1.4.1",

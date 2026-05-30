@@ -6,7 +6,7 @@ import {
   Event,
   ThemeColor,
 } from "vscode";
-import { FileStatus, FileStatusType } from "./repository";
+import type { FileStatus, FileStatusType } from "./types";
 import { getParams, toJJUri } from "./uri";
 import { normalizePath } from "./utils";
 

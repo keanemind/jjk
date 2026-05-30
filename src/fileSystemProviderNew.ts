@@ -12,8 +12,9 @@ import {
   FileChangeType,
   workspace,
 } from "vscode";
+import path from "path";
+import { Duration, Effect } from "effect";
 import { getParams } from "./uri";
-import type { WorkspaceSourceControlManager } from "./repository";
 import {
   createThrottledAsyncFn,
   eventToPromise,
@@ -21,6 +22,11 @@ import {
   isDescendant,
   pathEquals,
 } from "./utils";
+import {
+  getDiffOriginal,
+  readFile as readFileEffect,
+} from "./services/Repository";
+import type { RepoHandle } from "./repoHandle";
 
 interface CacheRow {
   uri: Uri;
@@ -30,7 +36,7 @@ interface CacheRow {
 const THREE_MINUTES = 1000 * 60 * 3;
 const FIVE_MINUTES = 1000 * 60 * 5;
 
-export class JJFileSystemProvider implements FileSystemProvider {
+export class JJFileSystemProviderNew implements FileSystemProvider {
   private _onDidChangeFile = new EventEmitter<FileChangeEvent[]>();
   readonly onDidChangeFile: Event<FileChangeEvent[]> =
     this._onDidChangeFile.event;
@@ -38,11 +44,8 @@ export class JJFileSystemProvider implements FileSystemProvider {
   private changedRepositoryRoots = new Set<string>();
   cache = new Map<string, CacheRow>();
   private mtime = Date.now();
-  private disposables: Disposable[] = [];
 
-  constructor(private repositories: WorkspaceSourceControlManager) {
-    setInterval(() => this.cleanup(), FIVE_MINUTES);
-  }
+  constructor(private getRepos: () => RepoHandle[]) {}
 
   dispose() {}
 
@@ -92,8 +95,6 @@ export class JJFileSystemProvider implements FileSystemProvider {
 
       if (isOpen || now - row.timestamp < THREE_MINUTES) {
         cache.set(row.uri.toString(), row);
-      } else {
-        // TODO: should fire delete events?
       }
     }
 
@@ -123,47 +124,45 @@ export class JJFileSystemProvider implements FileSystemProvider {
 
   async readFile(uri: Uri): Promise<Uint8Array> {
     const params = getParams(uri);
+    const repos = this.getRepos();
 
-    const repository = this.repositories.getRepositoryFromUri(uri);
-    if (!repository) {
+    const repo = repos.find((r) => {
+      return !path
+        .relative(r.config.repositoryRoot, uri.fsPath)
+        .startsWith("..");
+    });
+    if (!repo) {
       throw FileSystemError.FileNotFound();
     }
 
     const timestamp = new Date().getTime();
     const cacheValue: CacheRow = { uri, timestamp };
-
     this.cache.set(uri.toString(), cacheValue);
 
-    if ("diffOriginalRev" in params) {
-      const originalContent = await repository.getDiffOriginal(
-        params.diffOriginalRev,
-        uri.fsPath,
-      );
-      if (!originalContent) {
-        try {
-          const data = await repository.readFile(
-            params.diffOriginalRev,
-            uri.fsPath,
-          );
-          return data;
-        } catch (e) {
-          if (e instanceof Error && e.message.includes("No such path")) {
-            throw FileSystemError.FileNotFound();
-          }
-          throw e;
-        }
+    const rev =
+      "diffOriginalRev" in params ? params.diffOriginalRev : params.rev;
+
+    const effect =
+      "diffOriginalRev" in params
+        ? // Try getDiffOriginal first (fakeeditor-based, handles renames correctly),
+          // then fall back to readFile
+          getDiffOriginal(repo.config, rev, uri.fsPath).pipe(
+            Effect.flatMap((data) =>
+              data
+                ? Effect.succeed(data)
+                : readFileEffect(repo.config, rev, uri.fsPath),
+            ),
+            Effect.catchAll(() => readFileEffect(repo.config, rev, uri.fsPath)),
+          )
+        : readFileEffect(repo.config, rev, uri.fsPath);
+
+    try {
+      return await repo.runPromise(effect);
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("No such path")) {
+        throw FileSystemError.FileNotFound();
       }
-      return originalContent;
-    } else {
-      try {
-        const data = await repository.readFile(params.rev, uri.fsPath);
-        return data;
-      } catch (e) {
-        if (e instanceof Error && e.message.includes("No such path")) {
-          throw FileSystemError.FileNotFound();
-        }
-        throw e;
-      }
+      throw e;
     }
   }
 
@@ -179,3 +178,14 @@ export class JJFileSystemProvider implements FileSystemProvider {
     throw new Error("Method not implemented.");
   }
 }
+
+export const runFileSystemProviderCleanup = (
+  provider: JJFileSystemProviderNew,
+): Effect.Effect<void, never, import("effect").Scope.Scope> =>
+  Effect.forkScoped(
+    Effect.forever(
+      Effect.sync(() => provider.cleanup()).pipe(
+        Effect.delay(Duration.millis(FIVE_MINUTES)),
+      ),
+    ),
+  ).pipe(Effect.asVoid);
