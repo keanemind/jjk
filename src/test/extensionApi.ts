@@ -12,6 +12,15 @@ type ExtensionAPI = {
       input: string,
     ) => { fromPath: string; toPath: string } | null;
     resolveRepoPath: (workspaceRoot: string) => string;
+    traverseWorkspaceFolder: (
+      workspaceFolder: string,
+      maxDepth: number,
+      repositoryScanIgnoredFolders: string[],
+    ) => Promise<string[]>;
+    resolveConfiguredScanFolder: (
+      root: string,
+      scanPath: string,
+    ) => string | undefined;
     fakeEditorPath: string;
     ImmutableError: new (message: string) => Error;
   };

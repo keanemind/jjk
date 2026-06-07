@@ -55,7 +55,7 @@ export const retryImmutable = <A>(
           if (!choice) {
             return undefined as A | undefined;
           }
-          return (yield* retryEffect) as A | undefined;
+          return yield* retryEffect;
         }),
     ),
   );

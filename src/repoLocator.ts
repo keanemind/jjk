@@ -23,11 +23,30 @@ export const makeRepoLocator = (
 ): RepoLocator => ({
   findRepoBySourceControl: (sc) =>
     repos().find((repo) => repo.sourceControl === sc),
-  findRepoByUri: (uri) =>
-    repos().find(
-      (repo) =>
-        !path.relative(repo.config.repositoryRoot, uri.fsPath).startsWith(".."),
-    ),
+  findRepoByUri: (uri) => {
+    // Nested repositories share path prefixes with their parents. The owner of
+    // a file is the most specific open repository, not the first prefix match.
+    let bestMatch: RepoHandle | undefined;
+    for (const repo of repos()) {
+      const relativePath = path.relative(
+        repo.config.repositoryRoot,
+        uri.fsPath,
+      );
+      if (relativePath.startsWith("..")) {
+        continue;
+      }
+
+      if (
+        bestMatch === undefined ||
+        repo.config.repositoryRoot.length >
+          bestMatch.config.repositoryRoot.length
+      ) {
+        bestMatch = repo;
+      }
+    }
+
+    return bestMatch;
+  },
   findRepoByResourceGroup: (rg) =>
     repos().find(
       (repo) => repo.workingCopyGroup === rg || repo.parentGroups.includes(rg),

@@ -1,6 +1,10 @@
 import * as vscode from "vscode";
 import { Effect, ManagedRuntime, Scope } from "effect";
-import { resolveRepoPath } from "./jjUtils";
+import {
+  resolveConfiguredScanFolder,
+  resolveRepoPath,
+  traverseWorkspaceFolder,
+} from "./jjUtils";
 import { parseRenamePaths } from "./parsers";
 import { JJDecorationProvider } from "./decorationProvider";
 import {
@@ -142,9 +146,6 @@ export async function activate(context: vscode.ExtensionContext) {
   await repoLifecycle.initializeDiscoveredRepos();
   const { syncReposWithWorkspaceFolders, poll } = repoLifecycle;
 
-  // --- Lazy init flag ---
-  let isInitialized = false;
-
   // --- Check for colocated repos ---
   const colocatedWarnings = await setupColocatedWarnings({
     repos: () => repos,
@@ -200,6 +201,19 @@ export async function activate(context: vscode.ExtensionContext) {
 
   await registerScoped(() =>
     vscode.workspace.onDidChangeConfiguration((e) => {
+      if (
+        e.affectsConfiguration("jjk.autoRepositoryDetection") ||
+        e.affectsConfiguration("jjk.repositoryScanMaxDepth") ||
+        e.affectsConfiguration("jjk.repositoryScanIgnoredFolders") ||
+        e.affectsConfiguration("jjk.scanRepositories")
+      ) {
+        logger.info("jjk repository discovery configuration changed");
+        dispatchExtensionEffect(
+          syncReposWithWorkspaceFolders().pipe(Effect.zipRight(poll())),
+          "Failed to sync repository discovery settings",
+        );
+      }
+
       if (e.affectsConfiguration("git")) {
         logger.info("Git configuration changed");
         const workspaceFolders = vscode.workspace.workspaceFolders || [];
@@ -216,7 +230,7 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
   );
 
-  if (repos.length > 0 && !isInitialized) {
+  if (repos.length > 0) {
     extensionViews = await initializeExtensionViews({
       extensionUri: context.extensionUri,
       repos: () => repos,
@@ -233,7 +247,6 @@ export async function activate(context: vscode.ExtensionContext) {
           setContext("jjGraphView.nodesSelected", count).pipe(Effect.asVoid),
         ),
     });
-    isInitialized = extensionViews !== undefined;
   }
 
   await registerGlobalCommands(
@@ -299,6 +312,11 @@ export async function activate(context: vscode.ExtensionContext) {
     () => repos,
     fileSystemProvider,
     repoLocator,
+    () =>
+      runExtensionEffect(
+        syncReposWithWorkspaceFolders().pipe(Effect.zipRight(poll())),
+        "Failed to refresh repositories",
+      ).then(() => true),
   );
 
   return {
@@ -308,6 +326,19 @@ export async function activate(context: vscode.ExtensionContext) {
     repository: {
       parseRenamePaths,
       resolveRepoPath,
+      traverseWorkspaceFolder: (
+        workspaceFolder: string,
+        maxDepth: number,
+        repositoryScanIgnoredFolders: string[],
+      ) =>
+        extensionRuntime.runPromise(
+          traverseWorkspaceFolder(
+            workspaceFolder,
+            maxDepth,
+            repositoryScanIgnoredFolders,
+          ),
+        ),
+      resolveConfiguredScanFolder,
       fakeEditorPath: extensionResourcesConfig.fakeEditorPath,
       ImmutableError: class ImmutableError extends Error {
         constructor(message: string) {

@@ -481,6 +481,51 @@
           "default": true,
           "description": "Whether the periodic poll command (jj operation log) should snapshot the working copy. When enabled, file changes are automatically detected; when disabled, modified files may not auto-update until the next manual jj command.",
           "scope": "resource"
+        },
+        "jjk.autoRepositoryDetection": {
+          "type": [
+            "boolean",
+            "string"
+          ],
+          "enum": [
+            true,
+            false,
+            "subFolders"
+          ],
+          "enumDescriptions": [
+            "Scan for subfolders of the current opened folder.",
+            "Disable automatic repository scanning.",
+            "Scan for subfolders of the current opened folder."
+          ],
+          "default": true,
+          "description": "Configures when nested repositories should be automatically detected.",
+          "scope": "resource"
+        },
+        "jjk.repositoryScanMaxDepth": {
+          "type": "number",
+          "default": 1,
+          "description": "Controls the depth used when scanning workspace folders for jj repositories. Can be set to -1 for no limit.",
+          "scope": "resource"
+        },
+        "jjk.repositoryScanIgnoredFolders": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "node_modules"
+          ],
+          "description": "List of folders that are ignored while scanning for jj repositories.",
+          "scope": "resource"
+        },
+        "jjk.scanRepositories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "List of additional workspace-relative paths to search for jj repositories in. Absolute paths and paths outside the workspace are ignored.",
+          "scope": "resource"
         }
       }
     },

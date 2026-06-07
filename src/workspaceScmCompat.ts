@@ -51,15 +51,14 @@ export function buildWorkspaceSCMCompatLayer(
   repos: () => readonly RepoHandle[],
   fileSystemProvider: JJFileSystemProviderNew,
   repoLocator: RepoLocator,
+  refreshRepos: () => Promise<boolean>,
 ): WorkspaceScmCompatLayer {
   return {
     get repoSCMs() {
       return repos().map((repo) => buildRepoSCMProxy(repo));
     },
     fileSystemProvider,
-    refresh() {
-      return Promise.resolve(false);
-    },
+    refresh: refreshRepos,
     getRepositoryFromUri(uri) {
       const repo = repoLocator.findRepoByUri(uri);
       return repo ? { repositoryRoot: repo.config.repositoryRoot } : undefined;

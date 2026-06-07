@@ -252,6 +252,110 @@ export const makeRepoLifecycle = (deps: RepoLifecycleDeps): RepoLifecycle => {
     );
   };
 
+  /**
+   * Performs full workspace repository discovery and reconciles open handles.
+   *
+   * This is intentionally used for activation, workspace-folder changes, manual
+   * refreshes, and repository-discovery setting changes. It may probe many
+   * workspace children, so steady-state polling should refresh known repos
+   * instead of calling this on every interval.
+   */
+  const syncReposWithWorkspaceFolders = () =>
+    Effect.gen(function* () {
+      const currentRepoInfos = yield* discoverRepositoriesEffect();
+      const currentRoots = new Set(
+        [...currentRepoInfos.values()].map((info) => info.repoRoot),
+      );
+
+      for (let i = deps.repos.length - 1; i >= 0; i--) {
+        const repo = deps.repos[i];
+        if (!currentRoots.has(repo.config.repositoryRoot)) {
+          logger.info(`Removing repo ${repo.config.repositoryRoot}`);
+          yield* Effect.promise(() => repo.dispose()).pipe(
+            Effect.catchAllCause((cause) => {
+              logger.error(
+                `Failed to dispose repo ${repo.config.repositoryRoot}: ${String(cause)}`,
+              );
+              return Effect.void;
+            }),
+          );
+          deps.repos.splice(i, 1);
+        }
+      }
+
+      for (const [, info] of currentRepoInfos) {
+        if (
+          deps.repos.some(
+            (repo) => repo.config.repositoryRoot === info.repoRoot,
+          )
+        ) {
+          continue;
+        }
+        logger.info(`Discovered new repo ${info.repoRoot}`);
+        yield* Effect.promise(() => initializeRepo(info)).pipe(
+          Effect.catchAllCause((cause) => {
+            logger.error(
+              `Failed to initialize repo ${info.repoRoot}: ${String(cause)}`,
+            );
+            return Effect.void;
+          }),
+        );
+      }
+
+      yield* setContext("jj.reposExist", deps.repos.length > 0).pipe(
+        Effect.catchAll(() => Effect.void),
+      );
+
+      yield* Effect.tryPromise({
+        try: () => deps.reconcileSelectedRepo(),
+        catch: toError,
+      }).pipe(Effect.catchAll(() => Effect.void));
+
+      yield* Effect.sync(() => {
+        deps.decorationProvider.removeStaleRepositories(
+          deps.repos.map((repo) => repo.config.repositoryRoot),
+        );
+      });
+    });
+
+  /**
+   * Refreshes already-open repositories without scanning workspace children.
+   *
+   * Repository refresh has two different costs. Full discovery scans workspace
+   * roots, configured scan paths, and bounded subfolders to find new repos.
+   * Known-repo refresh only updates existing repo state, which is cheap enough
+   * for periodic polling. If no repos are open yet, still run full discovery so
+   * a repo initialized or cloned after activation can appear without reload.
+   */
+  const poll = () =>
+    deps.repos.length === 0
+      ? syncReposWithWorkspaceFolders()
+      : Effect.forEach(
+          deps.repos,
+          (repo) =>
+            Effect.promise(() =>
+              repo.runPromise(
+                checkForUpdates(repo.config).pipe(
+                  Effect.tap((state) => {
+                    if (!state) {
+                      return Effect.void;
+                    }
+                    return Effect.sync(() => applyRepoStateUpdate(repo, state));
+                  }),
+                ),
+              ),
+            ).pipe(
+              Effect.catchAllCause((cause) =>
+                Effect.sync(() => {
+                  logger.error(
+                    `Update error for ${repo.config.repositoryRoot}: ${String(cause)}`,
+                  );
+                }),
+              ),
+            ),
+          { discard: true },
+        );
+
   return {
     initializeDiscoveredRepos: async () => {
       const repoInfos = await deps.runInExtensionScope(
@@ -261,88 +365,7 @@ export const makeRepoLifecycle = (deps: RepoLifecycleDeps): RepoLifecycle => {
         await initializeRepo(info);
       }
     },
-    syncReposWithWorkspaceFolders: () =>
-      Effect.gen(function* () {
-        const currentRepoInfos = yield* discoverRepositoriesEffect();
-        const currentRoots = new Set(
-          [...currentRepoInfos.values()].map((info) => info.repoRoot),
-        );
-
-        for (let i = deps.repos.length - 1; i >= 0; i--) {
-          const repo = deps.repos[i];
-          if (!currentRoots.has(repo.config.repositoryRoot)) {
-            logger.info(`Removing repo ${repo.config.repositoryRoot}`);
-            yield* Effect.promise(() => repo.dispose()).pipe(
-              Effect.catchAllCause((cause) => {
-                logger.error(
-                  `Failed to dispose repo ${repo.config.repositoryRoot}: ${String(cause)}`,
-                );
-                return Effect.void;
-              }),
-            );
-            deps.repos.splice(i, 1);
-          }
-        }
-
-        for (const [, info] of currentRepoInfos) {
-          if (
-            deps.repos.some(
-              (repo) => repo.config.repositoryRoot === info.repoRoot,
-            )
-          ) {
-            continue;
-          }
-          logger.info(`Discovered new repo ${info.repoRoot}`);
-          yield* Effect.promise(() => initializeRepo(info)).pipe(
-            Effect.catchAllCause((cause) => {
-              logger.error(
-                `Failed to initialize repo ${info.repoRoot}: ${String(cause)}`,
-              );
-              return Effect.void;
-            }),
-          );
-        }
-
-        yield* setContext("jj.reposExist", deps.repos.length > 0).pipe(
-          Effect.catchAll(() => Effect.void),
-        );
-
-        yield* Effect.tryPromise({
-          try: () => deps.reconcileSelectedRepo(),
-          catch: toError,
-        }).pipe(Effect.catchAll(() => Effect.void));
-
-        yield* Effect.sync(() => {
-          deps.decorationProvider.removeStaleRepositories(
-            deps.repos.map((repo) => repo.config.repositoryRoot),
-          );
-        });
-      }),
-    poll: () =>
-      Effect.forEach(
-        deps.repos,
-        (repo) =>
-          Effect.promise(() =>
-            repo.runPromise(
-              checkForUpdates(repo.config).pipe(
-                Effect.tap((state) => {
-                  if (!state) {
-                    return Effect.void;
-                  }
-                  return Effect.sync(() => applyRepoStateUpdate(repo, state));
-                }),
-              ),
-            ),
-          ).pipe(
-            Effect.catchAllCause((cause) =>
-              Effect.sync(() => {
-                logger.error(
-                  `Update error for ${repo.config.repositoryRoot}: ${String(cause)}`,
-                );
-              }),
-            ),
-          ),
-        { discard: true },
-      ),
+    syncReposWithWorkspaceFolders,
+    poll,
   };
 };

@@ -7,9 +7,19 @@ import { getExtensionAPI } from "./extensionApi";
 suite("resolveRepoPath", () => {
   let tmpDir: string;
   let resolveRepoPath: (workspaceRoot: string) => string;
+  let traverseWorkspaceFolder: (
+    workspaceFolder: string,
+    maxDepth: number,
+    repositoryScanIgnoredFolders: string[],
+  ) => Promise<string[]>;
+  let resolveConfiguredScanFolder: (
+    root: string,
+    scanPath: string,
+  ) => string | undefined;
 
   suiteSetup(async () => {
-    ({ resolveRepoPath } = (await getExtensionAPI()).repository);
+    ({ resolveRepoPath, traverseWorkspaceFolder, resolveConfiguredScanFolder } =
+      (await getExtensionAPI()).repository);
   });
 
   setup(() => {
@@ -64,6 +74,62 @@ suite("resolveRepoPath", () => {
     assert.strictEqual(
       fs.realpathSync(result),
       fs.realpathSync(primaryRepoDir),
+    );
+  });
+
+  test("traverseWorkspaceFolder respects depth and ignored folders", async () => {
+    fs.mkdirSync(path.join(tmpDir, "root", "one", "nested"), {
+      recursive: true,
+    });
+    fs.mkdirSync(path.join(tmpDir, "root", "node_modules", "ignored"), {
+      recursive: true,
+    });
+    fs.mkdirSync(path.join(tmpDir, "root", ".jj", "repo"), {
+      recursive: true,
+    });
+    fs.mkdirSync(path.join(tmpDir, "root", ".git", "ignored"), {
+      recursive: true,
+    });
+
+    const result = await traverseWorkspaceFolder(path.join(tmpDir, "root"), 1, [
+      "node_modules",
+    ]);
+
+    assert.deepStrictEqual(result.sort(), [path.join(tmpDir, "root", "one")]);
+  });
+
+  test("traverseWorkspaceFolder includes unreadable max-depth folders", async () => {
+    const unreadableFolder = path.join(tmpDir, "root", "unreadable");
+    fs.mkdirSync(unreadableFolder, { recursive: true });
+    fs.chmodSync(unreadableFolder, 0o000);
+
+    try {
+      const result = await traverseWorkspaceFolder(
+        path.join(tmpDir, "root"),
+        1,
+        [],
+      );
+
+      assert.deepStrictEqual(result, [unreadableFolder]);
+    } finally {
+      fs.chmodSync(unreadableFolder, 0o700);
+    }
+  });
+
+  test("resolveConfiguredScanFolder rejects paths outside the workspace", () => {
+    const root = path.join(tmpDir, "root");
+
+    assert.strictEqual(
+      resolveConfiguredScanFolder(root, "tools/jjk"),
+      path.join(root, "tools", "jjk"),
+    );
+    assert.strictEqual(
+      resolveConfiguredScanFolder(root, "../other"),
+      undefined,
+    );
+    assert.strictEqual(
+      resolveConfiguredScanFolder(root, "tools/../../other"),
+      undefined,
     );
   });
 });
