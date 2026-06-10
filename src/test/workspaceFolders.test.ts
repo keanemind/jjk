@@ -17,6 +17,19 @@ async function createTempJJRepo(prefix: string): Promise<string> {
   return dir;
 }
 
+async function createNestedJJRepos(): Promise<{
+  outerRepoPath: string;
+  innerRepoPath: string;
+}> {
+  const outerRepoPath = await createTempJJRepo("jjk-test-nested-outer-");
+  const innerRepoPath = path.join(outerRepoPath, "inner");
+
+  await fs.mkdir(innerRepoPath, { recursive: true });
+  await execJJPromise("git init", { cwd: innerRepoPath });
+
+  return { outerRepoPath, innerRepoPath };
+}
+
 suite("Dynamic Workspace Folder Tests", () => {
   let workspaceSCM: WorkspaceSourceControlManager;
 
@@ -68,6 +81,55 @@ suite("Dynamic Workspace Folder Tests", () => {
     );
   });
 
+  test("workspace scan discovers nested jj repos", async function () {
+    this.timeout(30_000);
+
+    const initialRepoCount = workspaceSCM.repoSCMs.length;
+    const { outerRepoPath, innerRepoPath } = await createNestedJJRepos();
+
+    const countBefore = (vscode.workspace.workspaceFolders || []).length;
+    const success = vscode.workspace.updateWorkspaceFolders(countBefore, 0, {
+      uri: vscode.Uri.file(outerRepoPath),
+    });
+    if (!success) {
+      // Single-folder mode permits the first single->multi transition but can
+      // reject additional workspace folder updates.
+      this.skip();
+    }
+
+    for (let i = 0; i < 50; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      if ((vscode.workspace.workspaceFolders || []).length > countBefore) {
+        break;
+      }
+    }
+
+    await vscode.commands.executeCommand("jj.refresh");
+
+    assert.strictEqual(
+      workspaceSCM.repoSCMs.length,
+      initialRepoCount + 2,
+      `Expected ${initialRepoCount + 2} repos after adding nested workspace, ` +
+        `but found ${workspaceSCM.repoSCMs.length}`,
+    );
+
+    assert.ok(
+      workspaceSCM.repoSCMs.some((r) => r.repositoryRoot === outerRepoPath),
+      `Expected to find outer repo with root ${outerRepoPath}`,
+    );
+    assert.ok(
+      workspaceSCM.repoSCMs.some((r) => r.repositoryRoot === innerRepoPath),
+      `Expected to find inner repo with root ${innerRepoPath}`,
+    );
+
+    const innerFile = vscode.Uri.file(path.join(innerRepoPath, "file.txt"));
+    assert.strictEqual(
+      workspaceSCM.getRepositoryFromUri(innerFile)?.repositoryRoot,
+      innerRepoPath,
+      "Expected the deepest nested repo to own files below its root",
+    );
+  });
+
   test("removing a workspace folder removes the repo", async function () {
     this.timeout(30_000);
 
@@ -89,6 +151,13 @@ suite("Dynamic Workspace Folder Tests", () => {
     // Find the folder added by the previous test (the last one)
     const lastIndex = folderCountBefore - 1;
     const folderToRemove = vscode.workspace.workspaceFolders![lastIndex];
+    const reposInRemovedFolder = workspaceSCM.repoSCMs.filter((repo) => {
+      const relativePath = path.relative(
+        folderToRemove.uri.fsPath,
+        repo.repositoryRoot,
+      );
+      return !relativePath.startsWith("..");
+    }).length;
 
     const removeSuccess = vscode.workspace.updateWorkspaceFolders(lastIndex, 1);
     assert.ok(
@@ -109,8 +178,10 @@ suite("Dynamic Workspace Folder Tests", () => {
 
     assert.strictEqual(
       workspaceSCM.repoSCMs.length,
-      repoCountBefore - 1,
-      `Expected ${repoCountBefore - 1} repos after removing workspace folder, ` +
+      repoCountBefore - reposInRemovedFolder,
+      `Expected ${
+        repoCountBefore - reposInRemovedFolder
+      } repos after removing workspace folder, ` +
         `but found ${workspaceSCM.repoSCMs.length}`,
     );
   });

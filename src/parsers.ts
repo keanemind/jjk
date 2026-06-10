@@ -530,7 +530,9 @@ export function parseOperationLog(
           op.snapshot = value === "true";
           break;
         default:
-          throw new Error(`Unexpected operation log field: ${rt.fields[i].name}`);
+          throw new Error(
+            `Unexpected operation log field: ${rt.fields[i].name}`,
+          );
       }
     }
     ret.push(op);
@@ -571,7 +573,7 @@ export function parseLog(output: string): ChangeNode[] {
 
   for (let i = 0; i < lines.length; i += 2) {
     const oddLine = lines[i];
-    let evenLine = lines[i + 1] || "";
+    const evenLine = lines[i + 1] || "";
 
     let changeId = "";
     if (i % 2 === 0) {
@@ -583,10 +585,6 @@ export function parseLog(output: string): ChangeNode[] {
 
     const match = evenLine.match(/([a-zA-Z0-9(].*)/);
     const description = match ? match[1] : "";
-
-    if (description) {
-      evenLine = evenLine.replace(description, "");
-    }
 
     const emailMatch = oddLine.match(
       /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/,
