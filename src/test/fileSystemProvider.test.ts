@@ -45,6 +45,113 @@ suite("JJFileSystemProvider", () => {
     await vscode.commands.executeCommand("jj.refresh");
   });
 
+  async function readJJText(
+    filePath: string,
+    params: Parameters<typeof UriModule.toJJUri>[1],
+  ): Promise<string> {
+    const uri = toJJUri(vscode.Uri.file(filePath), params);
+    const bytes = await vscode.workspace.fs.readFile(uri);
+    return Buffer.from(bytes).toString();
+  }
+
+  // Builds a chain @-- (adds file=v1) -> @- (modifies file to v2) -> @, and
+  // returns the change ids of the two ancestor commits.
+  async function buildChangeChain(
+    fileName: string,
+    v1: string,
+    v2: string,
+  ): Promise<{ filePath: string; changeAdd: string; changeModify: string }> {
+    const filePath = path.join(repoRoot, fileName);
+    const opts = { cwd: repoRoot };
+
+    await execJJPromise('new -m "fsp-add"', opts);
+    await fs.writeFile(filePath, v1);
+    await execJJPromise('new -m "fsp-modify"', opts);
+    await fs.writeFile(filePath, v2);
+    await execJJPromise('new -m "fsp-tip"', opts);
+
+    const changeAdd = (
+      await execJJPromise('log -r @-- --no-graph -T "change_id"', opts)
+    ).stdout.trim();
+    const changeModify = (
+      await execJJPromise('log -r @- --no-graph -T "change_id"', opts)
+    ).stdout.trim();
+    return { filePath, changeAdd, changeModify };
+  }
+
+  test("diffOriginalRev reads the file content from before the change", async function () {
+    this.timeout(30_000);
+
+    const { filePath, changeModify } = await buildChangeChain(
+      "test-fsp-difforig.txt",
+      "v1\n",
+      "v2\n",
+    );
+
+    assert.strictEqual(
+      await readJJText(filePath, { diffOriginalRev: changeModify }),
+      "v1\n",
+      "Original side should be the content before the change",
+    );
+    assert.strictEqual(
+      await readJJText(filePath, { rev: changeModify }),
+      "v2\n",
+      "Modified side should be the content at the change",
+    );
+  });
+
+  test("diffOriginalRev is empty when the file did not exist before the change", async function () {
+    this.timeout(30_000);
+
+    const { filePath, changeAdd } = await buildChangeChain(
+      "test-fsp-added.txt",
+      "v1\n",
+      "v2\n",
+    );
+
+    assert.strictEqual(
+      await readJJText(filePath, { diffOriginalRev: changeAdd }),
+      "",
+      "A file added by the change has no original content",
+    );
+  });
+
+  test("openChangeFileDiff reveals the requested line", async function () {
+    this.timeout(30_000);
+
+    const { filePath, changeModify } = await buildChangeChain(
+      "test-fsp-scroll.txt",
+      "a\nb\nc\nd\ne\nf\n",
+      "a\nb\nC\nd\ne\nf\n",
+    );
+
+    const targetLine = 3;
+    await vscode.commands.executeCommand(
+      "jj.openChangeFileDiff",
+      changeModify,
+      filePath,
+      targetLine,
+    );
+
+    let editor: vscode.TextEditor | undefined;
+    for (let i = 0; i < 20; i++) {
+      editor = vscode.window.activeTextEditor;
+      if (editor && editor.selection.active.line === targetLine) {
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 100));
+    }
+
+    assert.ok(editor, "Expected an active diff editor");
+    assert.strictEqual(
+      editor.selection.active.line,
+      targetLine,
+      "Diff should be scrolled to the requested line",
+    );
+
+    await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+  });
+
   test("cleanup retains cache entries for open jj:// documents", async function () {
     this.timeout(30_000);
 
