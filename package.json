@@ -4,7 +4,7 @@
   "publisher": "jjk",
   "description": "Jujutsu (jj) version control system for VS Code",
   "icon": "images/logo.png",
-  "version": "0.10.0",
+  "version": "0.12.0",
   "engines": {
     "vscode": "^1.96.0",
     "npm": ">=11.10.0"
@@ -198,6 +198,18 @@
         "title": "Open child change",
         "category": "Jujutsu",
         "icon": "$(arrow-right)"
+      },
+      {
+        "command": "jj.viewChange",
+        "title": "View change",
+        "category": "Jujutsu",
+        "icon": "$(compare-changes)"
+      },
+      {
+        "command": "jj.openChangeFileDiff",
+        "title": "Open changes",
+        "category": "Jujutsu",
+        "icon": "$(compare-changes)"
       }
     ],
     "menus": {
@@ -439,6 +451,14 @@
         },
         {
           "command": "jj.openChildChange",
+          "when": "false"
+        },
+        {
+          "command": "jj.viewChange",
+          "when": "false"
+        },
+        {
+          "command": "jj.openChangeFileDiff",
           "when": "false"
         }
       ]

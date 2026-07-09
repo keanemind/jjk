@@ -4,7 +4,7 @@ import type { JJCli } from "./services/JJCli";
 import type { ExtensionResources } from "./services/ExtensionResources";
 import type { Vscode } from "./services/Vscode";
 import { getActiveTextEditor, getConfigurationValue } from "./services/Vscode";
-import { annotate, getShow } from "./services/Repository";
+import { annotate, getOriginalPath, getShow } from "./services/Repository";
 import type { RepoHandle } from "./repoHandle";
 import { getParams } from "./uri";
 import type { ChangeWithDetails } from "./types";
@@ -122,8 +122,21 @@ export async function setupAnnotations(deps: AnnotationDeps): Promise<void> {
       }
 
       const rev = getAnnotationRev(uri);
+      const params = uri.scheme === "jj" ? getParams(uri) : undefined;
+      const annotateEffect =
+        params && "diffOriginalRev" in params
+          ? getOriginalPath(
+              repo.config,
+              params.diffOriginalRev,
+              uri.fsPath,
+            ).pipe(
+              Effect.flatMap((originalPath) =>
+                annotate(repo.config, originalPath, rev),
+              ),
+            )
+          : annotate(repo.config, uri.fsPath, rev);
       const changeIdsByLine = yield* deps
-        .runRepoEffect(repo, annotate(repo.config, uri.fsPath, rev))
+        .runRepoEffect(repo, annotateEffect)
         .pipe(
           Effect.catchIf(
             (error) => error.message.includes("more than one revision"),
@@ -239,6 +252,73 @@ export async function setupAnnotations(deps: AnnotationDeps): Promise<void> {
       });
     });
 
+  const provideHoverEffect = (
+    document: vscode.TextDocument,
+    position: vscode.Position,
+  ): Effect.Effect<vscode.Hover | undefined, Error, Vscode> =>
+    Effect.gen(function* () {
+      const state = yield* Ref.get(annotationState);
+      if (
+        !state.annotateInfo ||
+        !uriEquals(state.annotateInfo.uri, document.uri) ||
+        !state.activeLines.includes(position.line)
+      ) {
+        return undefined;
+      }
+
+      // The annotation is rendered after the end of the line, and VS Code
+      // anchors hovers over it at the last character of the line
+      const annotationRange = document.validateRange(
+        new vscode.Range(
+          position.line,
+          2 ** 30 - 1,
+          position.line,
+          2 ** 30 - 1,
+        ),
+      );
+      if (annotationRange.start.character !== position.character) {
+        return undefined;
+      }
+
+      const changeId = state.annotateInfo.changeIdsByLine[position.line];
+      if (!changeId) {
+        return undefined;
+      }
+
+      const repo = deps.findRepoByUri(document.uri);
+      if (!repo) {
+        return undefined;
+      }
+
+      const showResult = yield* deps.runRepoEffect(
+        repo,
+        getShow(repo.config, changeId),
+      );
+      const change = showResult.change;
+      const shortChangeId = change.changeId.substring(0, 8);
+      const viewChangeArgs = encodeURIComponent(
+        JSON.stringify([repo.config.repositoryRoot, change.changeId]),
+      );
+      const openChangesArgs = encodeURIComponent(
+        JSON.stringify([change.changeId, document.uri.fsPath, position.line]),
+      );
+      const message = new vscode.MarkdownString(undefined, true);
+      message.isTrusted = {
+        enabledCommands: ["jj.viewChange", "jj.openChangeFileDiff"],
+      };
+      message.appendMarkdown(
+        `**${change.author.name}** (${change.author.email}) — ${change.authoredDate}\n\n`,
+      );
+      message.appendMarkdown(`${change.description || "(no description)"}\n\n`);
+      message.appendMarkdown("---\n\n");
+      message.appendMarkdown(
+        `[$(git-commit) ${shortChangeId}](command:jj.viewChange?${viewChangeArgs} "View all changes in ${shortChangeId}")` +
+          ` &nbsp;|&nbsp; ` +
+          `[$(compare-changes)](command:jj.openChangeFileDiff?${openChangesArgs} "Open Changes")`,
+      );
+      return new vscode.Hover(message, annotationRange);
+    });
+
   const handleDidChangeActiveTextEditorEffect = (
     editor: vscode.TextEditor | undefined,
   ): Effect.Effect<void, Error, Vscode> =>
@@ -265,6 +345,19 @@ export async function setupAnnotations(deps: AnnotationDeps): Promise<void> {
       yield* setDecorationsEffect(editor, activeLines);
     });
 
+  await deps.registerScoped(() =>
+    vscode.languages.registerHoverProvider(
+      [{ scheme: "file" }, { scheme: "jj" }],
+      {
+        provideHover: (document, position) =>
+          deps.runInExtensionScope(
+            provideHoverEffect(document, position).pipe(
+              Effect.catchAll(() => Effect.succeed(undefined)),
+            ),
+          ),
+      },
+    ),
+  );
   await deps.registerScoped(() =>
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       deps.dispatchExtensionEffect(

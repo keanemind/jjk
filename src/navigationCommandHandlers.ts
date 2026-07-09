@@ -133,6 +133,8 @@ export const createNavigationInitHandlers = (
   | "gitFetch"
   | "openParentChange"
   | "openChildChange"
+  | "viewChange"
+  | "openChangeFileDiff"
 > => ({
   openFileResourceState: (resourceState) =>
     deps.runExtensionEffect(
@@ -335,6 +337,56 @@ export const createNavigationInitHandlers = (
     deps.dispatchExtensionEffect(
       openRelatedChangeEffect(deps, uri, "+", "Child"),
       "Failed to open child change",
+    );
+  },
+  viewChange: (repositoryRoot, changeId) => {
+    const repo = deps.repoLocator.findRepoByUri(
+      vscode.Uri.file(repositoryRoot),
+    );
+    if (!repo) {
+      return;
+    }
+
+    return deps.runRepoCommand(
+      repo,
+      Effect.gen(function* () {
+        const showResult = yield* getShow(repo.config, changeId);
+        const resources = showResult.fileStatuses.map((fileStatus) => {
+          const fileUri = vscode.Uri.file(fileStatus.path);
+          return [
+            fileUri,
+            fileStatus.type === "A"
+              ? undefined
+              : toJJUri(fileUri, { diffOriginalRev: changeId }),
+            fileStatus.type === "D"
+              ? undefined
+              : toJJUri(fileUri, { rev: changeId }),
+          ];
+        });
+        yield* executeCommand(
+          "vscode.changes",
+          `Changes in ${changeId.substring(0, 8)}`,
+          resources,
+        );
+      }),
+      "Failed to view change",
+    );
+  },
+  openChangeFileDiff: (changeId, fsPath, line) => {
+    const fileUri = vscode.Uri.file(fsPath);
+    const options: vscode.TextDocumentShowOptions | undefined =
+      line !== undefined
+        ? { selection: new vscode.Range(line, 0, line, 0) }
+        : undefined;
+    return deps.runExtensionEffect(
+      executeCommand(
+        "vscode.diff",
+        toJJUri(fileUri, { diffOriginalRev: changeId }),
+        toJJUri(fileUri, { rev: changeId }),
+        `${path.basename(fsPath)} (${changeId.substring(0, 8)})`,
+        options,
+      ),
+      "Failed to open changes",
     );
   },
 });
